@@ -805,20 +805,20 @@ O script envia arquivos locais, recebe alteracoes remotas e faz merge bidirecion
 
 <!-- BACKUP_STATUS:START -->
 > Bloco atualizado automaticamente pelo plano de backup validado.
-- Run ID: `mnuj0jcb-tlozyr`
-- Trigger: `manual`
-- Inicio: 11/04/2026, 13:05:26 (America/Sao_Paulo)
-- Fim: 11/04/2026, 13:05:32 (America/Sao_Paulo)
-- Status: ✅ **PUBLICADO_GITHUB**
+- Run ID: `mnul6ka2-pzp2zf`
+- Trigger: `scheduler`
+- Inicio: 11/04/2026, 14:06:07 (America/Sao_Paulo)
+- Fim: 11/04/2026, 14:06:14 (America/Sao_Paulo)
+- Status: 🟡 **VALIDADO_LOCAL**
 - Validacao (`npm run check`): **OK**
 - Suite funcional (`node scripts/test-suite.js`): **OK**
-- Backup `data/`: `backup-2026-04-11T16-05-30.tar.gz`
-- Bundle git: `git-bundle-2026-04-11T16-05-30.bundle`
-- Commit principal: `6667538`
+- Backup `data/`: `backup-2026-04-11T17-06-13.tar.gz`
+- Bundle git: `git-bundle-2026-04-11T17-06-14.bundle`
+- Commit principal: `sem alteracoes pendentes`
 - Commit README dedicado: veja `git log` (quando houver mudanca de status final).
-- Destino push: `https://github.com/italoeteixeira/chatbotgpt.git`
+- Destino push: `-`
 - Branches: `main, homologacao`
-- Push: **OK**
+- Push: **PENDENTE**
 - Rollback automatico: **nao**
-- Observacao: Backup validado publicado no GitHub (main, homologacao).
+- Observacao: Validacao e backup concluidos localmente. Push em andamento.
 <!-- BACKUP_STATUS:END -->
