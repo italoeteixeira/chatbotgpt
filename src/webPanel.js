@@ -18,6 +18,7 @@ import { fullAutoJobEvents, getFullAutoJobsSnapshot, listFullAutoJobs } from './
 import { panelAuth } from './panelAuth.js';
 import { getCodexCircuitStatus } from './codexBridge.js';
 import { buildLocalPanelUrl, resolvePanelAccessInfo } from './panelUrl.js';
+import { createBackup, listBackups, runValidatedGithubBackupPlan } from './backupService.js';
 
 const AI_REASONING_EFFORT_OPTIONS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const AI_PROVIDER_MODEL_MATRIX = Object.freeze({
@@ -47,6 +48,48 @@ function parseBoolean(value, fallback) {
   if (['true', '1', 'yes', 'sim', 'on'].includes(normalized)) return true;
   if (['false', '0', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
   return fallback;
+}
+
+function normalizeCsvList(value, fallback = []) {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
+  }
+  const text = String(value || '').trim();
+  if (!text) return Array.from(new Set((fallback || []).map((item) => String(item || '').trim()).filter(Boolean)));
+  return Array.from(
+    new Set(
+      text
+        .split(/[,\n;]/)
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeBackupSchedulerMode(value, fallback = 'validated_github') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['validated_github', 'data_only'].includes(normalized)) return normalized;
+  return fallback;
+}
+
+function resolveBackupRuntimeSettingsForPanel(currentSettings = {}) {
+  const settings = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
+  return {
+    githubBackupEnabled: parseBoolean(settings.githubBackupEnabled, config.githubBackupEnabled),
+    githubBackupRepo: String(settings.githubBackupRepo || config.githubBackupRepo || '').trim(),
+    githubBackupBranches: normalizeCsvList(settings.githubBackupBranches, config.githubBackupBranches || ['main', 'homologacao']),
+    githubBackupUpdateReadme: parseBoolean(settings.githubBackupUpdateReadme, config.githubBackupUpdateReadme),
+    githubBackupRunTestSuite: parseBoolean(settings.githubBackupRunTestSuite, config.githubBackupRunTestSuite),
+    githubBackupAutoRollback: parseBoolean(settings.githubBackupAutoRollback, config.githubBackupAutoRollback),
+    backupSchedulerMode: normalizeBackupSchedulerMode(settings.backupSchedulerMode, config.backupSchedulerMode || 'validated_github'),
+    backupSchedulerIntervalHours: parseIntSafe(
+      settings.backupSchedulerIntervalHours,
+      config.backupSchedulerIntervalHours || 24,
+      1,
+      168
+    ),
+    githubTokenConfigured: Boolean(String(config.githubBackupToken || '').trim())
+  };
 }
 
 function normalizeModelAlias(providerId, mode, rawValue, runtime = {}) {
@@ -301,10 +344,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
   app.get('/usuarios.html', (req, res) => {
     res.sendFile(resolve(publicDir, 'usuarios.html'));
-  });
-
-  app.get('/multi-grupos.html', (req, res) => {
-    res.sendFile(resolve(publicDir, 'multi-grupos.html'));
   });
 
   app.get('/bot-config-menu.html', (req, res) => {
@@ -1126,6 +1165,108 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     });
 
     res.status(result.ok ? 200 : 400).json(result);
+  });
+
+  app.get('/api/backup/runtime', async (req, res) => {
+    await settingsStore.ensureReady();
+    const runtimeSettings = resolveBackupRuntimeSettingsForPanel(settingsStore.get());
+    const backups = await listBackups();
+    res.json({
+      ok: true,
+      runtime: runtimeSettings,
+      backups
+    });
+  });
+
+  app.put('/api/backup/runtime', async (req, res) => {
+    await settingsStore.ensureReady();
+
+    const baseRuntime = settingsStore.get();
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const actor = panelActorFromRequest(req);
+    const reason = String(payload.reason || 'panel_backup_runtime_update').trim();
+    const patch = {
+      githubBackupEnabled: parseBoolean(payload.githubBackupEnabled, baseRuntime.githubBackupEnabled),
+      githubBackupRepo: String(payload.githubBackupRepo || baseRuntime.githubBackupRepo || '').trim(),
+      githubBackupBranches: normalizeCsvList(payload.githubBackupBranches, baseRuntime.githubBackupBranches || ['main']),
+      githubBackupUpdateReadme: parseBoolean(payload.githubBackupUpdateReadme, baseRuntime.githubBackupUpdateReadme),
+      githubBackupRunTestSuite: parseBoolean(payload.githubBackupRunTestSuite, baseRuntime.githubBackupRunTestSuite),
+      githubBackupAutoRollback: parseBoolean(payload.githubBackupAutoRollback, baseRuntime.githubBackupAutoRollback),
+      backupSchedulerMode: normalizeBackupSchedulerMode(payload.backupSchedulerMode, baseRuntime.backupSchedulerMode || 'validated_github'),
+      backupSchedulerIntervalHours: parseIntSafe(
+        payload.backupSchedulerIntervalHours,
+        baseRuntime.backupSchedulerIntervalHours || 24,
+        1,
+        168
+      )
+    };
+
+    const result = await settingsStore.update(patch, {
+      actor,
+      source: 'web_panel_backup_runtime',
+      reason
+    });
+    const runtimeSettings = resolveBackupRuntimeSettingsForPanel(result.settings || settingsStore.get());
+
+    res.json({
+      ok: true,
+      changed: result.changed,
+      auditId: result.auditId,
+      changedKeys: result.changedKeys,
+      settings: result.settings,
+      runtime: runtimeSettings
+    });
+  });
+
+  app.post('/api/backup/create', async (_req, res) => {
+    const result = await createBackup();
+    const backups = await listBackups();
+    res.status(result.ok ? 200 : 400).json({
+      ok: result.ok,
+      result,
+      backups
+    });
+  });
+
+  app.post('/api/backup/validated-run', async (req, res) => {
+    await settingsStore.ensureReady();
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const baseRuntime = settingsStore.get();
+    const branches = normalizeCsvList(
+      payload.branches,
+      baseRuntime.githubBackupBranches || config.githubBackupBranches || ['main', 'homologacao']
+    );
+
+    const runtimeOverrides = {
+      githubBackupEnabled: parseBoolean(payload.githubBackupEnabled, baseRuntime.githubBackupEnabled),
+      githubBackupRepo: String(payload.githubBackupRepo || baseRuntime.githubBackupRepo || '').trim(),
+      githubBackupBranches: normalizeCsvList(payload.githubBackupBranches, baseRuntime.githubBackupBranches || []),
+      githubBackupUpdateReadme: parseBoolean(payload.githubBackupUpdateReadme, baseRuntime.githubBackupUpdateReadme),
+      githubBackupRunTestSuite: parseBoolean(payload.githubBackupRunTestSuite, baseRuntime.githubBackupRunTestSuite),
+      githubBackupAutoRollback: parseBoolean(payload.githubBackupAutoRollback, baseRuntime.githubBackupAutoRollback),
+      backupSchedulerMode: normalizeBackupSchedulerMode(
+        payload.backupSchedulerMode,
+        baseRuntime.backupSchedulerMode || 'validated_github'
+      ),
+      backupSchedulerIntervalHours: parseIntSafe(
+        payload.backupSchedulerIntervalHours,
+        baseRuntime.backupSchedulerIntervalHours || 24,
+        1,
+        168
+      )
+    };
+
+    const result = await runValidatedGithubBackupPlan({
+      trigger: 'panel_manual',
+      branches,
+      runtimeOverrides
+    });
+    const backups = await listBackups();
+    res.status(result.ok ? 200 : 400).json({
+      ok: result.ok,
+      result,
+      backups
+    });
   });
 
   app.get('/api/media', async (req, res) => {

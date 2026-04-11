@@ -1519,6 +1519,14 @@ const BOT_SETTINGS_ALLOWED_KEYS = new Set([
   'mediaMaxBytes',
   'mediaRetentionDays',
   'mediaAllowedMimePrefixes',
+  'githubBackupEnabled',
+  'githubBackupRepo',
+  'githubBackupBranches',
+  'githubBackupUpdateReadme',
+  'githubBackupRunTestSuite',
+  'githubBackupAutoRollback',
+  'backupSchedulerMode',
+  'backupSchedulerIntervalHours',
   'silentMode'
 ]);
 
@@ -1576,7 +1584,17 @@ const BOT_SETTINGS_KEY_ALIASES = new Map(
     ['modelo agente copilot', 'copilotFullModel'],
     ['modelo full copilot', 'copilotFullModel'],
     ['modelo modo full', 'copilotFullModel'],
-    ['modelo modo agente', 'copilotFullModel']
+    ['modelo modo agente', 'copilotFullModel'],
+    ['backup github ativo', 'githubBackupEnabled'],
+    ['repositorio backup github', 'githubBackupRepo'],
+    ['repositório backup github', 'githubBackupRepo'],
+    ['branches backup github', 'githubBackupBranches'],
+    ['atualizar readme no backup', 'githubBackupUpdateReadme'],
+    ['rodar suite no backup', 'githubBackupRunTestSuite'],
+    ['rodar suíte no backup', 'githubBackupRunTestSuite'],
+    ['auto rollback backup', 'githubBackupAutoRollback'],
+    ['modo agendador backup', 'backupSchedulerMode'],
+    ['intervalo agendador backup', 'backupSchedulerIntervalHours']
   ].map(([alias, key]) => [foldText(alias).replace(/[^a-z0-9]/g, ''), key])
 );
 
@@ -1611,6 +1629,7 @@ function buildRuntimeSettingsSummary(currentSettings = {}, options = {}) {
   const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
   const terminalCommands = Array.isArray(current.terminalAllowlist) ? current.terminalAllowlist.length : 0;
   const mediaMimes = Array.isArray(current.mediaAllowedMimePrefixes) ? current.mediaAllowedMimePrefixes.length : 0;
+  const backupBranches = Array.isArray(current.githubBackupBranches) ? current.githubBackupBranches.join(', ') : '(vazio)';
   const availability = options && typeof options === 'object' ? options.modelAvailability : null;
   const generatedAtText = availability?.generatedAt
     ? new Date(availability.generatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
@@ -1632,6 +1651,13 @@ function buildRuntimeSettingsSummary(currentSettings = {}, options = {}) {
     `- Salvamento de midia: ${current.mediaIngestEnabled ? 'ativo' : 'inativo'}`,
     `- Retencao de midia: ${current.mediaRetentionDays || 0} dia(s)`,
     `- MIMEs permitidos para midia: ${mediaMimes}`,
+    `- Backup GitHub ativo: ${current.githubBackupEnabled ? 'sim' : 'nao'}`,
+    `- Repo backup GitHub: ${current.githubBackupRepo || '(vazio)'}`,
+    `- Branches backup: ${backupBranches}`,
+    `- Atualiza README no backup: ${current.githubBackupUpdateReadme ? 'sim' : 'nao'}`,
+    `- Suite funcional no backup: ${current.githubBackupRunTestSuite ? 'sim' : 'nao'}`,
+    `- Auto rollback no backup: ${current.githubBackupAutoRollback ? 'sim' : 'nao'}`,
+    `- Agendador backup: ${current.backupSchedulerMode || 'validated_github'} / ${current.backupSchedulerIntervalHours || 24}h`,
     '',
     'Modelos conhecidos (nao precisa decorar):',
     '- Copilot: gpt-5-mini, gpt-4.1, gpt-5, claude-sonnet-4.6, claude-3.7-sonnet',
@@ -1667,7 +1693,13 @@ function buildRuntimeSettingsSummary(currentSettings = {}, options = {}) {
     '- configurar bot: modelo fallback=gpt-5.4',
     '- configurar bot: timeout ia=20000',
     '- configurar bot: mencao obrigatoria=true',
-    '- configurar bot: testar modelos'
+    '- configurar bot: testar modelos',
+    '- configurar bot: backup github ativo=true',
+    '- configurar bot: repositorio backup github=italoeteixeira/chatbotgpt',
+    '- configurar bot: branches backup github=main,homologacao',
+    '- configurar bot: atualizar readme no backup=true',
+    '- configurar bot: modo agendador backup=validated_github',
+    '- configurar bot: intervalo agendador backup=24'
   );
 
   return lines.join('\n');
@@ -8330,7 +8362,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
         response:
           `Remetentes autorizados (${allowed.length}):\n${allowed.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
           `\n\nFixos (.env): ${snap.staticAuthorized.length} | Dinamicos (painel/comando): ${snap.dynamicAuthorized.length}` +
-          `\nPainel detalhado: /multi-grupos.html`
+          `\nPainel detalhado: /bot-config-menu.html`
       };
     }
 
@@ -8347,7 +8379,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
         handled: true,
         response:
           `Admins do bot (${admins.length}):\n${admins.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
-          `\n\nPainel detalhado: /multi-grupos.html`
+          `\n\nPainel detalhado: /bot-config-menu.html`
       };
     }
 
@@ -8364,7 +8396,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
         handled: true,
         response:
           `Permissao FULL (${fulls.length}):\n${fulls.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
-          `\n\nPainel detalhado: /multi-grupos.html`
+          `\n\nPainel detalhado: /bot-config-menu.html`
       };
     }
 
@@ -8381,7 +8413,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
         handled: true,
         response: `Privado autorizado (${privateAllowed.length}):\n${privateAllowed
           .map((item, idx) => `${idx + 1}. ${item}`)
-          .join('\n')}\n\nPainel detalhado: /multi-grupos.html`
+          .join('\n')}\n\nPainel detalhado: /bot-config-menu.html`
       };
     }
 
@@ -8585,7 +8617,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
         handled: true,
         response:
           `Multi-Grupo de Resposta (${groups.length} ativo(s)):\n${lines.join('\n')}` +
-          `\n\nPainel detalhado: /multi-grupos.html`
+          `\n\nPainel detalhado: /bot-config-menu.html`
       };
     }
 

@@ -82,7 +82,7 @@ A tela e o menu do bot cobrem as chaves dinamicas principais:
 - `processos/whatsapp_bot_config_menu.html`
 - `public/index.html`
 - `public/processos.html`
-- `public/multi-grupos.html`
+- `public/bot-config-menu.html`
 - `public/usuarios.html`
 - `README.md`
 - `COMANDOS.md`
