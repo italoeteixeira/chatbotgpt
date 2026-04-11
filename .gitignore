@@ -14,6 +14,7 @@ node_modules/
 logs/
 sync/
 .sync_backups/
+backups/
 *.syncbak-*
 
 # Dados locais/runtime (não versionar)
