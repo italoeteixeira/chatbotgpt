@@ -1,0 +1,2409 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Config Bot - Painel Interativo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.96);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #22c55e;
+        --warn: #d29922;
+        --error: #f87171;
+        --surface: #21262d;
+        --surface-2: #2a313c;
+        --wpp-green: #075e54;
+        --wpp-light: #ece5dd;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at top right, rgba(45, 212, 191, 0.08), transparent 35%), var(--bg);
+      }
+
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        padding: 0.55rem 1.1rem;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        font-size: 0.88rem;
+      }
+
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 0.35rem 0.7rem;
+        border-radius: 8px;
+        transition: background 0.15s, color 0.15s;
+      }
+
+      .nav-bar a:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--ink);
+      }
+
+      .nav-bar a.active {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .nav-bar .spacer {
+        flex: 1;
+      }
+
+      .session-tag {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      .page {
+        width: min(1540px, 96vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .hero {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(132deg, rgba(45, 212, 191, 0.13), rgba(56, 189, 248, 0.1));
+        padding: 1.1rem;
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1100px) {
+        .hero-grid {
+          grid-template-columns: 1.2fr 1fr;
+          align-items: center;
+        }
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+      }
+
+      .subtitle {
+        margin-top: 0.5rem;
+        color: var(--muted);
+        max-width: 84ch;
+      }
+
+      .chips {
+        margin-top: 0.9rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 0.32rem 0.65rem;
+        font-size: 0.78rem;
+      }
+
+      .kpis {
+        display: grid;
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .kpi {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(14, 17, 23, 0.6);
+        padding: 0.68rem;
+      }
+
+      .kpi small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.74rem;
+      }
+
+      .kpi strong {
+        display: block;
+        margin-top: 0.18rem;
+        font-size: 0.98rem;
+      }
+
+      .hero-actions {
+        margin-top: 0.6rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .layout {
+        margin-top: 1rem;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1280px) {
+        .layout {
+          grid-template-columns: 460px 1fr;
+          align-items: start;
+        }
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
+        padding: 0.95rem;
+      }
+
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.74rem;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .sim-shell {
+        border: 1px solid #26313a;
+        border-radius: 22px;
+        overflow: hidden;
+        background: #202c33;
+      }
+
+      .sim-header {
+        background: var(--wpp-green);
+        color: #fff;
+        padding: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      .sim-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #25d366;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+
+      .sim-name {
+        font-size: 0.93rem;
+        font-weight: 600;
+      }
+
+      .sim-sub {
+        font-size: 0.73rem;
+        color: #d9f9e5;
+      }
+
+      .sim-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        background: #f0f2f5;
+        border-bottom: 1px solid #d5d8dc;
+        padding: 0.45rem;
+      }
+
+      .sim-tabs button {
+        border: 1px solid #ccd1d6;
+        background: #fff;
+        color: #2d343a;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        font-size: 0.72rem;
+        cursor: pointer;
+      }
+
+      .sim-tabs button.active {
+        background: var(--wpp-green);
+        border-color: var(--wpp-green);
+        color: #fff;
+      }
+
+      .sim-body {
+        background: var(--wpp-light);
+        min-height: 620px;
+        max-height: 620px;
+        overflow: auto;
+        padding: 0.65rem;
+      }
+
+      .bubble {
+        max-width: 98%;
+        border-radius: 10px;
+        padding: 0.58rem 0.66rem;
+        margin-bottom: 0.62rem;
+        font-size: 0.81rem;
+        line-height: 1.4;
+      }
+
+      .bubble.user {
+        margin-left: auto;
+        background: #dcf8c6;
+        color: #0d2618;
+      }
+
+      .bubble.bot {
+        background: #fff;
+        color: #1e2328;
+      }
+
+      .menu-list {
+        margin-top: 0.38rem;
+        display: grid;
+        gap: 0.32rem;
+      }
+
+      .menu-item {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 0.45rem;
+        align-items: center;
+        border: 1px solid #e7eaed;
+        background: #fbfbfc;
+        border-radius: 8px;
+        padding: 0.34rem 0.44rem;
+      }
+
+      .menu-item .idx {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--wpp-green);
+        color: #fff;
+        font-size: 0.7rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .section-grid {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+      }
+
+      .form-row label {
+        color: #5b6672;
+        font-size: 0.74rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid #d2d8de;
+        background: #fff;
+        color: #1f2933;
+        border-radius: 8px;
+        padding: 0.45rem 0.52rem;
+        font-size: 0.79rem;
+        font-family: 'Space Grotesk', sans-serif;
+      }
+
+      textarea {
+        min-height: 74px;
+        resize: vertical;
+      }
+
+      .row-inline {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem;
+      }
+
+      .row-inline-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.4rem;
+      }
+
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.42rem;
+        border: 1px solid #d2d8de;
+        border-radius: 8px;
+        background: #fff;
+        padding: 0.38rem 0.5rem;
+      }
+
+      .toggle input {
+        width: auto;
+      }
+
+      .cta-row {
+        margin-top: 0.35rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .cmd-btn {
+        border: 1px solid #d7dce1;
+        background: #111827;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 0.34rem 0.52rem;
+        font-size: 0.72rem;
+        cursor: pointer;
+      }
+
+      .cmd-btn.secondary {
+        background: #ffffff;
+        color: #111827;
+      }
+
+      .cmd-btn.warn {
+        background: #7f1d1d;
+        border-color: #7f1d1d;
+      }
+
+      .cmd-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .label-muted {
+        color: #66707a;
+        font-size: 0.75rem;
+      }
+
+      .ai-provider-grid {
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .ai-provider-card {
+        border: 1px solid #d7dde4;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 0.55rem 0.6rem;
+      }
+
+      .ai-provider-card.selected {
+        border-color: #2563eb;
+        background: #eff6ff;
+      }
+
+      .ai-provider-card.active-runtime {
+        box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+      }
+
+      .ai-provider-card.unavailable {
+        background: #fff7ed;
+        border-color: #fdba74;
+      }
+
+      .ai-provider-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .ai-provider-meta {
+        display: grid;
+        gap: 0.15rem;
+        color: #5b6672;
+        font-size: 0.74rem;
+      }
+
+      .option-chip-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .option-chip {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1rem;
+        border: 1px solid #d7dde4;
+        border-radius: 10px;
+        background: #fff;
+        color: #1f2933;
+        padding: 0.35rem 0.48rem;
+        font-size: 0.72rem;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .option-chip strong {
+        font-size: 0.73rem;
+      }
+
+      .option-chip small {
+        color: #66707a;
+        font-size: 0.66rem;
+      }
+
+      .option-chip.active {
+        border-color: #2563eb;
+        background: #eff6ff;
+      }
+
+      .option-chip.status-available {
+        border-color: #86efac;
+      }
+
+      .option-chip.status-unavailable,
+      .option-chip.status-missing {
+        border-color: #fdba74;
+        background: #fff7ed;
+      }
+
+      .option-chip.status-unknown {
+        background: #f8fafc;
+      }
+
+      .option-chip.passive {
+        cursor: default;
+      }
+
+      .tag {
+        background: #ecfdf5;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        padding: 0.08rem 0.42rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+      }
+
+      .tag.off {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+      }
+
+      .status-box {
+        border: 1px dashed #d6dce2;
+        border-radius: 8px;
+        padding: 0.45rem;
+        font-size: 0.74rem;
+        color: #33404d;
+        background: #f8fafc;
+        white-space: pre-wrap;
+      }
+
+      .panel-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 980px) {
+        .panel-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .section-title {
+        font-size: 0.86rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.78rem;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 0.4rem 0.32rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      td code {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.73rem;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        padding: 0.1rem 0.4rem;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        border: 1px solid #d7dde4;
+        background: #fff;
+        color: #33404d;
+      }
+
+      .pill.ok {
+        border-color: #22c55e;
+        color: #166534;
+        background: #ecfdf5;
+      }
+
+      .pill.bad {
+        border-color: #ef4444;
+        color: #991b1b;
+        background: #fef2f2;
+      }
+
+      .split-2 {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+      }
+
+      @media (min-width: 900px) {
+        .split-2 {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .function-map {
+        display: grid;
+        gap: 0.6rem;
+      }
+
+      .function-item {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 0.58rem;
+      }
+
+      .function-item strong {
+        display: block;
+        font-size: 0.84rem;
+      }
+
+      .function-item .examples {
+        margin-top: 0.28rem;
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+
+      .toast {
+        position: fixed;
+        right: 1rem;
+        bottom: 1rem;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        padding: 0.55rem 0.75rem;
+        border-radius: 10px;
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+        font-size: 0.78rem;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.2s, transform 0.2s;
+        pointer-events: none;
+        z-index: 60;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 860px) {
+        .nav-bar {
+          padding: 0.45rem 0.58rem;
+        }
+
+        .nav-bar .spacer {
+          display: block;
+          flex-basis: 100%;
+          height: 0;
+          margin: 0;
+          padding: 0;
+        }
+
+        .nav-bar a,
+        .session-tag {
+          font-size: 0.75rem;
+        }
+
+        .page {
+          width: min(100%, 100vw);
+          margin: 0.75rem auto 1.2rem;
+          padding: 0 0.45rem;
+        }
+
+        .sim-body {
+          min-height: 560px;
+          max-height: 560px;
+        }
+
+        .row-inline,
+        .row-inline-3 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
+      <a href="/bot-config-menu.html" class="active">Config Bot</a>
+      <a href="/usuarios.html">Usuarios</a>
+      <span class="spacer"></span>
+      <span class="session-tag" id="sessionText">sessao: carregando</span>
+    </nav>
+
+    <main class="page">
+      <article class="card">
+        <h2>Painel interativo no estilo WhatsApp</h2>
+
+        <div class="sim-shell" style="margin-top: 0.7rem;">
+            <div class="sim-header">
+              <span class="sim-avatar">B</span>
+              <div>
+                <div class="sim-name"># Bot Avisos</div>
+                <div class="sim-sub">configuracao ao vivo</div>
+              </div>
+            </div>
+
+            <div class="sim-tabs" id="simTabs">
+              <button class="active" data-screen="main">Menu</button>
+              <button data-screen="ia">1 IA</button>
+              <button data-screen="resp">2 Respostas</button>
+              <button data-screen="term">3 Terminal</button>
+              <button data-screen="midia">4 Midia</button>
+              <button data-screen="relay">5 Relay</button>
+              <button data-screen="silent">6 Silencioso</button>
+              <button data-screen="audit">7 Auditoria</button>
+              <button data-screen="status">8 Status/Grupo</button>
+              <button data-screen="perm">9 Permissoes</button>
+            </div>
+
+            <div class="sim-body">
+              <section class="screen" data-screen="main">
+                <div class="bubble user mono">@ configurar bot</div>
+                <div class="bubble bot">
+                  <div><strong>Menu de Configuracao do Bot</strong></div>
+                  <div class="label-muted">Escolha uma secao aqui nas abas ou pelo comando: <code class="mono">configurar bot menu 1..9</code></div>
+                  <div class="menu-list" id="menuListMain"></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="@ configurar bot">copiar comando menu</button>
+                    <button class="cmd-btn" data-copy="@ configurar bot menu 1">copiar secao 1</button>
+                    <button class="cmd-btn" data-copy="@ mostrar configuracao bot">copiar resumo</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="ia" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 1</div>
+                <div class="bubble bot">
+                  <strong>Secao 1 - Inteligencia Artificial</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <div class="form-row">
+                      <label for="iaProvider">Provedor ativo</label>
+                      <select id="iaProvider"></select>
+                      <div class="label-muted" id="aiCatalogStatus">Carregando provedores e modelos...</div>
+                    </div>
+
+                    <div class="ai-provider-grid" id="aiProviderCards">
+                      <div class="label-muted">Carregando status dos provedores...</div>
+                    </div>
+
+                    <div class="row-inline">
+                      <div class="form-row">
+                        <label for="copilotModel">Modelo Copilot principal</label>
+                        <input id="copilotModel" type="text" placeholder="gpt-5-mini" />
+                        <div class="option-chip-grid" id="copilotModelOptions"></div>
+                      </div>
+                      <div class="form-row">
+                        <label for="copilotFullModel">Modelo Copilot FULL</label>
+                        <input id="copilotFullModel" type="text" placeholder="gpt-5-mini" />
+                        <div class="option-chip-grid" id="copilotFullModelOptions"></div>
+                      </div>
+                    </div>
+
+                    <div class="row-inline">
+                      <div class="form-row">
+                        <label for="copilotFallbackModel">Fallback Copilot</label>
+                        <input id="copilotFallbackModel" type="text" placeholder="gpt-4.1" />
+                        <div class="option-chip-grid" id="copilotFallbackModelOptions"></div>
+                      </div>
+                      <div class="form-row">
+                        <label for="codexModel">Modelo Codex</label>
+                        <input id="codexModel" type="text" placeholder="gpt-5.4-mini" />
+                        <div class="option-chip-grid" id="codexModelOptions"></div>
+                      </div>
+                    </div>
+
+                    <div class="row-inline">
+                      <div class="form-row">
+                        <label for="codexFallbackModel">Fallback Codex</label>
+                        <input id="codexFallbackModel" type="text" placeholder="gpt-5.4" />
+                        <div class="option-chip-grid" id="codexFallbackModelOptions"></div>
+                      </div>
+                      <div class="form-row">
+                        <label for="codexReasoningEffort">Raciocinio Codex</label>
+                        <select id="codexReasoningEffort"></select>
+                        <div class="option-chip-grid" id="codexReasoningEffortOptions"></div>
+                      </div>
+                    </div>
+
+                    <div class="row-inline-3">
+                      <div class="form-row">
+                        <label for="codexTimeoutMs">Timeout Codex (ms)</label>
+                        <input id="codexTimeoutMs" type="number" min="4000" step="1000" />
+                      </div>
+                      <div class="form-row">
+                        <label for="copilotTimeoutMs">Timeout Copilot (ms)</label>
+                        <input id="copilotTimeoutMs" type="number" min="4000" step="1000" />
+                      </div>
+                      <div class="form-row">
+                        <label for="copilotFullTimeoutMs">Timeout FULL (ms)</label>
+                        <input id="copilotFullTimeoutMs" type="number" min="4000" step="1000" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveIa" type="button">Salvar secao IA</button>
+                    <button class="cmd-btn secondary" id="btnActivateProvider" type="button">Ativar provedor selecionado</button>
+                    <button class="cmd-btn secondary" id="btnTestCopilot" type="button">Testar Copilot</button>
+                    <button class="cmd-btn secondary" id="btnTestCopilotFull" type="button">Testar Copilot FULL</button>
+                    <button class="cmd-btn secondary" id="btnTestCodex" type="button">Testar Codex</button>
+                  </div>
+
+                  <div class="status-box" id="modelTestOutput" style="margin-top: 0.4rem;">Nenhum teste executado ainda.</div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="resp" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 2</div>
+                <div class="bubble bot">
+                  <strong>Secao 2 - Comportamento de respostas</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <label class="toggle">
+                      <input id="requireMention" type="checkbox" />
+                      <span>Mencao obrigatoria para responder</span>
+                    </label>
+
+                    <label class="toggle">
+                      <input id="showThinkingMessage" type="checkbox" />
+                      <span>Mostrar mensagem "Pesquisando..."</span>
+                    </label>
+
+                    <div class="form-row">
+                      <label for="thinkingMessageText">Texto de processamento</label>
+                      <input id="thinkingMessageText" type="text" />
+                    </div>
+
+                    <div class="row-inline">
+                      <div class="form-row">
+                        <label for="maxInputChars">Limite de entrada (chars)</label>
+                        <input id="maxInputChars" type="number" min="0" step="100" />
+                      </div>
+                      <div class="form-row">
+                        <label for="maxOutputChars">Limite de resposta (chars)</label>
+                        <input id="maxOutputChars" type="number" min="0" step="100" />
+                      </div>
+                    </div>
+
+                    <div class="form-row">
+                      <label for="fallbackMessage">Mensagem de fallback</label>
+                      <input id="fallbackMessage" type="text" />
+                    </div>
+
+                    <div class="form-row">
+                      <label for="systemPrompt">Prompt do sistema</label>
+                      <textarea id="systemPrompt"></textarea>
+                    </div>
+                  </div>
+
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveResp" type="button">Salvar secao Respostas</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="term" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 3</div>
+                <div class="bubble bot">
+                  <strong>Secao 3 - Terminal Linux</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <label class="toggle">
+                      <input id="enableTerminalExec" type="checkbox" />
+                      <span>Permitir comandos Linux no bot</span>
+                    </label>
+
+                    <div class="form-row">
+                      <label for="terminalAllowlist">Allowlist (comma ou nova linha)</label>
+                      <textarea id="terminalAllowlist" placeholder="ps, df, free, uptime"></textarea>
+                    </div>
+                  </div>
+
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveTerminal" type="button">Salvar secao Terminal</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="midia" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 4</div>
+                <div class="bubble bot">
+                  <strong>Secao 4 - Midia</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <label class="toggle">
+                      <input id="mediaIngestEnabled" type="checkbox" />
+                      <span>Salvar midia automaticamente ao receber</span>
+                    </label>
+
+                    <div class="row-inline">
+                      <div class="form-row">
+                        <label for="mediaMaxBytes">Tamanho maximo (bytes)</label>
+                        <input id="mediaMaxBytes" type="number" min="1024" step="1024" />
+                      </div>
+                      <div class="form-row">
+                        <label for="mediaRetentionDays">Retencao (dias)</label>
+                        <input id="mediaRetentionDays" type="number" min="1" step="1" />
+                      </div>
+                    </div>
+
+                    <div class="form-row">
+                      <label for="mediaRootDir">Pasta raiz de midia</label>
+                      <input id="mediaRootDir" type="text" placeholder="data/midias" />
+                    </div>
+
+                    <div class="form-row">
+                      <label for="mediaAllowedMimePrefixes">MIMEs permitidos (comma ou nova linha)</label>
+                      <textarea id="mediaAllowedMimePrefixes" placeholder="image/, video/, audio/, application/pdf"></textarea>
+                    </div>
+                  </div>
+
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveMedia" type="button">Salvar secao Midia</button>
+                    <button class="cmd-btn secondary" id="btnReloadMedia" type="button">Atualizar lista de arquivos</button>
+                    <button class="cmd-btn warn" id="btnCleanupMedia" type="button">Limpar midia antiga</button>
+                  </div>
+
+                  <div style="margin-top: 0.5rem; overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Tipo</th>
+                          <th>Arquivo</th>
+                          <th>Tamanho</th>
+                          <th>Acoes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="mediaTableBody">
+                        <tr><td colspan="5" class="label-muted">Carregando...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="relay" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 5</div>
+                <div class="bubble bot">
+                  <strong>Secao 5 - Relay e fluxo FULL</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <div class="form-row">
+                      <label for="relaySenderName">Nome do remetente relay</label>
+                      <input id="relaySenderName" type="text" placeholder="Italo Teixeira" />
+                    </div>
+
+                    <div class="form-row">
+                      <label for="fullAutoDevTimeoutMs">Timeout maximo do FULL (ms)</label>
+                      <input id="fullAutoDevTimeoutMs" type="number" min="0" step="1000" />
+                    </div>
+                  </div>
+
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveRelay" type="button">Salvar secao Relay</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="silent" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 6</div>
+                <div class="bubble bot">
+                  <strong>Secao 6 - Modo silencioso</strong>
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <label class="toggle">
+                      <input id="silentMode" type="checkbox" />
+                      <span>Ativar modo silencioso</span>
+                    </label>
+                    <div class="label-muted">Quando ativo, respostas gerais ficam silenciadas, mas comandos locais continuam.</div>
+                  </div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" id="btnSaveSilent" type="button">Salvar modo silencioso</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="audit" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 7</div>
+                <div class="bubble bot">
+                  <strong>Secao 7 - Auditoria e rollback</strong>
+                  <div class="label-muted" style="margin-top: 0.3rem;">Historico real de alteracoes em settings.</div>
+
+                  <div class="cta-row" style="margin-top: 0.45rem;">
+                    <button class="cmd-btn secondary" id="btnReloadAudit" type="button">Atualizar auditoria</button>
+                  </div>
+
+                  <div style="margin-top: 0.5rem; overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Quando</th>
+                          <th>Actor</th>
+                          <th>Chaves</th>
+                          <th>Acoes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="auditTableBody">
+                        <tr><td colspan="5" class="label-muted">Carregando...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="form-row" style="margin-top: 0.5rem;">
+                    <label for="rollbackId">Rollback manual por ID</label>
+                    <input id="rollbackId" type="text" placeholder="cole o id da auditoria" />
+                  </div>
+                  <div class="cta-row">
+                    <button class="cmd-btn warn" id="btnRollbackById" type="button">Executar rollback</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="status" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 8</div>
+                <div class="bubble bot">
+                  <strong>Secao 8 - Status + Grupo principal (controle real)</strong>
+
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <div class="status-box" id="groupSnapshotText">Carregando informacoes do grupo...</div>
+
+                    <div class="form-row">
+                      <label for="groupSubject">Nome do grupo</label>
+                      <input id="groupSubject" type="text" />
+                    </div>
+                    <div class="cta-row">
+                      <button class="cmd-btn" id="btnSaveGroupSubject" type="button">Atualizar nome do grupo</button>
+                    </div>
+
+                    <div class="form-row">
+                      <label for="groupDescription">Descricao do grupo</label>
+                      <textarea id="groupDescription"></textarea>
+                    </div>
+                    <div class="cta-row">
+                      <button class="cmd-btn" id="btnSaveGroupDescription" type="button">Atualizar descricao</button>
+                    </div>
+
+                    <div class="split-2">
+                      <label class="toggle">
+                        <input id="messagesAdminsOnly" type="checkbox" />
+                        <span>Somente admins enviam mensagens</span>
+                      </label>
+                      <label class="toggle">
+                        <input id="infoAdminsOnly" type="checkbox" />
+                        <span>Somente admins editam info</span>
+                      </label>
+                    </div>
+                    <label class="toggle">
+                      <input id="addMembersAdminsOnly" type="checkbox" />
+                      <span>Somente admins adicionam membros</span>
+                    </label>
+
+                    <div class="cta-row">
+                      <button class="cmd-btn" id="btnApplyGroupFlags" type="button">Aplicar flags do grupo</button>
+                      <button class="cmd-btn secondary" id="btnGetInviteLink" type="button">Atualizar link convite</button>
+                      <button class="cmd-btn secondary" id="btnRefreshInviteLink" type="button">Renovar link convite</button>
+                    </div>
+
+                    <div class="status-box" id="groupActionOutput">Nenhuma acao executada nesta secao.</div>
+
+                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Solicitante</th>
+                            <th>Quando</th>
+                            <th>Acoes</th>
+                          </tr>
+                        </thead>
+                        <tbody id="membershipRequestsBody">
+                          <tr><td colspan="3" class="label-muted">Sem solicitacoes no momento.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="perm" style="display: none;">
+                <div class="bubble user mono">configurar bot menu 9</div>
+                <div class="bubble bot">
+                  <strong>Secao 9 - Permissoes e multi-grupo (completo)</strong>
+
+                  <div class="section-grid" style="margin-top: 0.45rem;">
+                    <div class="status-box" id="multiGroupSummary">Carregando resumo multi-grupo...</div>
+
+                    <div class="form-row">
+                      <label for="routeGroupId">Adicionar/remover grupo manualmente (JID)</label>
+                      <input id="routeGroupId" type="text" placeholder="120363400000000000@g.us" />
+                    </div>
+                    <div class="cta-row">
+                      <button class="cmd-btn secondary" id="btnAddRouteGroup" type="button">Adicionar grupo na rota</button>
+                      <button class="cmd-btn warn" id="btnRemoveRouteGroup" type="button">Remover grupo da rota</button>
+                    </div>
+
+                    <div class="form-row">
+                      <label for="privateRouteNumber">Liberar/bloquear chat privado por numero</label>
+                      <input id="privateRouteNumber" type="text" placeholder="21 97595-6654" />
+                    </div>
+                    <div class="cta-row">
+                      <button class="cmd-btn secondary" id="btnAddPrivateRoute" type="button">Liberar privado</button>
+                      <button class="cmd-btn warn" id="btnRemovePrivateRoute" type="button">Bloquear privado</button>
+                    </div>
+
+                    <div class="cta-row">
+                      <button class="cmd-btn secondary" id="btnSetMentionRequiredOn" type="button">Responder so com @</button>
+                      <button class="cmd-btn secondary" id="btnSetMentionRequiredOff" type="button">Responder sem @</button>
+                    </div>
+
+                    <div class="form-row">
+                      <label for="permNumber">Numero para aplicar permissao</label>
+                      <input id="permNumber" type="text" placeholder="21 97595-6654" />
+                    </div>
+
+                    <div class="split-2">
+                      <label class="toggle"><input id="permCanInteract" type="checkbox" /><span>Pode interagir</span></label>
+                      <label class="toggle"><input id="permIsAdmin" type="checkbox" /><span>Admin do bot</span></label>
+                    </div>
+                    <div class="split-2">
+                      <label class="toggle"><input id="permIsFull" type="checkbox" /><span>FULL (acesso total)</span></label>
+                      <label class="toggle"><input id="permPrivate" type="checkbox" /><span>Privado liberado</span></label>
+                    </div>
+
+                    <div class="cta-row">
+                      <button class="cmd-btn" id="btnApplyPermNumber" type="button">Aplicar no numero</button>
+                      <button class="cmd-btn secondary" id="btnReloadAcl" type="button">Atualizar permissoes</button>
+                    </div>
+
+                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Numero</th>
+                            <th>Interagir</th>
+                            <th>Admin</th>
+                            <th>FULL</th>
+                            <th>Privado</th>
+                            <th>Aplicar</th>
+                          </tr>
+                        </thead>
+                        <tbody id="recentSendersBody">
+                          <tr><td colspan="6" class="label-muted">Carregando remetentes recentes...</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Grupo</th>
+                            <th>Principal</th>
+                            <th>Rota</th>
+                            <th>Req @</th>
+                            <th>Mencao</th>
+                            <th>Sem mencao</th>
+                            <th>Bot admin</th>
+                            <th>Grupo fechado</th>
+                            <th>Acoes</th>
+                          </tr>
+                        </thead>
+                        <tbody id="routingGroupsBody">
+                          <tr><td colspan="9" class="label-muted">Carregando diagnostico de grupos...</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+        </div>
+      </article>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const MENU_ITEMS = [
+        '1. Inteligencia Artificial',
+        '2. Comportamento de respostas',
+        '3. Terminal Linux',
+        '4. Midia',
+        '5. Relay (mensagens privadas)',
+        '6. Modo silencioso',
+        '7. Auditoria e rollback',
+        '8. Controle do grupo principal',
+        '9. Permissoes e multi-grupo'
+      ];
+
+      const state = {
+        settings: {},
+        providers: [],
+        aiOptions: {},
+        aiProbe: {},
+        aiProbeLoading: false,
+        audit: [],
+        accessControl: null,
+        routingDiagnostics: null,
+        groupControl: null,
+        recentSenders: [],
+        mediaItems: []
+      };
+
+      function esc(value) {
+        return String(value || '').replace(/[&<>'"]/g, (c) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        })[c]);
+      }
+
+      function normalizePhone(value) {
+        return String(value || '').replace(/\D/g, '');
+      }
+
+      function listFromText(value) {
+        return String(value || '')
+          .split(/[,\n;]/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function setText(id, value) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = value;
+      }
+
+      function fmtTs(iso) {
+        if (!iso) return '-';
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) return String(iso);
+        return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      }
+
+      function fmtBytes(bytes) {
+        const safe = Number(bytes || 0);
+        if (!Number.isFinite(safe) || safe <= 0) return '0 B';
+        if (safe < 1024) return `${safe} B`;
+        if (safe < 1024 * 1024) return `${(safe / 1024).toFixed(1)} KB`;
+        return `${(safe / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function safeArray(value) {
+        return Array.isArray(value) ? value : [];
+      }
+
+      async function fetchJson(url, options) {
+        const response = await fetch(url, options);
+        let data = {};
+        try {
+          data = await response.json();
+        } catch {
+          data = { ok: false, message: `Resposta invalida para ${url}` };
+        }
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.message || `Falha em ${url}`);
+        }
+        return data;
+      }
+
+      async function fetchMaybe(url, options) {
+        try {
+          return await fetchJson(url, options);
+        } catch (error) {
+          return { ok: false, error: String(error?.message || error) };
+        }
+      }
+
+      function showToast(text) {
+        const el = document.getElementById('toast');
+        el.textContent = text;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 2000);
+      }
+
+      async function copyText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast(`Copiado: ${text}`);
+        } catch {
+          showToast('Nao foi possivel copiar agora.');
+        }
+      }
+
+      function renderMenuList() {
+        const root = document.getElementById('menuListMain');
+        root.innerHTML = MENU_ITEMS.map((item, idx) => `<div class="menu-item"><span class="idx">${idx + 1}</span><div>${esc(item)}</div></div>`).join('');
+      }
+
+      function getSelectedProviderValue() {
+        return String(document.getElementById('iaProvider')?.value || state.settings?.aiProvider || 'codex').trim() || 'codex';
+      }
+
+      function renderSelectOptions(selectId, options, preferredValue) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+
+        const normalizedOptions = safeArray(options);
+        const fallbackOptions = selectId === 'iaProvider'
+          ? [
+            { value: 'codex', label: 'OpenAI Codex CLI | aguardando verificacao' },
+            { value: 'copilot', label: 'GitHub Copilot CLI | aguardando verificacao' }
+          ]
+          : [
+            { value: 'low', label: 'low' },
+            { value: 'medium', label: 'medium' },
+            { value: 'high', label: 'high' },
+            { value: 'xhigh', label: 'xhigh' }
+          ];
+        const finalOptions = normalizedOptions.length ? normalizedOptions : fallbackOptions;
+        const currentValue = String(preferredValue || select.value || '').trim();
+
+        select.innerHTML = finalOptions.map((option) => {
+          const value = String(option?.value || '').trim();
+          let label = String(option?.label || value).trim() || value;
+          if (typeof option?.availableNow !== 'undefined') {
+            if (option.availableNow === true) label = `${label} | DISPONIVEL`;
+            else if (option.availableNow === false) label = `${label} | INDISPONIVEL`;
+            else label = `${label} | AGUARDANDO`;
+          }
+          const disabled = option?.disabled ? ' disabled' : '';
+          return `<option value="${esc(value)}"${disabled}>${esc(label)}</option>`;
+        }).join('');
+
+        const hasCurrentValue = finalOptions.some((option) => String(option?.value || '').trim() === currentValue);
+        if (hasCurrentValue) {
+          select.value = currentValue;
+          return;
+        }
+
+        if (finalOptions.length) {
+          select.value = String(finalOptions[0]?.value || '');
+        }
+      }
+
+      function renderOptionChipGrid(containerId, options, selectedValue, controlId) {
+        const root = document.getElementById(containerId);
+        if (!root) return;
+
+        const items = safeArray(options);
+        if (!items.length) {
+          root.innerHTML = '<span class="label-muted">Sem opcoes carregadas no momento.</span>';
+          return;
+        }
+
+        root.innerHTML = items.map((option) => {
+          const value = String(option?.value || '').trim();
+          const status = String(option?.status || 'unknown').trim() || 'unknown';
+          const isActive = value === String(selectedValue || '').trim();
+          const detail = String(option?.detail || '').trim();
+          const title = detail ? ` title="${esc(detail)}"` : '';
+          const availableNow = typeof option?.availableNow !== 'undefined' ? option.availableNow : null;
+          let smallLabel = String(option?.statusLabel || 'nao testado agora').trim();
+          if (availableNow === true) smallLabel = 'DISPONIVEL';
+          else if (availableNow === false) smallLabel = 'INDISPONIVEL';
+          return `
+            <button
+              class="option-chip status-${esc(status)}${isActive ? ' active' : ''}${availableNow === false ? ' unavailable' : ''}"
+              data-fill-control="${esc(controlId)}"
+              data-option-value="${esc(value)}"
+              type="button"${title}>
+              <strong>${esc(option?.label || value)}</strong>
+              <small>${esc(smallLabel)}</small>
+            </button>
+          `;
+        }).join('');
+      }
+
+      function renderPassiveChipGrid(containerId, options, selectedValue) {
+        const root = document.getElementById(containerId);
+        if (!root) return;
+
+        const items = safeArray(options);
+        if (!items.length) {
+          root.innerHTML = '<span class="label-muted">Sem opcoes carregadas no momento.</span>';
+          return;
+        }
+
+        root.innerHTML = items.map((option) => {
+          const value = String(option?.value || '').trim();
+          const isActive = value === String(selectedValue || '').trim();
+          const availableNow = typeof option?.availableNow !== 'undefined' ? option.availableNow : null;
+          let smallText = option?.selected ? 'selecionado' : 'opcao disponivel';
+          if (availableNow === false) smallText = 'indisponivel no momento';
+          else if (availableNow === true && !option?.selected) smallText = 'opcao disponivel';
+          return `
+            <span class="option-chip passive${isActive ? ' active' : ''}">
+              <strong>${esc(option?.label || value)}</strong>
+              <small>${esc(smallText)}</small>
+            </span>
+          `;
+        }).join('');
+      }
+
+      function renderAiDynamicSelects(settings = {}) {
+        renderSelectOptions('iaProvider', state.aiOptions?.providerOptions, settings.aiProvider || 'codex');
+        renderSelectOptions('codexReasoningEffort', state.aiOptions?.reasoningEfforts, settings.codexReasoningEffort || 'medium');
+      }
+
+      function renderAiPanels() {
+        const selectedProvider = getSelectedProviderValue();
+        const providers = safeArray(state.providers);
+        const providerCards = document.getElementById('aiProviderCards');
+        const statusEl = document.getElementById('aiCatalogStatus');
+        const probeGeneratedAt = state.aiProbe?.generatedAt;
+
+        if (statusEl) {
+          if (state.aiProbeLoading) {
+            statusEl.textContent = 'Carregando disponibilidade real dos provedores e modelos...';
+          } else if (probeGeneratedAt) {
+            statusEl.textContent = `Opcoes carregadas. Ultima validacao real: ${fmtTs(probeGeneratedAt)}${state.aiProbe?.stale ? ' (cache anterior)' : ''}.`;
+          } else {
+            statusEl.textContent = 'Opcoes carregadas. A disponibilidade real ainda esta sendo validada.';
+          }
+        }
+
+        if (providerCards) {
+          if (!providers.length) {
+            providerCards.innerHTML = '<div class="label-muted">Nenhum provedor detectado.</div>';
+          } else {
+            providerCards.innerHTML = providers.map((provider) => {
+              const isSelected = provider.id === selectedProvider;
+              const unavailable = ['missing', 'unavailable'].includes(String(provider.status || ''));
+              return `
+                <article class="ai-provider-card${isSelected ? ' selected' : ''}${provider.active ? ' active-runtime' : ''}${unavailable ? ' unavailable' : ''}">
+                  <div class="ai-provider-head">
+                    <strong>${esc(provider.name || provider.id)}</strong>
+                    ${provider.active ? '<span class="tag">ATIVO</span>' : ''}
+                    ${isSelected ? '<span class="pill ok">SELECIONADO</span>' : ''}
+                    ${provider.availableNow === true
+                      ? '<span class="tag">DISPONIVEL</span>'
+                      : provider.availableNow === false
+                        ? '<span class="tag off">INDISPONIVEL</span>'
+                        : '<span class="pill">AGUARDANDO</span>'}
+                  </div>
+                  <div class="ai-provider-meta">
+                    <div>Status: ${esc(provider.statusLabel || '-')}</div>
+                    <div>Modelo atual: <code>${esc(provider.currentModel || '(automatico)')}</code></div>
+                    ${provider.fullModel ? `<div>Modelo FULL: <code>${esc(provider.fullModel)}</code></div>` : ''}
+                    ${provider.fallbackModel ? `<div>Fallback: <code>${esc(provider.fallbackModel)}</code></div>` : ''}
+                    <div>${esc(provider.statusMessage || provider.source || '-')}</div>
+                  </div>
+                </article>
+              `;
+            }).join('');
+          }
+        }
+
+        const modelFields = state.aiOptions?.modelFields || {};
+        renderOptionChipGrid(
+          'copilotModelOptions',
+          modelFields.copilotModel?.options,
+          document.getElementById('copilotModel')?.value || modelFields.copilotModel?.selectedValue || '',
+          'copilotModel'
+        );
+        renderOptionChipGrid(
+          'copilotFullModelOptions',
+          modelFields.copilotFullModel?.options,
+          document.getElementById('copilotFullModel')?.value || modelFields.copilotFullModel?.selectedValue || '',
+          'copilotFullModel'
+        );
+        renderOptionChipGrid(
+          'copilotFallbackModelOptions',
+          modelFields.copilotFallbackModel?.options,
+          document.getElementById('copilotFallbackModel')?.value || modelFields.copilotFallbackModel?.selectedValue || '',
+          'copilotFallbackModel'
+        );
+        renderOptionChipGrid(
+          'codexModelOptions',
+          modelFields.codexModel?.options,
+          document.getElementById('codexModel')?.value || modelFields.codexModel?.selectedValue || '',
+          'codexModel'
+        );
+        renderOptionChipGrid(
+          'codexFallbackModelOptions',
+          modelFields.codexFallbackModel?.options,
+          document.getElementById('codexFallbackModel')?.value || modelFields.codexFallbackModel?.selectedValue || '',
+          'codexFallbackModel'
+        );
+        renderPassiveChipGrid(
+          'codexReasoningEffortOptions',
+          state.aiOptions?.reasoningEfforts,
+          document.getElementById('codexReasoningEffort')?.value || state.settings?.codexReasoningEffort || 'medium'
+        );
+      }
+
+      function hydrateForms() {
+        const s = state.settings || {};
+
+        const setValue = (id, value) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.value = value == null ? '' : String(value);
+        };
+
+        const setChecked = (id, value) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.checked = Boolean(value);
+        };
+
+        renderAiDynamicSelects(s);
+        setValue('iaProvider', s.aiProvider || 'codex');
+        setValue('copilotModel', s.copilotModel || '');
+        setValue('copilotFullModel', s.copilotFullModel || s.copilotModel || '');
+        setValue('copilotFallbackModel', s.copilotFallbackModel || '');
+        setValue('codexModel', s.codexModel || '');
+        setValue('codexFallbackModel', s.codexFallbackModel || '');
+        setValue('codexReasoningEffort', s.codexReasoningEffort || 'medium');
+        setValue('codexTimeoutMs', s.codexTimeoutMs || 0);
+        setValue('copilotTimeoutMs', s.copilotTimeoutMs || 0);
+        setValue('copilotFullTimeoutMs', s.copilotFullTimeoutMs || 0);
+
+        setChecked('requireMention', s.requireMention);
+        setChecked('showThinkingMessage', s.showThinkingMessage);
+        setValue('thinkingMessageText', s.thinkingMessageText || 'Pesquisando...');
+        setValue('maxInputChars', s.maxInputChars || 0);
+        setValue('maxOutputChars', s.maxOutputChars || 0);
+        setValue('fallbackMessage', s.fallbackMessage || '');
+        setValue('systemPrompt', s.systemPrompt || '');
+
+        setChecked('enableTerminalExec', s.enableTerminalExec);
+        setValue('terminalAllowlist', safeArray(s.terminalAllowlist).join(', '));
+
+        setChecked('mediaIngestEnabled', s.mediaIngestEnabled);
+        setValue('mediaMaxBytes', s.mediaMaxBytes || 0);
+        setValue('mediaRetentionDays', s.mediaRetentionDays || 30);
+        setValue('mediaRootDir', s.mediaRootDir || 'data/midias');
+        setValue('mediaAllowedMimePrefixes', safeArray(s.mediaAllowedMimePrefixes).join(', '));
+
+        setValue('relaySenderName', s.relaySenderName || '');
+        setValue('fullAutoDevTimeoutMs', s.fullAutoDevTimeoutMs || 0);
+        setChecked('silentMode', s.silentMode);
+        renderAiPanels();
+      }
+
+      function renderAuditTable() {
+        const body = document.getElementById('auditTableBody');
+        const items = safeArray(state.audit);
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="5" class="label-muted">Sem auditoria registrada.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = items.slice(0, 20).map((item) => {
+          const keys = safeArray(item.changedKeys).join(', ') || '-';
+          const id = String(item.id || '');
+          return `
+            <tr>
+              <td><code>${esc(id)}</code></td>
+              <td>${esc(fmtTs(item.ts))}</td>
+              <td>${esc(item.actor || '-')}</td>
+              <td>${esc(keys)}</td>
+              <td><button class="cmd-btn secondary" data-rollback-id="${esc(id)}" type="button">Rollback</button></td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderGroupControl() {
+        const group = state.groupControl?.group;
+        const snapshotText = document.getElementById('groupSnapshotText');
+        if (!group) {
+          snapshotText.textContent = 'Grupo principal indisponivel no momento.';
+          document.getElementById('membershipRequestsBody').innerHTML = '<tr><td colspan="3" class="label-muted">Sem dados.</td></tr>';
+          return;
+        }
+
+        snapshotText.textContent = [
+          `Grupo: ${group.subject || '-'}`,
+          `ID: ${group.groupId || '-'}`,
+          `Participantes: ${group.participantsCount || 0}`,
+          `Admins: ${group.adminsCount || 0}`,
+          `Convite: ${group.inviteLink || 'nao disponivel'}`,
+          `Solicitacoes de entrada: ${group.membershipRequestsCount || 0}`
+        ].join('\n');
+
+        document.getElementById('groupSubject').value = group.subject || '';
+        document.getElementById('groupDescription').value = group.description || '';
+        document.getElementById('messagesAdminsOnly').checked = Boolean(group.messagesAdminsOnly);
+        document.getElementById('infoAdminsOnly').checked = Boolean(group.infoAdminsOnly);
+        document.getElementById('addMembersAdminsOnly').checked = Boolean(group.addMembersAdminsOnly);
+
+        const reqBody = document.getElementById('membershipRequestsBody');
+        const requests = safeArray(group.membershipRequests);
+        if (!requests.length) {
+          reqBody.innerHTML = '<tr><td colspan="3" class="label-muted">Sem solicitacoes pendentes.</td></tr>';
+          return;
+        }
+
+        reqBody.innerHTML = requests.map((item) => {
+          const requester = String(item.requester || '');
+          return `
+            <tr>
+              <td><code>${esc(requester)}</code></td>
+              <td>${esc(item.createdAt ? fmtTs(new Date(item.createdAt * 1000).toISOString()) : '-')}</td>
+              <td>
+                <button class="cmd-btn secondary" data-approve-requester="${esc(requester)}" type="button">Aprovar</button>
+                <button class="cmd-btn warn" data-reject-requester="${esc(requester)}" type="button">Rejeitar</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderMultiGroupSummary() {
+        const root = document.getElementById('multiGroupSummary');
+        if (!root) return;
+        const ac = state.accessControl || {};
+        const diag = state.routingDiagnostics || {};
+        const counts = diag.counts || {};
+        const routing = diag.routing || {};
+
+        root.textContent = [
+          `Status WhatsApp: ${diag.runtimeStatus || '-'}`,
+          `Modo de mencao: ${diag.requireMention ? 'somente com @' : 'com ou sem @'}`,
+          `Grupos conhecidos: ${counts.totalKnownGroups || 0}`,
+          `Grupos na rota: ${counts.groupsInRouting || 0}`,
+          `Respondendo quando mencionado: ${counts.groupsRespondingWhenMentioned || 0}`,
+          `Respondendo sem mencao: ${counts.groupsRespondingWithoutMention || 0}`,
+          `Privado liberado: ${safeArray(ac.effectivePrivate).length}`,
+          `Autorizados: ${safeArray(ac.effectiveAuthorized).length} | Admins: ${safeArray(ac.effectiveAdmins).length} | FULL: ${safeArray(ac.effectiveFulls).length}`,
+          `Grupos de resposta efetivos: ${safeArray(routing.effectiveResponseGroups).length}`
+        ].join('\n');
+      }
+
+      function renderRecentSenders() {
+        const body = document.getElementById('recentSendersBody');
+        const items = safeArray(state.recentSenders);
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="6" class="label-muted">Sem remetentes recentes para este grupo.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = items.slice(0, 80).map((item, index) => {
+          const number = String(item.number || '');
+          const suffix = String(index);
+          return `
+            <tr>
+              <td>
+                <div><code>${esc(number)}</code></div>
+                <div class="label-muted">msgs: ${item.messages || 0} | ultimo: ${esc(fmtTs(item.lastAt))}</div>
+              </td>
+              <td><input id="row-auth-${suffix}" type="checkbox" ${item.flags?.authorized ? 'checked' : ''} /></td>
+              <td><input id="row-admin-${suffix}" type="checkbox" ${item.flags?.admin ? 'checked' : ''} /></td>
+              <td><input id="row-full-${suffix}" type="checkbox" ${item.flags?.full ? 'checked' : ''} /></td>
+              <td><input id="row-private-${suffix}" type="checkbox" ${item.flags?.private ? 'checked' : ''} /></td>
+              <td>
+                <button class="cmd-btn secondary" data-apply-row="${esc(number)}" data-row-index="${suffix}" type="button">Aplicar</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderRoutingGroups() {
+        const body = document.getElementById('routingGroupsBody');
+        const groups = safeArray(state.routingDiagnostics?.groups);
+        const requireMention = Boolean(state.settings?.requireMention);
+
+        if (!groups.length) {
+          body.innerHTML = '<tr><td colspan="9" class="label-muted">Sem grupos conhecidos no diagnostico.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = groups.map((group) => {
+          const flags = group.flags || {};
+          const groupId = String(group.groupId || '');
+          const inRouting = Boolean(flags.inRouting);
+          const canMention = Boolean(flags.canRespondWhenMentioned);
+          const canNoMention = Boolean(flags.canRespondWithoutMention);
+          const primary = Boolean(flags.isPrimary);
+
+          return `
+            <tr>
+              <td>
+                <div><strong>${esc(group.subject || 'Grupo sem nome')}</strong></div>
+                <div class="label-muted mono">${esc(groupId)}</div>
+                <div class="label-muted">${esc(group.responseReason || '-')}</div>
+              </td>
+              <td>${primary ? '<span class="pill ok">SIM</span>' : '<span class="pill bad">NAO</span>'}</td>
+              <td>${inRouting ? '<span class="pill ok">ON</span>' : '<span class="pill bad">OFF</span>'}</td>
+              <td>${flags.requireMention ? '<span class="pill bad">SIM</span>' : '<span class="pill ok">NAO</span>'}</td>
+              <td>${canMention ? '<span class="pill ok">SIM</span>' : '<span class="pill bad">NAO</span>'}</td>
+              <td>${canNoMention ? '<span class="pill ok">SIM</span>' : `<span class="pill ${requireMention ? 'bad' : 'ok'}">${requireMention ? 'REQ @' : 'NAO'}</span>`}</td>
+              <td>${flags.botIsAdmin ? '<span class="pill ok">SIM</span>' : '<span class="pill bad">NAO</span>'}</td>
+              <td>${flags.messagesAdminsOnly ? '<span class="pill bad">SIM</span>' : '<span class="pill ok">NAO</span>'}</td>
+              <td>
+                ${primary ? '<span class="label-muted">Principal</span>' : (inRouting
+                  ? `<button class="cmd-btn warn" data-remove-group="${esc(groupId)}" type="button">Remover rota</button>`
+                  : `<button class="cmd-btn secondary" data-add-group="${esc(groupId)}" type="button">Adicionar rota</button>`)}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function renderMediaTable() {
+        const body = document.getElementById('mediaTableBody');
+        const items = safeArray(state.mediaItems);
+        if (!items.length) {
+          body.innerHTML = '<tr><td colspan="5" class="label-muted">Nenhum arquivo listado para este grupo.</td></tr>';
+          return;
+        }
+
+        body.innerHTML = items.map((item) => {
+          const id = String(item.id || '');
+          const download = `/api/media/${encodeURIComponent(id)}/download`;
+          return `
+            <tr>
+              <td><code>${esc(id)}</code></td>
+              <td>${esc(item.mediaType || '-')}</td>
+              <td>${esc(item.fileName || '-')}</td>
+              <td>${esc(fmtBytes(item.sizeBytes))}</td>
+              <td>
+                <a class="cmd-btn secondary" href="${download}" target="_blank" rel="noopener">Baixar</a>
+                <button class="cmd-btn secondary" data-toggle-protect="${esc(id)}" data-protected="${item.protected ? '1' : '0'}" type="button">${item.protected ? 'Desproteger' : 'Proteger'}</button>
+                <button class="cmd-btn warn" data-delete-media="${esc(id)}" type="button">Apagar</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      function applyAllRenders() {
+        hydrateForms();
+        renderAuditTable();
+        renderGroupControl();
+        renderMultiGroupSummary();
+        renderRecentSenders();
+        renderRoutingGroups();
+        renderMediaTable();
+      }
+
+      function setupTabs() {
+        const tabs = Array.from(document.querySelectorAll('#simTabs button'));
+        const screens = Array.from(document.querySelectorAll('.screen'));
+
+        const open = (screenName) => {
+          tabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.screen === screenName));
+          screens.forEach((screen) => {
+            screen.style.display = screen.dataset.screen === screenName ? 'block' : 'none';
+          });
+        };
+
+        tabs.forEach((btn) => btn.addEventListener('click', () => open(btn.dataset.screen)));
+      }
+
+      async function loadSession() {
+        const data = await fetchMaybe('/api/panel-auth/me');
+        if (data.ok) {
+          setText('sessionText', `sessao: ${data.user?.username || 'admin'}`);
+        } else {
+          setText('sessionText', 'sessao: indisponivel');
+        }
+      }
+
+      async function loadMediaList() {
+        const groupId = state.groupControl?.group?.groupId || '';
+        const query = groupId ? `?limit=20&groupId=${encodeURIComponent(groupId)}` : '?limit=20';
+        const mediaData = await fetchMaybe(`/api/media${query}`);
+        state.mediaItems = mediaData.ok ? safeArray(mediaData.items) : [];
+        renderMediaTable();
+      }
+
+      async function loadAll() {
+        const [
+          settingsData,
+          providersData,
+          auditData,
+          aclData,
+          routingData,
+          groupData,
+          recentSendersData
+        ] = await Promise.all([
+          fetchMaybe('/api/settings'),
+          fetchMaybe('/api/ai-providers'),
+          fetchMaybe('/api/settings/audit?limit=30'),
+          fetchMaybe('/api/access-control'),
+          fetchMaybe('/api/response-routing/diagnostics'),
+          fetchMaybe('/api/group/control?includeInvite=true&includeRequests=true'),
+          fetchMaybe('/api/access-control/recent-senders?limit=120')
+        ]);
+
+        state.settings = settingsData.ok ? settingsData.settings || {} : {};
+        state.providers = providersData.ok ? providersData.providers || [] : [];
+        state.aiOptions = providersData.ok ? providersData.options || {} : {};
+        state.aiProbe = providersData.ok ? providersData.probe || {} : {};
+        state.audit = auditData.ok ? auditData.items || [] : [];
+        state.accessControl = aclData.ok ? aclData.accessControl || null : null;
+        state.routingDiagnostics = routingData.ok ? routingData.diagnostics || null : null;
+        state.groupControl = groupData.ok ? groupData : null;
+        state.recentSenders = recentSendersData.ok ? recentSendersData.items || [] : [];
+
+        await loadMediaList();
+        applyAllRenders();
+      }
+
+      async function refreshAiOptions({ force = false, silent = false } = {}) {
+        state.aiProbeLoading = true;
+        if (!silent) renderAiPanels();
+
+        const query = force ? '/api/ai-providers?probe=1&refresh=1' : '/api/ai-providers?probe=1';
+        const data = await fetchMaybe(query);
+
+        state.aiProbeLoading = false;
+        if (!data.ok) {
+          renderAiPanels();
+          if (!silent) showToast(`Falha ao validar disponibilidade da IA: ${data.error || 'erro desconhecido'}`);
+          return;
+        }
+
+        state.providers = data.providers || [];
+        state.aiOptions = data.options || {};
+        state.aiProbe = data.probe || {};
+        hydrateForms();
+      }
+
+      async function updateSettings(patch, reason) {
+        const payload = {
+          ...(patch || {}),
+          reason: reason || 'bot_config_menu_html'
+        };
+        const data = await fetchJson('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        state.settings = data.settings || state.settings;
+        showToast('Configuracao salva com sucesso.');
+      }
+
+      async function runProviderTest(provider, mode, model) {
+        const payload = {
+          provider,
+          mode: mode || 'normal'
+        };
+        if (model) payload.model = model;
+
+        const data = await fetchJson('/api/ai-providers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const out = [
+          `provider: ${provider}`,
+          `mode: ${mode || 'normal'}`,
+          `modelo efetivo: ${data.model || '-'}`,
+          `tempo: ${data.elapsedMs || 0} ms`,
+          `saida: ${data.output || data.message || '(sem saida)'}`
+        ].join('\n');
+        setText('modelTestOutput', out);
+        showToast(`Teste ${provider} concluido.`);
+      }
+
+      async function activateProvider(provider) {
+        try {
+          const data = await fetchJson('/api/ai-providers/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider })
+          });
+          if (!data || !data.ok) {
+            showToast(`Falha ao ativar provedor: ${data?.message || 'erro desconhecido'}`, 'error');
+            return;
+          }
+          showToast(`Provedor ativo: ${provider}`);
+          // Re-fetch provider list and probe data, update forms
+          await refreshAiOptions({ force: true, silent: true });
+          await loadAll();
+        } catch (err) {
+          showToast(`Erro ao ativar provedor: ${String(err?.message || err)}`, 'error');
+        }
+      }
+
+      async function runGroupAction(action, payload) {
+        const data = await fetchJson('/api/group/control/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, ...(payload || {}) })
+        });
+        setText('groupActionOutput', data.detail || 'Acao executada com sucesso.');
+      }
+
+      async function applyPermissionForNumber(number, desiredFlags) {
+        const normalized = normalizePhone(number);
+        if (!normalized) throw new Error('Numero invalido.');
+
+        const ac = state.accessControl || {};
+        const authSet = new Set(safeArray(ac.effectiveAuthorized));
+        const adminSet = new Set(safeArray(ac.effectiveAdmins));
+        const fullSet = new Set(safeArray(ac.effectiveFulls));
+        const privateSet = new Set(safeArray(ac.effectivePrivate));
+
+        const calls = [];
+        const ensure = (want, has, addUrl, removeUrl) => {
+          if (want && !has) {
+            calls.push({ method: 'POST', url: addUrl, body: { number: normalized } });
+          } else if (!want && has) {
+            calls.push({ method: 'DELETE', url: removeUrl });
+          }
+        };
+
+        ensure(Boolean(desiredFlags.interact), authSet.has(normalized), '/api/access-control/authorized', `/api/access-control/authorized/${normalized}`);
+        ensure(Boolean(desiredFlags.admin), adminSet.has(normalized), '/api/access-control/admins', `/api/access-control/admins/${normalized}`);
+        ensure(Boolean(desiredFlags.full), fullSet.has(normalized), '/api/access-control/full', `/api/access-control/full/${normalized}`);
+        ensure(Boolean(desiredFlags.private), privateSet.has(normalized), '/api/response-routing/private', `/api/response-routing/private/${normalized}`);
+
+        for (const call of calls) {
+          await fetchJson(call.url, {
+            method: call.method,
+            headers: { 'Content-Type': 'application/json' },
+            body: call.body ? JSON.stringify(call.body) : undefined
+          });
+        }
+
+        if (!calls.length) showToast('Nenhuma alteracao necessaria para esse numero.');
+        else showToast(`Permissoes aplicadas para ${normalized}.`);
+      }
+
+      function bindCopyButtons() {
+        document.addEventListener('click', async (event) => {
+          const btn = event.target.closest('[data-copy]');
+          if (!btn) return;
+          await copyText(btn.getAttribute('data-copy') || '');
+        });
+      }
+
+      function bindIaButtons() {
+        document.addEventListener('click', (event) => {
+          const fillBtn = event.target.closest('[data-fill-control]');
+          if (!fillBtn) return;
+
+          const controlId = fillBtn.getAttribute('data-fill-control') || '';
+          const nextValue = fillBtn.getAttribute('data-option-value') || '';
+          const control = document.getElementById(controlId);
+          if (!control) return;
+
+          control.value = nextValue;
+          renderAiPanels();
+        });
+
+        ['iaProvider', 'copilotModel', 'copilotFullModel', 'copilotFallbackModel', 'codexModel', 'codexFallbackModel', 'codexReasoningEffort']
+          .forEach((id) => {
+            const control = document.getElementById(id);
+            if (!control) return;
+            control.addEventListener('change', renderAiPanels);
+            control.addEventListener('input', renderAiPanels);
+          });
+
+        // Auto-activate when selecting a provider so the UI reflects runtime active provider immediately
+        (function bindIaProviderAutoActivate() {
+          const iaSelect = document.getElementById('iaProvider');
+          if (!iaSelect) return;
+          iaSelect.addEventListener('change', async () => {
+            const provider = iaSelect.value;
+            try {
+              await activateProvider(provider);
+            } catch (err) {
+              showToast(`Erro ao ativar provedor: ${String(err?.message || err)}`, 'error');
+            }
+          });
+        }());
+
+        document.getElementById('btnSaveIa').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              aiProvider: document.getElementById('iaProvider').value,
+              copilotModel: document.getElementById('copilotModel').value.trim(),
+              copilotFullModel: document.getElementById('copilotFullModel').value.trim(),
+              copilotFallbackModel: document.getElementById('copilotFallbackModel').value.trim(),
+              codexModel: document.getElementById('codexModel').value.trim(),
+              codexFallbackModel: document.getElementById('codexFallbackModel').value.trim(),
+              codexReasoningEffort: document.getElementById('codexReasoningEffort').value,
+              codexTimeoutMs: Number(document.getElementById('codexTimeoutMs').value || 0),
+              copilotTimeoutMs: Number(document.getElementById('copilotTimeoutMs').value || 0),
+              copilotFullTimeoutMs: Number(document.getElementById('copilotFullTimeoutMs').value || 0)
+            },
+            'menu_html_secao_ia'
+          );
+          await loadAll();
+          await refreshAiOptions({ force: true, silent: true });
+        });
+
+        document.getElementById('btnActivateProvider').addEventListener('click', async () => {
+          const provider = document.getElementById('iaProvider').value;
+          await activateProvider(provider);
+        });
+
+        document.getElementById('btnTestCopilot').addEventListener('click', async () => {
+          await runProviderTest('copilot', 'normal', document.getElementById('copilotModel').value.trim());
+          await refreshAiOptions({ force: true, silent: true });
+        });
+
+        document.getElementById('btnTestCopilotFull').addEventListener('click', async () => {
+          await runProviderTest('copilot', 'full', document.getElementById('copilotFullModel').value.trim());
+          await refreshAiOptions({ force: true, silent: true });
+        });
+
+        document.getElementById('btnTestCodex').addEventListener('click', async () => {
+          await runProviderTest('codex', 'normal', document.getElementById('codexModel').value.trim());
+          await refreshAiOptions({ force: true, silent: true });
+        });
+      }
+
+      function bindSettingsButtons() {
+        document.getElementById('btnSaveResp').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              requireMention: document.getElementById('requireMention').checked,
+              showThinkingMessage: document.getElementById('showThinkingMessage').checked,
+              thinkingMessageText: document.getElementById('thinkingMessageText').value.trim(),
+              maxInputChars: Number(document.getElementById('maxInputChars').value || 0),
+              maxOutputChars: Number(document.getElementById('maxOutputChars').value || 0),
+              fallbackMessage: document.getElementById('fallbackMessage').value.trim(),
+              systemPrompt: document.getElementById('systemPrompt').value
+            },
+            'menu_html_secao_respostas'
+          );
+          await loadAll();
+        });
+
+        document.getElementById('btnSaveTerminal').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              enableTerminalExec: document.getElementById('enableTerminalExec').checked,
+              terminalAllowlist: listFromText(document.getElementById('terminalAllowlist').value)
+            },
+            'menu_html_secao_terminal'
+          );
+          await loadAll();
+        });
+
+        document.getElementById('btnSaveMedia').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              mediaIngestEnabled: document.getElementById('mediaIngestEnabled').checked,
+              mediaMaxBytes: Number(document.getElementById('mediaMaxBytes').value || 0),
+              mediaRetentionDays: Number(document.getElementById('mediaRetentionDays').value || 0),
+              mediaRootDir: document.getElementById('mediaRootDir').value.trim(),
+              mediaAllowedMimePrefixes: listFromText(document.getElementById('mediaAllowedMimePrefixes').value)
+            },
+            'menu_html_secao_midia'
+          );
+          await loadAll();
+        });
+
+        document.getElementById('btnSaveRelay').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              relaySenderName: document.getElementById('relaySenderName').value.trim(),
+              fullAutoDevTimeoutMs: Number(document.getElementById('fullAutoDevTimeoutMs').value || 0)
+            },
+            'menu_html_secao_relay'
+          );
+          await loadAll();
+        });
+
+        document.getElementById('btnSaveSilent').addEventListener('click', async () => {
+          await updateSettings(
+            {
+              silentMode: document.getElementById('silentMode').checked
+            },
+            'menu_html_secao_silencioso'
+          );
+          await loadAll();
+        });
+      }
+
+      function bindAuditButtons() {
+        document.getElementById('btnReloadAudit').addEventListener('click', async () => {
+          const auditData = await fetchMaybe('/api/settings/audit?limit=30');
+          state.audit = auditData.ok ? auditData.items || [] : [];
+          renderAuditTable();
+          showToast('Auditoria atualizada.');
+        });
+
+        document.getElementById('btnRollbackById').addEventListener('click', async () => {
+          const id = document.getElementById('rollbackId').value.trim();
+          if (!id) {
+            showToast('Informe o id de auditoria para rollback.');
+            return;
+          }
+          const data = await fetchJson(`/api/settings/rollback/${encodeURIComponent(id)}`, { method: 'POST' });
+          showToast(data.message || 'Rollback aplicado.');
+          await loadAll();
+        });
+
+        document.addEventListener('click', async (event) => {
+          const rollbackBtn = event.target.closest('[data-rollback-id]');
+          if (!rollbackBtn) return;
+          const id = rollbackBtn.getAttribute('data-rollback-id') || '';
+          if (!id) return;
+          const confirmed = confirm(`Aplicar rollback para auditoria ${id}?`);
+          if (!confirmed) return;
+          const data = await fetchJson(`/api/settings/rollback/${encodeURIComponent(id)}`, { method: 'POST' });
+          showToast(data.message || 'Rollback aplicado.');
+          await loadAll();
+        });
+      }
+
+      function bindGroupButtons() {
+        document.getElementById('btnSaveGroupSubject').addEventListener('click', async () => {
+          await runGroupAction('set_subject', { subject: document.getElementById('groupSubject').value.trim() });
+          await loadAll();
+        });
+
+        document.getElementById('btnSaveGroupDescription').addEventListener('click', async () => {
+          await runGroupAction('set_description', { description: document.getElementById('groupDescription').value });
+          await loadAll();
+        });
+
+        document.getElementById('btnApplyGroupFlags').addEventListener('click', async () => {
+          const messagesAdminsOnly = document.getElementById('messagesAdminsOnly').checked;
+          const infoAdminsOnly = document.getElementById('infoAdminsOnly').checked;
+          const addMembersAdminsOnly = document.getElementById('addMembersAdminsOnly').checked;
+
+          await runGroupAction('set_messages_admins_only', { value: messagesAdminsOnly });
+          await runGroupAction('set_info_admins_only', { value: infoAdminsOnly });
+          await runGroupAction('set_add_members_admins_only', { value: addMembersAdminsOnly });
+          await loadAll();
+        });
+
+        document.getElementById('btnGetInviteLink').addEventListener('click', async () => {
+          await runGroupAction('get_invite_link', {});
+          await loadAll();
+        });
+
+        document.getElementById('btnRefreshInviteLink').addEventListener('click', async () => {
+          const confirmed = confirm('Renovar o link atual de convite do grupo?');
+          if (!confirmed) return;
+          await runGroupAction('refresh_invite_link', {});
+          await loadAll();
+        });
+
+        document.addEventListener('click', async (event) => {
+          const approve = event.target.closest('[data-approve-requester]');
+          if (approve) {
+            const requester = approve.getAttribute('data-approve-requester') || '';
+            await runGroupAction('approve_membership_requests', { requesterIds: [requester] });
+            await loadAll();
+            return;
+          }
+          const reject = event.target.closest('[data-reject-requester]');
+          if (reject) {
+            const requester = reject.getAttribute('data-reject-requester') || '';
+            await runGroupAction('reject_membership_requests', { requesterIds: [requester] });
+            await loadAll();
+          }
+        });
+      }
+
+      function bindPermissionButtons() {
+        document.getElementById('btnApplyPermNumber').addEventListener('click', async () => {
+          const number = document.getElementById('permNumber').value;
+          const desired = {
+            interact: document.getElementById('permCanInteract').checked,
+            admin: document.getElementById('permIsAdmin').checked,
+            full: document.getElementById('permIsFull').checked,
+            private: document.getElementById('permPrivate').checked
+          };
+
+          await applyPermissionForNumber(number, desired);
+          await loadAll();
+        });
+
+        document.getElementById('btnReloadAcl').addEventListener('click', async () => {
+          await loadAll();
+          showToast('Permissoes atualizadas.');
+        });
+
+        document.getElementById('btnAddRouteGroup').addEventListener('click', async () => {
+          const groupId = String(document.getElementById('routeGroupId').value || '').trim();
+          if (!groupId) {
+            showToast('Informe um grupo para adicionar na rota.');
+            return;
+          }
+          await fetchJson('/api/response-routing/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId })
+          });
+          showToast('Grupo adicionado ao mapa de resposta.');
+          await loadAll();
+        });
+
+        document.getElementById('btnRemoveRouteGroup').addEventListener('click', async () => {
+          const groupId = String(document.getElementById('routeGroupId').value || '').trim();
+          if (!groupId) {
+            showToast('Informe um grupo para remover da rota.');
+            return;
+          }
+          await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+            method: 'DELETE'
+          });
+          showToast('Grupo removido do mapa de resposta.');
+          await loadAll();
+        });
+
+        document.getElementById('btnAddPrivateRoute').addEventListener('click', async () => {
+          const number = normalizePhone(document.getElementById('privateRouteNumber').value);
+          if (!number) {
+            showToast('Informe um numero valido para liberar privado.');
+            return;
+          }
+          await fetchJson('/api/response-routing/private', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number })
+          });
+          showToast(`Privado liberado para ${number}.`);
+          await loadAll();
+        });
+
+        document.getElementById('btnRemovePrivateRoute').addEventListener('click', async () => {
+          const number = normalizePhone(document.getElementById('privateRouteNumber').value);
+          if (!number) {
+            showToast('Informe um numero valido para bloquear privado.');
+            return;
+          }
+          await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
+            method: 'DELETE'
+          });
+          showToast(`Privado bloqueado para ${number}.`);
+          await loadAll();
+        });
+
+        document.getElementById('btnSetMentionRequiredOn').addEventListener('click', async () => {
+          await updateSettings({ requireMention: true }, 'menu_html_modo_mencao_on');
+          await loadAll();
+          showToast('Modo atualizado: responder so com mencao.');
+        });
+
+        document.getElementById('btnSetMentionRequiredOff').addEventListener('click', async () => {
+          await updateSettings({ requireMention: false }, 'menu_html_modo_mencao_off');
+          await loadAll();
+          showToast('Modo atualizado: responder com ou sem mencao.');
+        });
+
+        document.addEventListener('click', async (event) => {
+          const applyRow = event.target.closest('[data-apply-row]');
+          if (applyRow) {
+            const number = applyRow.getAttribute('data-apply-row') || '';
+            const idx = applyRow.getAttribute('data-row-index') || '';
+            const desired = {
+              interact: Boolean(document.getElementById(`row-auth-${idx}`)?.checked),
+              admin: Boolean(document.getElementById(`row-admin-${idx}`)?.checked),
+              full: Boolean(document.getElementById(`row-full-${idx}`)?.checked),
+              private: Boolean(document.getElementById(`row-private-${idx}`)?.checked)
+            };
+            await applyPermissionForNumber(number, desired);
+            await loadAll();
+            return;
+          }
+
+          const addGroupBtn = event.target.closest('[data-add-group]');
+          if (addGroupBtn) {
+            const groupId = addGroupBtn.getAttribute('data-add-group') || '';
+            await fetchJson('/api/response-routing/groups', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groupId })
+            });
+            showToast('Grupo adicionado ao mapa de resposta.');
+            await loadAll();
+            return;
+          }
+
+          const removeGroupBtn = event.target.closest('[data-remove-group]');
+          if (removeGroupBtn) {
+            const groupId = removeGroupBtn.getAttribute('data-remove-group') || '';
+            await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+              method: 'DELETE'
+            });
+            showToast('Grupo removido do mapa de resposta.');
+            await loadAll();
+          }
+        });
+      }
+
+      function bindMediaButtons() {
+        document.getElementById('btnReloadMedia').addEventListener('click', async () => {
+          await loadMediaList();
+          showToast('Lista de midia atualizada.');
+        });
+
+        document.getElementById('btnCleanupMedia').addEventListener('click', async () => {
+          const days = Number(prompt('Limpar arquivos com mais de quantos dias?', String(state.settings?.mediaRetentionDays || 30)) || 0);
+          if (!Number.isFinite(days) || days <= 0) {
+            showToast('Operacao cancelada.');
+            return;
+          }
+          const data = await fetchJson('/api/media/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ days })
+          });
+          showToast(`Cleanup concluido: ${data.deleted || data.removed || 0} item(ns).`);
+          await loadAll();
+        });
+
+        document.addEventListener('click', async (event) => {
+          const deleteBtn = event.target.closest('[data-delete-media]');
+          if (deleteBtn) {
+            const id = deleteBtn.getAttribute('data-delete-media') || '';
+            const confirmed = confirm(`Apagar arquivo ${id}?`);
+            if (!confirmed) return;
+            await fetchJson(`/api/media/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            showToast('Arquivo removido.');
+            await loadMediaList();
+            return;
+          }
+
+          const protectBtn = event.target.closest('[data-toggle-protect]');
+          if (protectBtn) {
+            const id = protectBtn.getAttribute('data-toggle-protect') || '';
+            const isProtected = protectBtn.getAttribute('data-protected') === '1';
+            let payload = { protected: !isProtected };
+            if (!isProtected) {
+              const password = prompt('Defina a senha para proteger o arquivo:');
+              if (!password) {
+                showToast('Senha obrigatoria para proteger arquivo.');
+                return;
+              }
+              payload.password = password;
+            } else {
+              const password = prompt('Senha atual para remover protecao:');
+              if (!password) {
+                showToast('Senha obrigatoria para remover protecao.');
+                return;
+              }
+              payload.password = password;
+              payload.clearPassword = true;
+            }
+
+            await fetchJson(`/api/media/${encodeURIComponent(id)}/protect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            showToast(isProtected ? 'Protecao removida.' : 'Arquivo protegido com senha.');
+            await loadMediaList();
+          }
+        });
+      }
+
+      async function init() {
+        renderMenuList();
+        setupTabs();
+        bindCopyButtons();
+        bindIaButtons();
+        bindSettingsButtons();
+        bindAuditButtons();
+        bindGroupButtons();
+        bindPermissionButtons();
+        bindMediaButtons();
+
+        await loadSession();
+        await loadAll();
+        void refreshAiOptions({ force: false, silent: true });
+      }
+
+      init().catch((error) => {
+        showToast(`Falha ao iniciar painel: ${error?.message || error}`);
+      });
+    </script>
+  </body>
+</html>

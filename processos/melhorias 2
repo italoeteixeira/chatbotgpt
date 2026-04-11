@@ -1,0 +1,374 @@
+Resumão consolidado do projeto — Bot WhatsApp + Portal Web
+Visão geral
+
+O projeto já está em um estágio avançado e funcional. Ele não é mais um “bot simples de respostas”, e sim uma plataforma operacional com estes blocos já existentes:
+
+bot de WhatsApp com resposta por IA
+troca de provider entre Codex e Copilot
+controle por grupo, ACL e níveis de acesso
+comandos administrativos
+agenda, lembretes, notas e histórico
+relay de mensagens privadas
+ingestão de mídia
+painel web com autenticação, tema escuro e SSE
+modo FULL para desenvolvimento/automações
+trilha de auditoria e rollback em partes críticas
+operações Linux controladas
+melhorias recentes de hardening e confiabilidade.
+
+A conclusão central continua a mesma, mas agora ficou ainda mais evidente: o sistema não precisa só de novos comandos; ele precisa amadurecer como produto e como plataforma de operação. Isso se divide em três frentes:
+
+Portal web como centro real de controle
+Bot com memória útil, resumos, aprovações e fluxos mais inteligentes
+Persistência, observabilidade e governança mais maduras.
+Diagnóstico consolidado
+O que já está forte
+
+O núcleo do bot já cobre muito bem:
+
+resposta IA no grupo autorizado
+configuração dinâmica
+moderação
+agenda/lembretes/notas
+ingestão de mídia
+transcrição
+jobs FULL
+painel com login/sessão e atualização em tempo real.
+
+Além disso, houve melhorias recentes importantes:
+
+hardening do modo FULL
+melhor injeção de contexto
+redução de ruído de logs
+idempotência de relatórios .txt
+tratamento melhor de falhas do Codex
+fallback e degradacão mais claros.
+Onde está a maior oportunidade
+
+A lacuna principal não está no “motor” do bot, e sim em:
+
+gestão visual
+memória de longo prazo
+governança de alterações
+exploração do histórico
+visão operacional centralizada
+persistência mais robusta que JSON espalhado.
+Direção estratégica
+1. Portal web como centro de comando
+
+O painel já existe e já é útil, mas pode virar uma central muito mais completa.
+
+Melhorias já sugeridas antes e mantidas
+dashboard com observabilidade real
+alertas operacionais
+visão por grupo
+tela de jobs FULL
+tela de memória
+governança de configurações
+biblioteca de mídia mais forte.
+Novos acréscimos para o portal
+1. Widget de ações rápidas
+
+Adicionar botões para ações administrativas comuns direto no painel, como:
+
+limpar cache
+forçar sincronização
+ping
+reiniciar serviço
+checar disco/log.
+Impacto: reduz dependência de comandos via WhatsApp para tarefas rotineiras.
+2. Aba “FULL Dev”
+
+Criar uma área visual dedicada ao @valida / modo FULL, com:
+
+lista de jobs
+status
+pedido original
+duração
+visualizador do log
+exibição do .txt gerado
+cancelamento de job, quando aplicável.
+Essa passa a ser uma das melhorias de maior valor imediato, porque o modo FULL é uma das peças mais poderosas do sistema.
+3. Preview de mídia no painel
+
+Na biblioteca de mídia:
+
+abrir imagem em modal
+tocar vídeo/áudio quando possível
+pré-visualizar sem baixar.
+Isso melhora muito a usabilidade operacional.
+4. Badge de conexão do WhatsApp
+
+No header do painel:
+
+conectado
+desconectado
+reconectando.
+Isso dá leitura instantânea da saúde do bot.
+5. RBAC no painel
+
+Implementar perfis como:
+
+viewer
+operator
+admin
+Impacto: permite delegar acesso sem expor tudo.
+Evolução funcional do bot
+2. Memória semântica de verdade
+
+Essa continua sendo a evolução funcional mais importante.
+
+O sistema já tem alias, histórico, notas e persistência, mas o próximo salto é:
+
+memórias por usuário
+memórias por grupo
+categorias
+TTL
+memórias temporárias
+consultas do tipo “o que você sabe sobre X?”
+limpeza seletiva por escopo/projeto.
+3. Fluxos com confirmação
+
+Para mudanças sensíveis:
+
+“quer que eu aplique isso?”
+“confirma em 1/2”
+“faço rollback?”
+Isso vale para:
+config
+Linux
+mídia
+grupo
+FULL.
+Hoje isso existe mais como diretriz; precisa virar feature consistente.
+4. Resumo inteligente do grupo
+
+Função de alto valor:
+
+resumo do dia
+o que perdi?
+principais assuntos
+decisões
+pendências
+responsáveis
+agenda extraída
+resumo semanal automático.
+5. Inbox de incidentes operacionais
+
+Como o sistema já consulta logs e health, o bot pode responder coisas como:
+
+houve erro hoje?
+mostre os últimos incidentes
+por que está lento?
+resuma os warnings
+me avise se repetir erro X várias vezes em poucos minutos.
+6. OCR e visão mais acionáveis
+
+Próximo estágio:
+
+extrair texto por comando
+resumir comprovante
+detectar tipo de documento
+salvar metadados estruturados
+tornar mídia pesquisável por conteúdo.
+7. Comandos financeiros mais fortes
+
+Expandir despesas para:
+
+categorias automáticas
+fechamento mensal
+ranking por categoria
+comparação mês a mês
+exportação CSV/PDF
+lembretes de prestação de contas.
+8. Bot de aprovação administrativa
+
+Fluxos de aprovação para:
+
+entrada de membros
+mudanças de configuração
+execução FULL
+limpeza em lote
+registro de quem aprovou e quando.
+9. Assistente privado controlado
+
+Aproveitando o suporte a privado com permissão:
+
+continuar tarefas do grupo no privado
+criar pendências pessoais
+gerar lembretes pessoais baseados em conversas do grupo
+devolver ao grupo uma resposta aprovada.
+Novos comandos e funções adicionados ao escopo
+
+Além do roadmap anterior, agora entram funções bem práticas:
+
+10. !encurtar <url>
+
+Encurtador de link com API pública.
+Útil para compartilhar links do painel, convites, arquivos e endpoints.
+
+11. !clima <cidade>
+
+Consulta de clima/previsão.
+É um comando simples, útil e com alta adoção.
+
+12. !votacao
+
+Enquete rápida no grupo:
+
+pergunta
+opções
+reações por emoji/letra.
+Tem bom potencial de engajamento e aproveita recurso nativo do WhatsApp.
+13. !resumo do dia / o que perdi?
+
+Resumo das últimas mensagens do grupo com IA.
+Essa já aparece como uma das funcionalidades mais valiosas para o uso diário.
+
+14. @valida agendar para 22h: ...
+
+Execução agendada de job FULL.
+Isso cria um novo patamar para automações de manutenção, backup, validação e tarefas recorrentes.
+
+15. Modo silencioso
+
+Comandos como:
+
+@bot modo silencioso
+@bot modo normal
+Nesse modo o bot deixa de responder IA geral e mantém apenas comandos locais/admin. Excelente para manutenção ou momentos em que o grupo não quer poluição de respostas.
+16. Relay com sugestão inteligente
+
+Ao receber mensagem de um contato do relay:
+
+sugerir resposta com IA
+depois encaminhar ao grupo para aprovação ou uso.
+Isso transforma o relay em um “primeiro atendente”.
+Melhorias operacionais acrescentadas
+17. Persistência do _txtSentRegistry em disco
+
+Esse é um ponto técnico importante e muito coerente com o relatório de sessão:
+
+salvar o registro de idempotência em data/txt-sent-registry.json
+carregar no boot
+evitar reenvio de relatório FULL após restart
+GC automático para entradas antigas.
+É uma melhoria pequena, mas com impacto real na confiabilidade operacional.
+18. Backup automático dos dados
+
+Adicionar rotina para:
+
+compactar data/ diariamente
+manter últimos N backups
+expurgo automático dos antigos
+disponibilizar o backup recente no painel.
+Isso eleva bastante a maturidade operacional do sistema.
+Melhorias de arquitetura acrescentadas
+19. Migração completa para SQLite
+
+Essa já era uma pendência estrutural e agora ficou ainda mais clara.
+
+Mover para SQLite:
+
+moderation.json
+identities.json
+alarms.json
+possivelmente outras persistências auxiliares
+Objetivos:
+unificação
+consultas melhores
+menos fragmentação
+backup mais confiável
+WAL e consistência melhores.
+
+Essa migração é uma das mudanças mais importantes para o sistema crescer sem virar uma coleção difícil de manter.
+
+Prioridade consolidada
+Prioridade 1 — impacto imediato
+
+Essas trazem o maior retorno agora:
+
+Tela de memória
+Tela/aba “FULL Dev”
+Dashboard de observabilidade e alertas
+Confirmação para mudanças sensíveis
+Timeout real do FULL em produção
+Persistência do _txtSentRegistry
+Resumo do dia.
+Prioridade 2 — valor de produto
+
+Aqui entra o que melhora muito a experiência:
+
+Memória semântica com TTL/categorias
+Dashboard por grupo
+Biblioteca de mídia pesquisável
+Enquete rápida
+Relay com sugestão inteligente
+Modo silencioso
+Assistente privado controlado.
+Prioridade 3 — robustez estrutural
+
+Essas são as mais importantes para sustentação de longo prazo:
+
+Migração completa para SQLite
+Fila formal de ingestão de mídia
+Persistir registros hoje só em memória
+Backup automático
+Healthchecks mais detalhados por provider e worker
+RBAC no painel.
+Se eu tivesse que escolher só as entregas mais valiosas
+
+Antes eram 5. Com o material novo, eu ampliaria para um bloco enxuto de 8 entregas prioritárias:
+
+Tela de memória
+Aba FULL Dev no painel
+Alertas operacionais / observabilidade
+Resumo do dia / o que perdi
+Confirmação e rollback para ações sensíveis
+Persistência do _txtSentRegistry
+Backup automático
+Migração gradual para SQLite.
+Conclusão final consolidada
+
+O projeto já saiu da fase de prova de conceito. Ele está entrando numa fase em que o diferencial passa a ser:
+
+governança
+observabilidade
+persistência sólida
+UX do painel
+inteligência útil baseada no histórico do grupo
+
+Ou seja: o próximo salto não é “ter mais um comando”, e sim fazer o sistema operar como uma plataforma confiável, administrável e inteligente.
+
+Com tudo o que você juntou, a visão mais madura do roadmap fica assim:
+
+Eixo A — Portal web
+
+Transformar o painel em central de comando com:
+
+ações rápidas
+observabilidade
+FULL Dev
+preview de mídia
+RBAC
+status do WhatsApp
+Eixo B — Inteligência do bot
+
+Adicionar:
+
+memória semântica
+resumos automáticos
+votação
+relay inteligente
+modo silencioso
+assistente privado controlado
+Eixo C — Base técnica
+
+Fortalecer com:
+
+persistência em SQLite
+backup automático
+registros idempotentes em disco
+filas formais
+healthchecks melhores
+menos dependência de JSON espalhado.

@@ -1,0 +1,198 @@
+1) PLANO_VALIDACAO_BOT_INTELIGENTE.md
+
+É o documento mais importante conceitualmente. Ele define bem objetivos, escopo, segurança, persistência, stress, Codex local e riscos de autenticação do serviço. Também está correto ao tratar VS Code como cliente do ecossistema, não como dependência de runtime.
+
+Melhorias que eu faria aqui:
+
+Transformar o plano em matriz rastreável: cada item de validação deveria ter ID, critério, evidência esperada, evidência coletada, status, data, responsável. Hoje ele é bom como plano, mas fraco como artefato auditável.
+Separar claramente “escopo atual” de “arquitetura futura”. O plano mistura o que já existe com o que ainda é recomendação arquitetural, especialmente em memória semântica, fila de ingestão e migração para SQLite como fonte principal.
+Criar uma seção específica de SLO/SLA operacional, por exemplo:
+tempo máximo de resposta chat regular
+tempo máximo FULL
+taxa aceitável de fallback
+tempo máximo de recuperação após restart
+Incluir validação explícita para o que hoje já virou central no projeto e ainda está disperso em outros documentos:
+idempotência do envio de .txt
+mascaramento de dados sensíveis
+filtro do “último job” por grupo/usuário
+observabilidade estruturada do FULL. Esses pontos só aparecem de forma forte no relatório de sessão, mas já deveriam estar no plano-base.
+
+Melhoria de alto valor: adicionar uma seção “Critérios de bloqueio para produção”. Hoje o plano fala em aprovação, mas não define com precisão o que impede deploy. Eu colocaria como bloqueadores:
+
+FULL sem timeout
+falha de autenticação do provedor ativo
+ausência de restart supervisionado
+ausência de teste funcional WhatsApp do fluxo crítico
+ausência de prova de rollback pós-autoedição. Isso conversa diretamente com os riscos já apontados depois.
+2) PLANO_VALIDACAO_ATUALIZACAO_2026-04-06.md
+
+Esse documento está bom para registrar a migração para Copilot e o fix de spawn/timeout infinito. A causa raiz está muito bem explicada, assim como a solução com detached, killTree, exit e safety timeout.
+
+Melhorias:
+
+Ele deveria virar um runbook de release e não só relatório de atualização. Falta uma seção com:
+pré-check
+deploy
+smoke test
+rollback
+validação pós-deploy
+O maior gap é que ele conclui que o sistema está pronto para testes manuais, mas não fecha o ciclo com execução real desses testes. Isso precisa virar checklist operacional com campo “executado por / data / evidência”.
+O risco FULL_AUTO_DEV_TIMEOUT_MS=0 está corretamente apontado, mas continua só como observação. Eu promoveria isso de risco médio para ação obrigatória antes de produção autônoma. FULL sem limite temporal é risco operacional real.
+A nota “Bot sem PM2/systemd” entrou em conflito com o relatório mais recente, que já fala em serviço whatsapp-codex.service active. O documento precisa indicar se esse risco foi superado ou se valia só para a data daquele corte. Hoje parece haver desatualização cronológica entre os artefatos.
+Há duplicidade de números FULL com e sem código do país. Isso não deveria estar só em observação; deveria gerar uma recomendação formal de normalização canônica de identidades.
+3) README.md
+
+Está forte em cobertura funcional. Explica bem capacidades, provedores, painel, comandos, persistência, segurança operacional e até troubleshooting rápido. Para onboarding técnico, ele está útil.
+
+Melhorias:
+
+Falta uma abertura curta tipo “o que é estável / o que é experimental”. Hoje quem lê o README pode achar que tudo está no mesmo nível de maturidade, mas os relatórios mostram que memória avançada, stress E2E e partes do FULL ainda são áreas em evolução.
+Eu separaria o README em quatro blocos fixos:
+visão geral
+quick start
+operação/admin
+troubleshooting/produção
+Hoje ele é rico, mas denso.
+O README já menciona systemd com exemplo. Como isso é muito importante, eu promoveria esse trecho para “Deploy recomendado” e colocaria antes de troubleshooting.
+Incluir seção de limitações conhecidas:
+Codex pode depender de sessão local válida
+Copilot pode ser provedor principal em contingência
+FULL pode pedir resumo acima de certo tamanho
+OCR pode não extrair texto de imagens sem legibilidade. Parte disso aparece em outros documentos, mas não está consolidado no README.
+Incluir seção “Arquitetura resumida” com fluxo:
+WhatsApp -> parser/localActions -> aiBridge -> provider -> resposta -> logs/auditoria
+Isso já está conceitualmente no plano, mas ajudaria muito quem entra no projeto.
+
+Melhoria editorial importante: o README lista muitos comandos, mas falta distinguir claramente:
+
+comandos locais determinísticos
+comandos mediados por IA
+comandos administrativos sensíveis
+modo FULL autônomo.
+Hoje isso aparece por contexto, mas não por taxonomia.
+4) RELATORIO_VALIDACAO_2026-03-31.md
+
+É um bom documento de fechamento de fase. O melhor trecho é a matriz de validação com OK, OK/PARCIAL e PARCIAL. Ela mostra honestidade e maturidade técnica. Também é importante porque não esconde pendências de memória avançada, persistência total, segurança mais forte e stress E2E.
+
+Melhorias:
+
+Trocar “APROVADO COM RESSALVAS” por algo mais operacionalmente mensurável, por exemplo:
+aprovado para uso assistido
+não aprovado para operação autônoma irrestrita
+O documento deveria terminar com uma lista priorizada de próximos passos, e não apenas pendências remanescentes genéricas.
+Eu adicionaria uma seção de evidências faltantes. Exemplo:
+stress concorrente real
+prova de sobrevivência a restart durante FULL
+prova de recuperação após queda do Chrome/WhatsApp Web
+Também falta marcar explicitamente o que já foi superado pelos relatórios posteriores, para não parecer que tudo continua aberto.
+5) RELATORIO_MELHORIAS_2026-04-06.md
+
+Esse documento é objetivo e útil. O recorte está claro: problemas reais do servidor, correções aplicadas e impacto. O circuit breaker do Codex, a limpeza de stderr, o fallback OCR e o /health público são melhorias de produção, não cosméticas.
+
+Melhorias:
+
+Adicionar uma seção “métrica antes/depois” mais formal:
+latência média antes/depois
+tamanho médio de log antes/depois
+número de tentativas inúteis ao Codex antes/depois
+O problema pendente “Codex token expirado” está bem registrado, mas faltou um estado operacional formal do fallback:
+quando Copilot assume
+se existe degradação funcional
+o que fica indisponível quando Codex está fora.
+O relatório menciona sync remoto→local/local→remoto, mas esse assunto compete com o relatório específico de sincronização. Eu deixaria aqui só um resumo de uma linha, e centralizaria detalhes exclusivamente no relatório de sync.
+6) RELATORIO_SYNC_2026-04-06.md
+
+Bom documento técnico. O acerto de ordem do sync é importante e foi bem justificado: em cenário com autoedição no servidor, puxar remoto primeiro faz sentido. Também é útil a observação de que arquivos raiz estão obsoletos e que o código ativo está em src/.
+
+Melhorias:
+
+Esse relatório deveria incluir um mapa do que é autoritativo:
+código-fonte oficial
+dados persistentes oficiais
+o que pode ser sobrescrito
+o que nunca deve ser sincronizado de volta
+Faltou uma política clara para .syncbak-*; hoje só consta que podem ser limpos. Eu criaria retenção:
+manter N últimos
+apagar acima de X dias
+excluir do fluxo principal.
+O dado “sharp agora é dependência obrigatória” deveria virar requisito explícito também no README e talvez no plano de validação, porque afeta OCR/visão.
+A nova rota POST /api/send-media merece validação de segurança dedicada: path permitido, MIME, tamanho, autorização, auditoria.
+7) RELATORIO_SESSAO_2026-04-08.md
+
+É o documento mais maduro do conjunto. Aqui o projeto realmente sobe de nível: contexto do FULL, timeout real de journalctl, filtragem de ruído, headers rígidos, idempotência de .txt, observabilidade estruturada, mascaramento de sensível, filtro do último job por grupo/usuário e split de reasoning effort por modo. Isso é excelente trabalho de hardening.
+
+Melhorias:
+
+O relatório já sugere persistir _txtSentRegistry em disco. Eu concordo totalmente: em memória resolve duplicidade intra-processo, mas não pós-restart. Isso deveria virar ação prioritária.
+O prompt ficou com 10.609 caracteres. Isso pode ser válido, mas eu adicionaria uma seção com budget de contexto, para evitar drift:
+máximo por bloco
+ordem de corte
+política de compressão
+política de exclusão de ruído.
+O relatório fala em mascaramento e observabilidade, mas ainda faltaria registrar testes negativos:
+confirmar que token não aparece no prompt
+confirmar que telefone mascarado não quebra correlação
+confirmar que logs estruturados permanecem parseáveis
+O bug da regex de convite foi corrigido, mas eu adicionaria recomendação de testes de regressão semântica para parsers regex sensíveis. Isso vale para grupo, moderação, alarmes e controle de acesso.
+Melhorias transversais mais importantes
+A. Criar uma “fonte da verdade” documental
+
+Hoje há três camadas:
+
+plano-base
+plano/relatório de atualização
+relatórios de sessão/validação
+
+Isso funciona, mas espalha a verdade do sistema. Eu faria:
+
+README.md = uso e operação
+docs/VALIDACAO_MASTER.md = matriz viva de status
+docs/CHANGELOG_OPERACIONAL.md = mudanças por sessão/release
+relatórios datados ficam como histórico, não como fonte principal
+B. Resolver conflito temporal entre documentos
+
+Um documento ainda fala em risco de ausência de PM2/systemd, enquanto outro já registra serviço systemd ativo. Outro marca muitos testes pendentes, enquanto relatórios posteriores tratam o sistema como endurecido para produção assistida. Isso precisa de um campo padrão em todos os documentos:
+
+“Substitui/atualiza”
+“Documento vigente até”
+“Depende de”
+Assim você evita contradição por data.
+C. Fechar o gap entre validação técnica e validação funcional
+
+Vocês têm ótima evidência de API, código, sync, deploy e infraestrutura. O elo mais fraco continua sendo o roteiro funcional real no WhatsApp, que ainda aparece pendente. Eu trataria isso como prioridade 1 documental e operacional.
+
+D. Formalizar operação do FULL
+
+O FULL já tem contexto, masking, observabilidade e idempotência. Falta agora fechar o pacote com:
+
+timeout obrigatório
+limite de arquivos modificáveis por execução
+registro filesChanged[]
+diffs resumidos por job
+aprovação em duas etapas para mudanças sensíveis
+tela de histórico de jobs. Parte disso já aparece como sugestão no relatório de sessão.
+E. Normalização de identidade
+
+A duplicidade de números FULL com e sem código do país, mais a lógica de alias/menção, mostra que você precisa de uma camada canônica:
+
+número normalizado
+aliases
+mentionedId real
+origem da resolução
+Isso reduziria erro em acesso, remoção, promoção e filtros por usuário.
+F. Maturidade de produção
+
+O projeto já merece três runbooks separados:
+
+incidente do provedor IA
+incidente do WhatsApp/Puppeteer
+incidente do FULL/autonomia
+Hoje isso está implícito nos relatórios, mas ainda não consolidado.
+Prioridade que eu executaria primeiro
+Tornar FULL_AUTO_DEV_TIMEOUT_MS obrigatório e não zero.
+Executar e registrar os testes pendentes via WhatsApp com evidência.
+Persistir _txtSentRegistry e adicionar filesChanged[] nos jobs FULL.
+Consolidar a fonte da verdade documental e marcar obsolescência entre relatórios.
+Criar matriz viva de validação com status por item, data e evidência.
+Formalizar budget do prompt FULL e política de corte/compactação.
+Normalizar identidade de números/aliases/menções.

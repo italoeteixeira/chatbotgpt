@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login | Painel WhatsApp</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .shell {
+        width: min(980px, 100%);
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 960px) {
+        .shell {
+          grid-template-columns: 1.15fr 0.9fr;
+          align-items: stretch;
+        }
+      }
+
+      .hero,
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        box-shadow: 0 22px 48px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+      }
+
+      .hero {
+        padding: 1.4rem;
+        background: linear-gradient(135deg, rgba(45, 212, 191, 0.13), rgba(56, 189, 248, 0.10));
+        border: 1px solid var(--line);
+        color: var(--ink);
+      }
+
+      .hero p {
+        margin: 0.75rem 0 0;
+        max-width: 56ch;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .hero-grid {
+        margin-top: 1rem;
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hero-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: 0.8rem;
+      }
+
+      .hero-card small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .hero-card strong {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 1rem;
+      }
+
+      .card {
+        background: var(--card);
+        padding: 1.3rem;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.55rem, 2.8vw, 2.2rem);
+      }
+
+      .subtitle {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      form {
+        margin-top: 1rem;
+        display: grid;
+        gap: 0.8rem;
+      }
+
+      label {
+        display: grid;
+        gap: 0.3rem;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      input,
+      button {
+        font: inherit;
+      }
+
+      input {
+        width: 100%;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        padding: 0.72rem 0.8rem;
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 0.8rem 0.95rem;
+        cursor: pointer;
+        font-weight: 700;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), #0b948d);
+        transition: opacity .15s;
+      }
+      button:hover { opacity: .85; }
+
+      .hint,
+      .msg {
+        margin-top: 0.75rem;
+        font-size: 0.86rem;
+        line-height: 1.45;
+      }
+
+      .hint {
+        color: var(--muted);
+      }
+
+      .msg.error {
+        color: var(--error);
+      }
+
+      .msg.ok {
+        color: var(--accent);
+      }
+
+      code {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.82rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <h1>Painel WhatsApp protegido por credenciais</h1>
+        <p>
+          Acesso ao portal operacional com usuários gravados no banco SQLite e senha persistida em formato seguro.
+          Após o login, o painel libera monitoramento, automações, moderação e a janela de administração de usuários.
+        </p>
+
+        <div class="hero-grid">
+          <div class="hero-card">
+            <small>Persistência</small>
+            <strong>SQLite local</strong>
+          </div>
+          <div class="hero-card">
+            <small>Escopo</small>
+            <strong>Painel e janela FULL</strong>
+          </div>
+          <div class="hero-card">
+            <small>Administração</small>
+            <strong>Usuários do painel</strong>
+          </div>
+          <div class="hero-card">
+            <small>Fluxo</small>
+            <strong>Login por sessão HTTP</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Entrar no painel</h2>
+        <p class="subtitle">Use o usuário e a senha cadastrados para abrir o portal WhatsApp.</p>
+
+        <form id="loginForm">
+          <label>
+            Usuário
+            <input id="username" name="username" autocomplete="username" placeholder="painel-admin" required />
+          </label>
+
+          <label>
+            Senha
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Digite a senha do painel"
+              required
+            />
+          </label>
+
+          <button type="submit" id="submitButton">Entrar</button>
+        </form>
+
+        <div class="hint">
+          Usuários aceitos: 3 a 32 caracteres, com letras minúsculas, números, ponto, underscore ou hífen.
+        </div>
+        <div class="msg" id="message"></div>
+      </section>
+    </main>
+
+    <script>
+      const formEl = document.getElementById('loginForm');
+      const usernameEl = document.getElementById('username');
+      const passwordEl = document.getElementById('password');
+      const submitButtonEl = document.getElementById('submitButton');
+      const messageEl = document.getElementById('message');
+      const params = new URLSearchParams(window.location.search);
+      const nextPath = String(params.get('next') || '/').trim() || '/';
+
+      function setMessage(text, type = '') {
+        messageEl.textContent = text;
+        messageEl.className = `msg ${type}`.trim();
+      }
+
+      formEl.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const username = usernameEl.value.trim();
+        const password = passwordEl.value;
+
+        if (!username || !password) {
+          setMessage('Informe usuário e senha para continuar.', 'error');
+          return;
+        }
+
+        submitButtonEl.disabled = true;
+        setMessage('Validando credenciais...');
+
+        try {
+          const res = await fetch('/api/panel-auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username,
+              password,
+              next: nextPath
+            })
+          });
+
+          const data = await res.json().catch(() => ({ ok: false }));
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'Falha ao autenticar no painel.');
+          }
+
+          setMessage(`Sessão iniciada para ${data.user?.username || username}. Redirecionando...`, 'ok');
+          window.location.replace(data.next || nextPath || '/');
+        } catch (error) {
+          setMessage(`Login recusado: ${String(error)}`, 'error');
+          passwordEl.focus();
+          passwordEl.select();
+        } finally {
+          submitButtonEl.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

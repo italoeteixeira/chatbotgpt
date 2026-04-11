@@ -1,0 +1,2995 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel WhatsApp + IA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html { scroll-behavior: smooth; }
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .portal {
+        width: min(1340px, 94vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .landing-hero {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 1.25rem 1.2rem;
+        background:
+          linear-gradient(125deg, rgba(45, 212, 191, 0.15), rgba(56, 189, 248, 0.1)),
+          var(--bg-2);
+        color: var(--ink);
+        overflow: hidden;
+        box-shadow: 0 24px 50px rgba(0, 0, 0, 0.3);
+      }
+
+      .landing-hero::after {
+        content: '';
+        position: absolute;
+        inset: auto -90px -90px auto;
+        width: 260px;
+        height: 260px;
+        background: radial-gradient(circle, rgba(45, 212, 191, 0.08), transparent 70%);
+      }
+
+      .hero-grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 900px) {
+        .hero-grid {
+          grid-template-columns: 1.25fr 1fr;
+          align-items: center;
+        }
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.3rem, 2.3vw, 2rem);
+        line-height: 1.18;
+      }
+
+      h2 {
+        font-size: 1.02rem;
+      }
+
+      .hero-subtitle {
+        margin-top: 0.5rem;
+        color: var(--muted);
+        max-width: 68ch;
+        font-size: 0.95rem;
+      }
+
+      .hero-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.9rem;
+      }
+
+      .hero-actions {
+        margin-top: 0.95rem;
+        display: flex;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+      }
+
+      .hero-actions button {
+        box-shadow: 0 12px 24px rgba(8, 35, 51, 0.2);
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 0.35rem 0.62rem;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        font-size: 0.78rem;
+        color: var(--muted);
+        text-decoration: none;
+        cursor: pointer;
+        transition: background .15s, color .15s, border-color .15s;
+      }
+      .badge:hover {
+        background: rgba(45, 212, 191, 0.12);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+      }
+
+      .kpi {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        padding: 0.65rem 0.7rem;
+      }
+
+      .kpi small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.73rem;
+      }
+
+      .kpi strong {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 1rem;
+        line-height: 1.2;
+      }
+
+      .layout {
+        margin-top: 1rem;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 900px) {
+        .layout {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 1260px) {
+        .layout {
+          grid-template-columns: 340px repeat(2, minmax(0, 1fr));
+          align-items: start;
+        }
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+        padding: 1rem;
+      }
+
+      .span-2 {
+        grid-column: span 1;
+      }
+
+      .span-3 {
+        grid-column: span 1;
+      }
+
+      @media (min-width: 900px) {
+        .span-2 {
+          grid-column: span 2;
+        }
+      }
+
+      @media (min-width: 1260px) {
+        .span-2 {
+          grid-column: span 2;
+        }
+
+        .span-3 {
+          grid-column: span 3;
+        }
+      }
+
+      .subtitle {
+        margin: 0.35rem 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-top: 0.8rem;
+        padding: 0.38rem 0.72rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        font-size: 0.82rem;
+      }
+
+      .dot {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        background: var(--warn);
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .dot.error {
+        background: var(--error);
+      }
+
+      .qr-wrap {
+        margin-top: 0.85rem;
+        min-height: 260px;
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 0.75rem;
+      }
+
+      .qr-wrap img {
+        width: min(260px, 100%);
+        border-radius: 10px;
+      }
+
+      .qr-empty {
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .meta {
+        margin-top: 0.75rem;
+        display: grid;
+        gap: 0.35rem;
+        color: var(--muted);
+        font-size: 0.83rem;
+      }
+
+      .grid {
+        margin-top: 0.72rem;
+        display: grid;
+        gap: 0.62rem;
+      }
+
+      .grid.cols-2 {
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 700px) {
+        .grid.cols-2 {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      label {
+        display: grid;
+        gap: 0.24rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        padding: 0.52rem 0.62rem;
+      }
+
+      select option {
+        background: var(--bg-2);
+        color: var(--ink);
+      }
+
+      textarea {
+        min-height: 105px;
+        resize: vertical;
+      }
+
+      .row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        cursor: pointer;
+        padding: 0.52rem 0.78rem;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, #0d9488, #14b8a6);
+        transition: opacity 0.15s, transform 0.1s;
+      }
+
+      button:hover { opacity: 0.88; }
+      button:active { transform: scale(0.97); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+      button.alt {
+        background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+      }
+
+      button.warn {
+        background: linear-gradient(135deg, #b91c1c, #ef4444);
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .quick-tip {
+        margin-top: 0.52rem;
+        padding: 0.55rem 0.62rem;
+        border-radius: 10px;
+        border: 1px solid rgba(45, 212, 191, 0.2);
+        background: rgba(45, 212, 191, 0.06);
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .table-wrap {
+        margin-top: 0.72rem;
+        max-height: 43vh;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+
+      th,
+      td {
+        padding: 0.45rem;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #1c2128;
+        color: var(--muted);
+      }
+
+      .audit {
+        margin-top: 0.7rem;
+        max-height: 170px;
+        overflow: auto;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        padding: 0.45rem;
+        background: var(--surface);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.74rem;
+        color: var(--muted);
+      }
+
+      .audit-item {
+        padding: 0.3rem;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .audit-item:last-child {
+        border-bottom: 0;
+      }
+
+      .logs {
+        margin-top: 0.72rem;
+        max-height: 56vh;
+        overflow: auto;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #0d1117;
+        color: #c9d1d9;
+        padding: 0.68rem;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.77rem;
+      }
+
+      .log {
+        padding: 0.28rem 0.2rem;
+        border-bottom: 1px solid rgba(201, 209, 217, 0.08);
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .log:last-child {
+        border-bottom: 0;
+      }
+
+      .log.warn {
+        color: var(--warn);
+      }
+
+      .log.error {
+        color: var(--error);
+      }
+
+      .msg {
+        margin-top: 0.58rem;
+        font-size: 0.82rem;
+      }
+
+      .group-summary {
+        margin-top: 0.7rem;
+        padding: 0.65rem;
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 12px;
+        background: rgba(56, 189, 248, 0.06);
+        color: var(--ink);
+        font-size: 0.82rem;
+        line-height: 1.4;
+      }
+
+      code {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+      }
+
+      .ai-provider-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        padding: 0.75rem 0.85rem;
+        margin-bottom: 0.55rem;
+        position: relative;
+        transition: border-color 0.2s;
+      }
+      .ai-provider-card.active {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(45,212,191,0.15);
+      }
+      .ai-provider-card .provider-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .ai-provider-card .provider-name {
+        font-weight: 600;
+        font-size: 0.92rem;
+      }
+      .ai-provider-card .provider-badge {
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #fff;
+      }
+      .provider-badge.installed { background: var(--ok); }
+      .provider-badge.missing { background: var(--error); }
+      .provider-badge.active-label { background: var(--accent); }
+      .ai-provider-card .provider-detail {
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font-size: 0.8rem;
+        word-break: break-all;
+      }
+      .ai-provider-card .provider-actions {
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .ai-provider-card .provider-models {
+        margin-top: 0.5rem;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        background: rgba(14, 17, 23, 0.5);
+        padding: 0.55rem;
+      }
+      .provider-models .provider-model-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 0.5rem;
+      }
+      .provider-models label {
+        font-size: 0.76rem;
+        color: var(--muted);
+        margin: 0;
+      }
+      .provider-models select,
+      .provider-models input {
+        margin-top: 0.22rem;
+      }
+      .provider-models .provider-model-actions {
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+      }
+      .ai-provider-card .test-result {
+        margin-top: 0.4rem;
+        padding: 0.4rem 0.55rem;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-family: 'IBM Plex Mono', monospace;
+        word-break: break-word;
+      }
+      .test-result.success {
+        border: 1px solid rgba(63,185,80,0.3);
+        background: rgba(63,185,80,0.08);
+        color: var(--ok);
+      }
+      .test-result.error {
+        border: 1px solid rgba(248,81,73,0.3);
+        background: rgba(248,81,73,0.08);
+        color: var(--error);
+      }
+
+      /* Scrollbar dark */
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: var(--surface); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #30363d; }
+
+      /* Nav bar */
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        padding: 0.65rem 0;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid var(--line);
+      }
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 500;
+        padding: 0.35rem 0.65rem;
+        border-radius: 8px;
+        transition: background 0.15s, color 0.15s;
+      }
+      .nav-bar a:hover { background: var(--surface); color: var(--ink); }
+      .nav-bar a.active { background: var(--surface); color: var(--accent); }
+      .nav-bar .spacer { flex: 1; }
+      .nav-bar .session-tag {
+        font-size: 0.78rem;
+        color: var(--muted);
+        padding: 0.3rem 0.6rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+      }
+
+      /* ── Compact overrides ───────────────────────────────── */
+      .landing-hero { padding: 0.7rem 1.25rem 0; }
+      .hero-grid { gap: 0.75rem; }
+      .hero-subtitle { font-size: 0.82rem; margin-top: 0.35rem; }
+      .hero-badges { margin-top: 0.45rem; gap: 0.35rem; }
+      .kpis { gap: 0.5rem; }
+      .kpi { padding: 0.55rem 0.75rem; }
+      .layout { gap: 0.75rem; padding: 0.7rem 1.25rem 1.5rem; }
+
+      /* ── Inbox chat ──────────────────────────────────────── */
+      .inbox-split {
+        display: flex;
+        height: 360px;
+        margin-top: 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .inbox-convs {
+        width: 210px;
+        flex-shrink: 0;
+        overflow-y: auto;
+        border-right: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .inbox-convs-empty {
+        padding: 1rem 0.75rem;
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-align: center;
+      }
+      .inbox-conv-item {
+        padding: 0.5rem 0.7rem;
+        cursor: pointer;
+        border-bottom: 1px solid var(--line);
+        font-size: 0.8rem;
+        transition: background 0.1s;
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+      }
+      .inbox-conv-item:hover,
+      .inbox-conv-item.active { background: var(--surface); }
+      .inbox-conv-header { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; }
+      .inbox-conv-number { font-weight: 600; color: var(--accent); font-size: 0.78rem; }
+      .inbox-conv-badge {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent); flex-shrink: 0;
+      }
+      .inbox-conv-preview {
+        color: var(--muted); font-size: 0.74rem;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .inbox-conv-type {
+        font-size: 0.68rem;
+        color: var(--muted);
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 0 0.3rem;
+        align-self: flex-start;
+      }
+      .inbox-thread-wrap {
+        flex: 1; display: flex; flex-direction: column; min-width: 0;
+      }
+      .inbox-thread-header {
+        padding: 0.45rem 0.75rem;
+        border-bottom: 1px solid var(--line);
+        background: var(--bg-2);
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        min-height: 38px;
+      }
+      .inbox-thread-header strong { color: var(--ink); }
+      .inbox-thread-header .muted { font-size: 0.75rem; }
+      .inbox-thread {
+        flex: 1; overflow-y: auto;
+        padding: 0.6rem 0.75rem;
+        display: flex; flex-direction: column; gap: 0.4rem;
+      }
+      .inbox-thread-empty {
+        color: var(--muted); font-size: 0.82rem;
+        text-align: center; padding: 2rem;
+      }
+      .inbox-msg {
+        max-width: 80%; padding: 0.4rem 0.65rem;
+        border-radius: 10px; font-size: 0.82rem;
+        line-height: 1.45; word-break: break-word;
+      }
+      .inbox-msg-in {
+        align-self: flex-start;
+        background: var(--surface);
+        border: 1px solid var(--line);
+      }
+      .inbox-msg-out {
+        align-self: flex-end;
+        background: rgba(45,212,191,0.15);
+        border: 1px solid rgba(45,212,191,0.3);
+      }
+      .inbox-msg-ts {
+        font-size: 0.66rem; color: var(--muted);
+        margin-top: 0.15rem;
+      }
+      .inbox-reply-bar {
+        padding: 0.45rem 0.6rem;
+        border-top: 1px solid var(--line);
+        background: var(--bg-2);
+        display: flex; gap: 0.4rem; align-items: center;
+      }
+      .inbox-reply-bar input { flex: 1; min-width: 0; }
+      .inbox-msg-status { font-size: 0.74rem; color: var(--muted); align-self: center; }
+
+      /* ── Responsive mobile (≤ 640px) ─────────────────────────── */
+      @media (max-width: 640px) {
+        .portal {
+          width: 100%;
+          padding: 0 0.5rem;
+          margin: 0.3rem auto 1.5rem;
+        }
+
+        /* Nav: 2 linhas — links (row 1) | sessão + sair (row 2) */
+        .nav-bar {
+          flex-wrap: wrap;
+          overflow-x: hidden;
+          gap: 0.2rem;
+          row-gap: 0.2rem;
+          padding: 0.4rem 0;
+        }
+        .nav-bar .spacer {
+          display: block;      /* quebra de linha entre links e sessão */
+          flex-basis: 100%;
+          height: 0;
+          margin: 0;
+          padding: 0;
+        }
+        .nav-bar a { flex-shrink: 0; white-space: nowrap; font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+        .nav-bar .session-tag { flex-shrink: 0; white-space: nowrap; font-size: 0.7rem; padding: 0.22rem 0.45rem; }
+        #logoutButton { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.73rem; }
+
+        /* Hero */
+        .landing-hero { padding: 0.65rem 0.65rem 0.7rem; }
+        h1 { font-size: 1.05rem; }
+        .hero-subtitle { font-size: 0.79rem; }
+
+        /* Layout: sem padding lateral extra */
+        .layout { padding: 0 0 1rem; gap: 0.5rem; }
+        .card { padding: 0.65rem; border-radius: 12px; }
+
+        /* KPIs: 2 colunas, texto compacto e quebra de palavra */
+        .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
+        .kpi { padding: 0.45rem 0.5rem; }
+        .kpi strong { font-size: 0.78rem; word-break: break-word; line-height: 1.25; }
+        .kpi small { font-size: 0.68rem; }
+
+        /* QR code: altura reduzida no mobile */
+        .qr-wrap { min-height: 150px; }
+
+        /* Grid cols-2: coluna única */
+        .grid.cols-2 { grid-template-columns: 1fr !important; }
+
+        /* Botões: empilhar, largura total */
+        .row { flex-direction: column; }
+        .row > button { width: 100%; }
+
+        /* Tabelas: scroll horizontal */
+        .table-wrap { -webkit-overflow-scrolling: touch; max-height: 38vh; }
+        .table-wrap table { min-width: 420px; }
+
+        /* Inbox chat: empilhar verticalmente */
+        .inbox-split {
+          flex-direction: column;
+          height: auto;
+        }
+        .inbox-convs {
+          width: 100%;
+          max-height: 150px;
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+        .inbox-thread { max-height: 200px; }
+        .inbox-reply-bar { flex-wrap: wrap; }
+        .inbox-reply-bar input { min-width: 0; }
+
+        /* Logs */
+        .logs { max-height: 40vh; font-size: 0.72rem; }
+
+        /* Audit */
+        .audit { font-size: 0.7rem; }
+      }
+
+      /* ── Tablet intermediário (641–900px) ────────────────────── */
+      @media (min-width: 641px) and (max-width: 899px) {
+        .portal { width: min(100%, 96vw); padding: 0 0.5rem; }
+        .layout { padding: 0 0 1rem; }
+        .inbox-convs { width: 170px; }
+        .table-wrap table { min-width: 360px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="portal">
+      <nav class="nav-bar">
+        <a href="/" class="active">Dashboard</a>
+        <a href="/processos.html">Processos</a>
+        <a href="/multi-grupos.html">Multi-Grupo</a>
+        <a href="/bot-config-menu.html">Config Bot</a>
+        <a href="/usuarios.html">Usuários</a>
+        <span class="spacer"></span>
+        <span class="session-tag" id="sessionBadge">sessão: carregando</span>
+        <button class="warn" id="logoutButton" style="padding:0.3rem 0.6rem;font-size:0.8rem">Sair</button>
+      </nav>
+
+      <section class="landing-hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Portal WhatsApp IA</h1>
+            <p class="hero-subtitle">
+              Central de operação para bot inteligente: monitoramento em tempo real, controle de grupos,
+              moderação, permissões e automações com fluxo profissional.
+            </p>
+            <div class="hero-badges">
+              <a class="badge" href="#section-ia">Codex CLI + Copilot CLI</a>
+              <a class="badge" href="#section-grupos">Controle de Grupo</a>
+              <a class="badge" href="#section-midia">Memória e Mídias</a>
+              <a class="badge" href="#section-moderacao">Auditoria e Segurança</a>
+            </div>
+          </div>
+          <div class="kpis">
+            <div class="kpi">
+              <small>Status atual</small>
+              <strong id="heroStatusText">iniciando</strong>
+            </div>
+            <div class="kpi">
+              <small>Grupo autorizado</small>
+              <strong id="heroGroupText">-</strong>
+            </div>
+            <div class="kpi">
+              <small>Motor IA</small>
+              <strong id="heroCodexText">-</strong>
+            </div>
+            <div class="kpi">
+              <small>Erro recente</small>
+              <strong id="heroErrorText">nenhum</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="card">
+          <h2>Conexão WhatsApp</h2>
+          <p class="subtitle">Saúde da sessão, QR e dados de execução local.</p>
+
+          <div class="status" id="statusBadge">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">iniciando</span>
+          </div>
+
+          <div class="qr-wrap" id="qrWrap">
+            <div class="qr-empty">Aguardando QR Code...</div>
+          </div>
+
+          <div class="meta">
+            <div>Erro recente: <span id="lastError">nenhum</span></div>
+            <div>Iniciado em: <span id="startedAt">-</span></div>
+            <div>IA ativa: <span id="codexBin">-</span></div>
+          </div>
+        </section>
+
+        <section class="card span-2" id="section-ia">
+          <h2>Inteligência Artificial</h2>
+          <p class="subtitle">Provedores vinculados via VS Code. Teste, ative e monitore cada um.</p>
+
+          <div id="aiProvidersArea" style="margin-top:0.7rem">
+            <div class="muted">Carregando provedores...</div>
+          </div>
+
+          <div class="quick-tip" style="margin-top:0.6rem">
+            Instale extensões no VS Code para habilitar novos provedores. O bot detecta automaticamente
+            <b>Codex CLI</b> (openai.chatgpt) e <b>Copilot CLI</b> (github.copilot-chat + @github/copilot).
+          </div>
+        </section>
+
+        <section class="card span-3">
+          <h2>Configuração Dinâmica</h2>
+          <p class="subtitle">Ajuste comportamento em produção sem editar arquivos manualmente.</p>
+
+          <div class="grid cols-2">
+            <label>
+              Provedor de IA
+              <select id="aiProvider">
+                <option value="codex">Codex CLI (local)</option>
+                <option value="copilot">Copilot CLI (local)</option>
+              </select>
+            </label>
+
+            <label>
+              Responder Só Com Menção
+              <select id="requireMention">
+                <option value="true">Sim (mais controle)</option>
+                <option value="false">Não (responde direto)</option>
+              </select>
+            </label>
+
+            <label>
+              Permitir Comandos Linux
+              <select id="enableTerminalExec">
+                <option value="true">Sim (admin/full)</option>
+                <option value="false">Não</option>
+              </select>
+            </label>
+
+            <label>
+              Timeout da IA (ms)
+              <input id="codexTimeoutMs" type="number" min="4000" step="1000" />
+            </label>
+
+            <label>
+              Limite de Resposta (caracteres)
+              <input id="maxOutputChars" type="number" min="100" step="100" />
+            </label>
+
+            <label>
+              Salvar Mídia Automaticamente
+              <select id="mediaIngestEnabled">
+                <option value="true">Sim</option>
+                <option value="false">Não</option>
+              </select>
+            </label>
+
+            <label>
+              Retenção de Mídia (dias)
+              <input id="mediaRetentionDays" type="number" min="1" step="1" />
+            </label>
+          </div>
+
+          <label style="margin-top: 0.65rem">
+            Prompt do Sistema
+            <textarea id="systemPrompt"></textarea>
+          </label>
+
+          <label style="margin-top: 0.55rem">
+            Comandos Linux Permitidos (CSV)
+            <input id="terminalAllowlist" type="text" placeholder="ex.: ps, top, df, ls, cat, rg, npm run" />
+          </label>
+
+          <div id="settingsQuickSummary" class="msg muted"></div>
+
+          <div class="quick-tip">
+            Comandos no WhatsApp (admin): <code>mostrar configuracao bot</code>,
+            <code>configurar bot: timeout ia=25000</code>,
+            <code>configurar bot: mencao obrigatoria=true</code>.
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="saveSettings">Salvar Ajustes</button>
+            <button class="alt" id="reloadSettings">Recarregar</button>
+            <button class="warn" id="reloadAudit">Recarregar Auditoria</button>
+          </div>
+
+          <div id="settingsMsg" class="msg muted"></div>
+          <div id="auditList" class="audit"></div>
+        </section>
+
+        <section class="card span-3" id="section-inbox">
+          <h2>
+            Caixa de Entrada
+            <span id="inboxBadge" style="display:none;background:var(--accent);color:#000;font-size:0.72rem;font-weight:700;padding:0.15rem 0.45rem;border-radius:999px;margin-left:0.5rem;vertical-align:middle"></span>
+          </h2>
+          <p class="subtitle">Mensagens de contatos sem permissão. Responda diretamente ou autorize o número.</p>
+
+          <div class="row" style="margin-bottom:0.4rem">
+            <button class="alt" id="refreshInbox" style="font-size:0.8rem;padding:0.3rem 0.65rem">Atualizar</button>
+            <span id="inboxMsg" class="msg muted"></span>
+          </div>
+
+          <div class="inbox-split">
+            <div class="inbox-convs" id="inboxConvList">
+              <div class="inbox-convs-empty">Nenhuma mensagem ainda.</div>
+            </div>
+            <div class="inbox-thread-wrap">
+              <div class="inbox-thread-header" id="inboxThreadHeader">
+                <span class="muted">Selecione uma conversa à esquerda.</span>
+              </div>
+              <div class="inbox-thread" id="inboxThread">
+                <div class="inbox-thread-empty">Selecione uma conversa para ver as mensagens.</div>
+              </div>
+              <div class="inbox-reply-bar">
+                <input id="inboxReplyInput" type="text" placeholder="Digite uma mensagem..." disabled />
+                <button id="inboxSendBtn" disabled>Enviar</button>
+                <button class="alt" id="inboxAuthorizeBtn" style="display:none" title="Autorizar este número no bot">Autorizar</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- groupAclMigrationMsg mantido para compatibilidade JS -->
+        <div id="groupAclMigrationMsg" style="display:none"></div>
+
+        <section class="card" id="section-midia">
+          <h2>Arquivos de Mídia</h2>
+          <p class="subtitle">Lista, baixa, protege, remove e limpa arquivos antigos.</p>
+
+          <div class="grid cols-2">
+            <label>
+              Busca
+              <input id="mediaQuery" placeholder="nome, mime, remetente" />
+            </label>
+
+            <label>
+              Tipo
+              <select id="mediaType">
+                <option value="">todos</option>
+                <option value="image">image</option>
+                <option value="video">video</option>
+                <option value="audio">audio</option>
+                <option value="document">document</option>
+                <option value="text">text</option>
+                <option value="file">file</option>
+              </select>
+            </label>
+
+            <label>
+              Sender (digitos)
+              <input id="mediaSender" placeholder="21972..." />
+            </label>
+
+            <label>
+              Include Deleted
+              <select id="includeDeleted">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="loadMedia">Carregar Mídia</button>
+            <button class="warn" id="cleanupMedia">Limpeza por Retenção</button>
+          </div>
+
+          <div id="mediaMsg" class="msg muted"></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>Tipo</th>
+                  <th>Arquivo</th>
+                  <th>Remetente</th>
+                  <th>Tam.</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="mediaRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card span-2" id="section-moderacao">
+          <h2>Moderação do Grupo</h2>
+          <p class="subtitle">Ative filtro, limite de avisos e palavras proibidas em poucos cliques.</p>
+
+          <div class="grid cols-2">
+            <label>
+              Moderação Ativa
+              <select id="modEnabled">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+
+            <label>
+              Limite de Avisos
+              <input id="modMaxWarnings" type="number" min="1" step="1" />
+            </label>
+
+            <label>
+              Nova Palavra Proibida
+              <input id="modKeyword" placeholder="ex.: sexo, nudez, ofensa grave" />
+            </label>
+
+            <label>
+              Resetar Avisos (numero opcional)
+              <input id="modWarningsTarget" placeholder="vazio = reset geral | ex.: 21972..." />
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="saveModeration">Salvar Status/Limite</button>
+            <button class="alt" id="addModerationKeyword">Adicionar Palavra(s)</button>
+            <button class="warn" id="clearModerationKeywords">Limpar Lista</button>
+            <button class="warn" id="resetModerationWarnings">Resetar Avisos</button>
+            <button class="alt" id="reloadModeration">Recarregar</button>
+          </div>
+
+          <div id="moderationMsg" class="msg muted"></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Palavra</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="moderationKeywordRows"></tbody>
+            </table>
+          </div>
+
+          <div class="table-wrap" style="margin-top: 0.75rem">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Número</th>
+                  <th>Avisos</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="moderationWarningRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+
+        <section class="card span-3">
+          <h2>Logs em Tempo Real</h2>
+          <div id="logs" class="logs"></div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const statusText = document.getElementById('statusText');
+      const statusDot = document.getElementById('statusDot');
+      const qrWrap = document.getElementById('qrWrap');
+      const logsEl = document.getElementById('logs');
+      const lastErrorEl = document.getElementById('lastError');
+      const startedAtEl = document.getElementById('startedAt');
+      const codexBinEl = document.getElementById('codexBin');
+      const heroStatusTextEl = document.getElementById('heroStatusText');
+      const heroGroupTextEl = document.getElementById('heroGroupText');
+      const heroCodexTextEl = document.getElementById('heroCodexText');
+      const heroErrorTextEl = document.getElementById('heroErrorText');
+      const sessionBadgeEl = document.getElementById('sessionBadge');
+      const logoutButtonEl = document.getElementById('logoutButton');
+
+      const aiProviderEl = document.getElementById('aiProvider');
+      const aiProvidersAreaEl = document.getElementById('aiProvidersArea');
+      const requireMentionEl = document.getElementById('requireMention');
+      const enableTerminalExecEl = document.getElementById('enableTerminalExec');
+      const codexTimeoutMsEl = document.getElementById('codexTimeoutMs');
+      const maxOutputCharsEl = document.getElementById('maxOutputChars');
+      const mediaIngestEnabledEl = document.getElementById('mediaIngestEnabled');
+      const mediaRetentionDaysEl = document.getElementById('mediaRetentionDays');
+      const systemPromptEl = document.getElementById('systemPrompt');
+      const terminalAllowlistEl = document.getElementById('terminalAllowlist');
+      const settingsMsgEl = document.getElementById('settingsMsg');
+      const settingsQuickSummaryEl = document.getElementById('settingsQuickSummary');
+      const auditListEl = document.getElementById('auditList');
+      let latestRuntimeSettings = {};
+
+      const mediaQueryEl = document.getElementById('mediaQuery');
+      const mediaTypeEl = document.getElementById('mediaType');
+      const mediaSenderEl = document.getElementById('mediaSender');
+      const includeDeletedEl = document.getElementById('includeDeleted');
+      const mediaMsgEl = document.getElementById('mediaMsg');
+      const mediaRowsEl = document.getElementById('mediaRows');
+
+      const modEnabledEl = document.getElementById('modEnabled');
+      const modMaxWarningsEl = document.getElementById('modMaxWarnings');
+      const modKeywordEl = document.getElementById('modKeyword');
+      const modWarningsTargetEl = document.getElementById('modWarningsTarget');
+      const moderationMsgEl = document.getElementById('moderationMsg');
+      const moderationKeywordRowsEl = document.getElementById('moderationKeywordRows');
+      const moderationWarningRowsEl = document.getElementById('moderationWarningRows');
+
+      const aclNumberEl = document.getElementById('aclNumber');
+      const aclGrantAuthorizedEl = document.getElementById('aclGrantAuthorized');
+      const aclGrantAdminEl = document.getElementById('aclGrantAdmin');
+      const aclGrantFullEl = document.getElementById('aclGrantFull');
+      const aclSelectAllAuthorizedEl = document.getElementById('aclSelectAllAuthorized');
+      const aclSelectAllAdminsEl = document.getElementById('aclSelectAllAdmins');
+      const aclSelectAllFullEl = document.getElementById('aclSelectAllFull');
+      const aclMsgEl = document.getElementById('aclMsg');
+      const aclAuthorizedRowsEl = document.getElementById('aclAuthorizedRows');
+      const aclAdminRowsEl = document.getElementById('aclAdminRows');
+      const aclFullRowsEl = document.getElementById('aclFullRows');
+
+      const groupControlSummaryEl = document.getElementById('groupControlSummary');
+      const groupControlMsgEl = document.getElementById('groupControlMsg');
+      const groupSubjectInputEl = document.getElementById('groupSubjectInput');
+      const groupDescriptionInputEl = document.getElementById('groupDescriptionInput');
+      const groupRequesterInputEl = document.getElementById('groupRequesterInput');
+      const groupRequestsRowsEl = document.getElementById('groupRequestsRows');
+      const groupAclMigrationMsgEl = document.getElementById('groupAclMigrationMsg');
+
+      const hasAclPanel = Boolean(
+        aclMsgEl &&
+          aclAuthorizedRowsEl &&
+          aclAdminRowsEl &&
+          aclFullRowsEl &&
+          aclNumberEl &&
+          aclGrantAuthorizedEl &&
+          aclGrantAdminEl &&
+          aclGrantFullEl
+      );
+      const hasGroupControlPanel = Boolean(
+        groupControlSummaryEl &&
+          groupControlMsgEl &&
+          groupSubjectInputEl &&
+          groupDescriptionInputEl &&
+          groupRequesterInputEl &&
+          groupRequestsRowsEl
+      );
+
+      const maxLogLines = 450;
+      let currentAuthorizedGroupId = '';
+      let lastGroupControlSyncJid = '';
+      const nativeFetch = window.fetch.bind(window);
+
+      function redirectToLogin() {
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.replace(`/login.html?next=${next}`);
+      }
+
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+        return response;
+      };
+
+      function setInfo(target, text, isError = false) {
+        if (!target) return;
+        target.textContent = text;
+        target.style.color = isError ? 'var(--error)' : 'var(--muted)';
+      }
+
+      function normalizeDigits(value) {
+        return String(value || '').replace(/\D/g, '');
+      }
+
+      async function loadCurrentSession() {
+        const res = await fetch('/api/panel-auth/me');
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'falha ao carregar sessão');
+        }
+
+        const username = String(data.user?.username || '').trim();
+        sessionBadgeEl.textContent = username ? `sessão: ${username}` : 'sessão ativa';
+      }
+
+      async function logoutFromPanel() {
+        try {
+          await fetch('/api/panel-auth/logout', { method: 'POST' });
+        } catch {}
+
+        redirectToLogin();
+      }
+
+      function updateStatus(state) {
+        if (!state) return;
+        currentAuthorizedGroupId = state.authorizedGroupJid || currentAuthorizedGroupId;
+        statusText.textContent = state.whatsappStatus || 'desconhecido';
+        heroStatusTextEl.textContent = state.whatsappStatus || 'desconhecido';
+        heroGroupTextEl.textContent = state.authorizedGroupJid || '-';
+        heroErrorTextEl.textContent = state.lastError || 'nenhum';
+
+        statusDot.classList.remove('ok', 'error');
+        if (String(state.whatsappStatus || '').includes('pronto')) {
+          statusDot.classList.add('ok');
+        } else if (String(state.whatsappStatus || '').includes('erro')) {
+          statusDot.classList.add('error');
+        }
+
+        lastErrorEl.textContent = state.lastError || 'nenhum';
+        startedAtEl.textContent = state.startedAt || '-';
+
+        if (state.qrDataUrl) {
+          qrWrap.innerHTML = `<img src="${state.qrDataUrl}" alt="QR Code do WhatsApp" />`;
+        } else if (!qrWrap.querySelector('.qr-empty')) {
+          qrWrap.innerHTML = '<div class="qr-empty">Sem QR ativo no momento.</div>';
+        }
+
+        if (
+          hasGroupControlPanel &&
+          currentAuthorizedGroupId &&
+          currentAuthorizedGroupId !== lastGroupControlSyncJid &&
+          String(state.whatsappStatus || '').includes('pronto')
+        ) {
+          lastGroupControlSyncJid = currentAuthorizedGroupId;
+          void loadGroupControl(true, false);
+        }
+      }
+
+      function appendLog(entry) {
+        if (!entry) return;
+
+        const div = document.createElement('div');
+        div.className = `log ${entry.level || 'info'}`;
+
+        const ts = entry.ts || new Date().toISOString();
+        const level = (entry.level || 'info').toUpperCase();
+        const message = entry.message || '';
+        const meta = entry.meta && Object.keys(entry.meta).length ? ` ${JSON.stringify(entry.meta)}` : '';
+
+        div.textContent = `[${ts}] ${level} ${message}${meta}`;
+        logsEl.appendChild(div);
+
+        while (logsEl.children.length > maxLogLines) {
+          logsEl.removeChild(logsEl.firstChild);
+        }
+
+        logsEl.scrollTop = logsEl.scrollHeight;
+      }
+
+      function fillSettings(settings) {
+        if (!settings) return;
+        latestRuntimeSettings = { ...(settings || {}) };
+        aiProviderEl.value = settings.aiProvider || 'codex';
+        requireMentionEl.value = String(Boolean(settings.requireMention));
+        enableTerminalExecEl.value = String(Boolean(settings.enableTerminalExec));
+        codexTimeoutMsEl.value = Number(settings.codexTimeoutMs || 12000);
+        maxOutputCharsEl.value = Number(settings.maxOutputChars || 1800);
+        mediaIngestEnabledEl.value = String(Boolean(settings.mediaIngestEnabled));
+        mediaRetentionDaysEl.value = Number(settings.mediaRetentionDays || 30);
+        systemPromptEl.value = settings.systemPrompt || '';
+        terminalAllowlistEl.value = Array.isArray(settings.terminalAllowlist)
+          ? settings.terminalAllowlist.join(', ')
+          : '';
+        renderSettingsSummary(settings);
+      }
+
+      function renderSettingsSummary(settings) {
+        const data = settings && typeof settings === 'object' ? settings : {};
+        const terminalItems = Array.isArray(data.terminalAllowlist) ? data.terminalAllowlist.length : 0;
+        const providerLabel = data.aiProvider === 'copilot' ? 'Copilot' : 'Codex';
+        const text =
+          `Resumo atual: IA=${providerLabel} | menção=${data.requireMention ? 'sim' : 'não'} | ` +
+          `terminal=${data.enableTerminalExec ? 'ativo' : 'desativado'} | ` +
+          `timeout IA=${Number(data.codexTimeoutMs || 0)}ms | ` +
+          `resposta=${Number(data.maxOutputChars || 0)} chars | ` +
+          `mídia=${data.mediaIngestEnabled ? 'ativa' : 'inativa'} | ` +
+          `retencao=${Number(data.mediaRetentionDays || 0)} dia(s) | ` +
+          `allowlist=${terminalItems}`;
+        settingsQuickSummaryEl.textContent = text;
+      }
+
+      async function loadSettings() {
+        try {
+          const res = await fetch('/api/settings');
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao carregar');
+          fillSettings(data.settings);
+          setInfo(settingsMsgEl, 'Configuração carregada.');
+        } catch (error) {
+          setInfo(settingsMsgEl, `Erro ao carregar configuração: ${String(error)}`, true);
+        }
+      }
+
+      async function saveSettings() {
+        const timeoutValue = Number(codexTimeoutMsEl.value || 12000);
+        const maxOutputValue = Number(maxOutputCharsEl.value || 1800);
+        const mediaRetentionValue = Number(mediaRetentionDaysEl.value || 30);
+        const terminalList = terminalAllowlistEl.value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+
+        if (!Number.isFinite(timeoutValue) || timeoutValue < 4000 || timeoutValue > 180000) {
+          setInfo(settingsMsgEl, 'Timeout da IA inválido. Use um valor entre 4000 e 180000 ms.', true);
+          return;
+        }
+        if (!Number.isFinite(maxOutputValue) || maxOutputValue < 100 || maxOutputValue > 12000) {
+          setInfo(settingsMsgEl, 'Limite de resposta inválido. Use um valor entre 100 e 12000.', true);
+          return;
+        }
+        if (!Number.isFinite(mediaRetentionValue) || mediaRetentionValue < 1 || mediaRetentionValue > 3650) {
+          setInfo(settingsMsgEl, 'Retenção de mídia inválida. Use um valor entre 1 e 3650 dias.', true);
+          return;
+        }
+        if (enableTerminalExecEl.value === 'true' && terminalList.length === 0) {
+          setInfo(settingsMsgEl, 'Ative pelo menos 1 comando permitido na allowlist do terminal.', true);
+          return;
+        }
+
+        const payload = {
+          aiProvider: aiProviderEl.value,
+          requireMention: requireMentionEl.value === 'true',
+          enableTerminalExec: enableTerminalExecEl.value === 'true',
+          codexTimeoutMs: timeoutValue,
+          maxOutputChars: maxOutputValue,
+          mediaIngestEnabled: mediaIngestEnabledEl.value === 'true',
+          mediaRetentionDays: mediaRetentionValue,
+          systemPrompt: systemPromptEl.value,
+          terminalAllowlist: terminalList,
+          actor: 'painel-web',
+          reason: 'edicao_manual'
+        };
+
+        try {
+          const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao salvar');
+          fillSettings(data.settings);
+          setInfo(settingsMsgEl, `Ajustes salvos com sucesso. Auditoria: ${data.auditId || 'n/a'}`);
+          await loadAudit();
+          await loadAiProviders();
+          updateHeroAiDisplay(data.settings?.aiProvider || aiProviderEl.value);
+        } catch (error) {
+          setInfo(settingsMsgEl, `Erro ao salvar: ${String(error)}`, true);
+        }
+      }
+
+      async function loadAudit() {
+        try {
+          const res = await fetch('/api/settings/audit?limit=20');
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+
+          const items = Array.isArray(data.items) ? data.items : [];
+          if (!items.length) {
+            auditListEl.innerHTML = '<div class="audit-item muted">Sem auditoria registrada.</div>';
+            return;
+          }
+
+          auditListEl.innerHTML = items
+            .map((item) => {
+              const keys = Array.isArray(item.changedKeys) ? item.changedKeys.join(', ') : '';
+              return `<div class="audit-item">${item.ts || '-'} | ${item.actor || '-'} | ${item.id || '-'}<br/>${keys || 'sem chaves'}</div>`;
+            })
+            .join('');
+        } catch (error) {
+          auditListEl.innerHTML = `<div class="audit-item">Erro ao carregar auditoria: ${String(error)}</div>`;
+        }
+      }
+
+      function formatBytes(bytes) {
+        const n = Number(bytes || 0);
+        if (n < 1024) return `${n} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+        return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      }
+
+      async function loadMedia() {
+        try {
+          const params = new URLSearchParams({
+            limit: '100',
+            query: mediaQueryEl.value.trim(),
+            mediaType: mediaTypeEl.value,
+            sender: mediaSenderEl.value.trim(),
+            includeDeleted: includeDeletedEl.value
+          });
+
+          const res = await fetch(`/api/media?${params.toString()}`);
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+
+          const items = Array.isArray(data.items) ? data.items : [];
+          if (!items.length) {
+            mediaRowsEl.innerHTML = '<tr><td colspan="6">Sem arquivos para os filtros atuais.</td></tr>';
+          } else {
+            mediaRowsEl.innerHTML = items
+              .map((item) => {
+                const lockLabel = item.protected ? 'Desproteger' : 'Proteger';
+                const deleted = item.deletedAt ? ' (removido)' : '';
+                return `
+                  <tr>
+                    <td>${item.createdAt || '-'}</td>
+                    <td>${item.mediaType || '-'}</td>
+                    <td>${item.fileName || '-'}${deleted}</td>
+                    <td>${item.senderNumber || item.senderJid || '-'}</td>
+                    <td>${formatBytes(item.sizeBytes)}</td>
+                    <td>
+                      <div class="row">
+                        <button onclick="downloadMedia('${item.id}', ${item.protected ? 'true' : 'false'})">Baixar</button>
+                        <button class="alt" onclick="toggleProtect('${item.id}', ${item.protected ? 'false' : 'true'})">${lockLabel}</button>
+                        <button class="warn" onclick="deleteMedia('${item.id}', ${item.protected ? 'true' : 'false'})">Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join('');
+          }
+
+          setInfo(mediaMsgEl, `Mídias listadas: ${data.total || 0}`);
+        } catch (error) {
+          setInfo(mediaMsgEl, `Erro ao carregar mídias: ${String(error)}`, true);
+        }
+      }
+
+      async function deleteMedia(id, isProtected = false) {
+        try {
+          let password = '';
+          if (isProtected) {
+            password = window.prompt('Arquivo protegido. Informe a senha para excluir:') || '';
+            if (!password) throw new Error('Senha obrigatória para excluir arquivo protegido.');
+          }
+
+          const params = new URLSearchParams();
+          if (password) params.set('password', password);
+          const suffix = params.toString() ? `?${params.toString()}` : '';
+          const res = await fetch(`/api/media/${id}${suffix}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao excluir');
+          await loadMedia();
+        } catch (error) {
+          setInfo(mediaMsgEl, `Erro ao excluir: ${String(error)}`, true);
+        }
+      }
+
+      async function toggleProtect(id, value) {
+        try {
+          let password = '';
+          const shouldProtect = String(value) === 'true';
+          if (shouldProtect) {
+            password = window.prompt('Defina uma senha para proteger este arquivo (opcional):') || '';
+          }
+          const res = await fetch(`/api/media/${id}/protect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ protected: value, password, clearPassword: !shouldProtect })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao proteger');
+          await loadMedia();
+        } catch (error) {
+          setInfo(mediaMsgEl, `Erro ao proteger: ${String(error)}`, true);
+        }
+      }
+
+      function downloadMedia(id, isProtected = false) {
+        let password = '';
+        if (isProtected) {
+          password = window.prompt('Arquivo protegido. Informe a senha para baixar:') || '';
+          if (!password) {
+            setInfo(mediaMsgEl, 'Download cancelado: senha obrigatória para arquivo protegido.', true);
+            return;
+          }
+        }
+
+        const params = new URLSearchParams();
+        if (password) params.set('password', password);
+        const suffix = params.toString() ? `?${params.toString()}` : '';
+        window.open(`/api/media/${id}/download${suffix}`, '_blank');
+      }
+
+      async function cleanupMedia() {
+        try {
+          const days = Number(mediaRetentionDaysEl.value || 30);
+          const res = await fetch('/api/media/cleanup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ days })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+          setInfo(mediaMsgEl, `Limpeza executada. Removidos: ${data.removed || 0}`);
+          await loadMedia();
+        } catch (error) {
+          setInfo(mediaMsgEl, `Erro na limpeza: ${String(error)}`, true);
+        }
+      }
+
+      function moderationQueryString() {
+        const params = new URLSearchParams();
+        if (currentAuthorizedGroupId) {
+          params.set('groupId', currentAuthorizedGroupId);
+        }
+        return params.toString();
+      }
+
+      function renderModerationKeywords(items) {
+        if (!Array.isArray(items) || !items.length) {
+          moderationKeywordRowsEl.innerHTML = '<tr><td colspan="3">Sem palavras proibidas cadastradas.</td></tr>';
+          return;
+        }
+
+        moderationKeywordRowsEl.innerHTML = items
+          .map(
+            (item, idx) => `
+              <tr>
+                <td>${idx + 1}</td>
+                <td>${item}</td>
+                <td><button class="warn" onclick="removeModerationKeyword('${encodeURIComponent(item)}')">Remover</button></td>
+              </tr>
+            `
+          )
+          .join('');
+      }
+
+      function renderModerationWarnings(warningsMap) {
+        const entries = Object.entries(warningsMap || {});
+        if (!entries.length) {
+          moderationWarningRowsEl.innerHTML = '<tr><td colspan="4">Sem avisos ativos no grupo.</td></tr>';
+          return;
+        }
+
+        moderationWarningRowsEl.innerHTML = entries
+          .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+          .map(([who, count], idx) => {
+            const raw = String(who || '');
+            const digits = normalizeDigits(raw.split('@')[0] || raw);
+            const display = digits || raw || '-';
+            return `
+              <tr>
+                <td>${idx + 1}</td>
+                <td>${display}</td>
+                <td>${Number(count || 0)}</td>
+                <td><button class="warn" onclick="resetModerationWarningFor('${encodeURIComponent(display)}')">Resetar</button></td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      async function loadModeration() {
+        try {
+          const query = moderationQueryString();
+          const url = query ? `/api/moderation?${query}` : '/api/moderation';
+          const res = await fetch(url);
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao carregar moderacao');
+          const moderation = data.moderation || {};
+          modEnabledEl.value = String(Boolean(moderation.enabled));
+          modMaxWarningsEl.value = Number(moderation.maxWarnings || 3);
+          renderModerationKeywords(moderation.keywords || []);
+          renderModerationWarnings(moderation.warnings || {});
+          const warningCount = Object.keys(moderation.warnings || {}).length;
+          setInfo(
+            moderationMsgEl,
+            `Moderação carregada. Palavras: ${(moderation.keywords || []).length} | Avisos ativos: ${warningCount} | Grupo: ${moderation.groupId || '-'}`
+          );
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao carregar moderação: ${String(error)}`, true);
+        }
+      }
+
+      async function saveModeration() {
+        try {
+          const payload = {
+            enabled: modEnabledEl.value === 'true',
+            maxWarnings: Number(modMaxWarningsEl.value || 3),
+            groupId: currentAuthorizedGroupId || ''
+          };
+          const res = await fetch('/api/moderation', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao salvar moderacao');
+          await loadModeration();
+          setInfo(moderationMsgEl, 'Configuração de moderação atualizada.');
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao salvar moderação: ${String(error)}`, true);
+        }
+      }
+
+      async function addModerationKeyword() {
+        try {
+          const rawInput = modKeywordEl.value.trim();
+          const items = Array.from(
+            new Set(
+              rawInput
+                .split(/[\n,;]+/)
+                .map((item) => item.trim())
+                .filter(Boolean)
+            )
+          );
+          if (!items.length) throw new Error('Informe ao menos uma palavra.');
+
+          const added = [];
+          const existing = [];
+          const invalid = [];
+
+          for (const keyword of items) {
+            const res = await fetch('/api/moderation/keywords', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                keyword,
+                groupId: currentAuthorizedGroupId || ''
+              })
+            });
+            const data = await res.json().catch(() => ({ ok: false }));
+            if (res.ok && data.ok) {
+              added.push(data.keyword || keyword);
+            } else if (data.reason === 'exists') {
+              existing.push(data.keyword || keyword);
+            } else {
+              invalid.push(keyword);
+            }
+          }
+
+          modKeywordEl.value = '';
+          await loadModeration();
+          const hasOnlyInvalid = invalid.length > 0 && added.length === 0 && existing.length === 0;
+          setInfo(
+            moderationMsgEl,
+            `Processadas ${items.length} palavra(s). Adicionadas: ${added.length}. Já existentes: ${existing.length}. Inválidas: ${invalid.length}.`,
+            hasOnlyInvalid
+          );
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao adicionar palavra: ${String(error)}`, true);
+        }
+      }
+
+      async function clearModerationKeywords() {
+        try {
+          if (!window.confirm('Deseja limpar TODA a lista de palavras proibidas deste grupo?')) {
+            return;
+          }
+          const res = await fetch('/api/moderation/keywords/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId: currentAuthorizedGroupId || '' })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao limpar palavras');
+          await loadModeration();
+          setInfo(moderationMsgEl, `Palavras removidas: ${data.removed || 0}`);
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao limpar palavras: ${String(error)}`, true);
+        }
+      }
+
+      async function removeModerationKeyword(encodedKeyword) {
+        try {
+          const keyword = decodeURIComponent(String(encodedKeyword || ''));
+          if (!keyword) throw new Error('Palavra inválida.');
+          const query = moderationQueryString();
+          const url = query
+            ? `/api/moderation/keywords/${encodeURIComponent(keyword)}?${query}`
+            : `/api/moderation/keywords/${encodeURIComponent(keyword)}`;
+          const res = await fetch(url, { method: 'DELETE' });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao remover palavra');
+          await loadModeration();
+          setInfo(moderationMsgEl, `Palavra removida: ${keyword}`);
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao remover palavra: ${String(error)}`, true);
+        }
+      }
+
+      async function resetModerationWarnings(forcedTarget = '') {
+        try {
+          const targetDigits = normalizeDigits(forcedTarget || modWarningsTargetEl.value || '');
+          if (!targetDigits) {
+            const proceed = window.confirm('Resetar avisos de TODOS os usuários do grupo?');
+            if (!proceed) return;
+          }
+          const payload = {
+            groupId: currentAuthorizedGroupId || '',
+            target: targetDigits
+          };
+          const res = await fetch('/api/moderation/warnings/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao resetar avisos');
+          const suffix = targetDigits ? ` para ${targetDigits}` : ' do grupo';
+          setInfo(moderationMsgEl, `Avisos resetados${suffix}: ${data.removed || 0}`);
+          modWarningsTargetEl.value = '';
+          await loadModeration();
+        } catch (error) {
+          setInfo(moderationMsgEl, `Erro ao resetar avisos: ${String(error)}`, true);
+        }
+      }
+
+      async function resetModerationWarningFor(encodedTarget) {
+        const decoded = decodeURIComponent(String(encodedTarget || ''));
+        const target = normalizeDigits(decoded);
+        if (!target) throw new Error('Número inválido para reset.');
+        modWarningsTargetEl.value = target;
+        await resetModerationWarnings(target);
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function formatEpochDateTime(value) {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return '-';
+        const ms = n > 1_000_000_000_000 ? n : n * 1000;
+        const date = new Date(ms);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      function parseGroupRequesterIds(rawText) {
+        return Array.from(
+          new Set(
+            String(rawText || '')
+              .split(/[\s,;\n]+/g)
+              .map((item) => normalizeDigits(item))
+              .filter((item) => item.length >= 8)
+              .map((item) => `${item}@c.us`)
+          )
+        );
+      }
+
+      function renderGroupRequests(items) {
+        if (!groupRequestsRowsEl) return;
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) {
+          groupRequestsRowsEl.innerHTML = '<tr><td colspan="3">Sem solicitações pendentes.</td></tr>';
+          return;
+        }
+
+        groupRequestsRowsEl.innerHTML = list
+          .map((item, index) => {
+            const requesterRaw = String(item.requester || '').trim();
+            const requester = normalizeDigits(requesterRaw.split('@')[0] || requesterRaw) || requesterRaw || '-';
+            return `<tr>
+              <td>${index + 1}</td>
+              <td>${escapeHtml(requester)}</td>
+              <td>${escapeHtml(formatEpochDateTime(item.createdAt))}</td>
+            </tr>`;
+          })
+          .join('');
+      }
+
+      function renderGroupSnapshot(group) {
+        if (!groupControlSummaryEl || !groupSubjectInputEl || !groupDescriptionInputEl) return;
+        if (!group || typeof group !== 'object') {
+          groupControlSummaryEl.innerHTML = 'Sem dados do grupo no momento.';
+          renderGroupRequests([]);
+          return;
+        }
+
+        const subject = String(group.subject || '').trim() || '(sem nome)';
+        const description = String(group.description || '').trim() || '(sem descricao)';
+        const messagesMode = group.messagesAdminsOnly ? 'somente admins' : 'todos podem falar';
+        const infoMode = group.infoAdminsOnly ? 'somente admins' : 'participantes podem editar';
+        const addMembersMode = group.addMembersAdminsOnly ? 'somente admins' : 'participantes podem adicionar';
+        const inviteText = group.inviteLink
+          ? `<a href="${escapeHtml(group.inviteLink)}" target="_blank" rel="noreferrer">${escapeHtml(group.inviteLink)}</a>`
+          : 'indisponível no momento';
+
+        groupControlSummaryEl.innerHTML =
+          `<b>Grupo:</b> ${escapeHtml(subject)}<br/>` +
+          `<b>Descrição:</b> ${escapeHtml(description)}<br/>` +
+          `<b>Participantes:</b> ${Number(group.participantsCount || 0)} | <b>Admins:</b> ${Number(group.adminsCount || 0)}<br/>` +
+          `<b>Mensagens:</b> ${escapeHtml(messagesMode)} | <b>Info:</b> ${escapeHtml(infoMode)} | <b>Adicionar:</b> ${escapeHtml(addMembersMode)}<br/>` +
+          `<b>Solicitações pendentes:</b> ${Number(group.membershipRequestsCount || 0)}<br/>` +
+          `<b>Link atual:</b> ${inviteText}`;
+
+        groupSubjectInputEl.value = subject === '(sem nome)' ? '' : subject;
+        groupDescriptionInputEl.value = description === '(sem descricao)' ? '' : description;
+        renderGroupRequests(group.membershipRequests || []);
+      }
+
+      async function loadGroupControl(includeInvite = true, includeRequests = false) {
+        if (!hasGroupControlPanel) return;
+        try {
+          const params = new URLSearchParams();
+          params.set('includeInvite', includeInvite ? 'true' : 'false');
+          params.set('includeRequests', includeRequests ? 'true' : 'false');
+          const res = await fetch(`/api/group/control?${params.toString()}`);
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao carregar controle de grupo');
+          renderGroupSnapshot(data.group);
+          setInfo(groupControlMsgEl, 'Controle de grupo carregado.');
+        } catch (error) {
+          setInfo(groupControlMsgEl, `Erro no controle de grupo: ${String(error)}`, true);
+        }
+      }
+
+      async function runGroupControlAction(action, payload = {}, successFallback = 'Ação concluída.') {
+        if (!hasGroupControlPanel) return;
+        try {
+          const res = await fetch('/api/group/control/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action,
+              ...payload
+            })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha na ação de grupo');
+          renderGroupSnapshot(data.group || {});
+          setInfo(groupControlMsgEl, data.detail || successFallback);
+        } catch (error) {
+          setInfo(groupControlMsgEl, `Falha na ação de grupo: ${String(error)}`, true);
+        }
+      }
+
+      function renderAccessControl(snapshot) {
+        if (!hasAclPanel) return;
+        const data = snapshot || {};
+        const effectiveAuthorized = Array.isArray(data.effectiveAuthorized) ? data.effectiveAuthorized : [];
+        const effectiveAdmins = Array.isArray(data.effectiveAdmins) ? data.effectiveAdmins : [];
+        const effectiveFulls = Array.isArray(data.effectiveFulls) ? data.effectiveFulls : [];
+        const dynamicAuthorized = new Set(Array.isArray(data.dynamicAuthorized) ? data.dynamicAuthorized : []);
+        const dynamicAdmins = new Set(Array.isArray(data.dynamicAdmins) ? data.dynamicAdmins : []);
+        const dynamicFulls = new Set(Array.isArray(data.dynamicFulls) ? data.dynamicFulls : []);
+
+        if (!effectiveAuthorized.length) {
+          aclAuthorizedRowsEl.innerHTML = '<tr><td colspan="3">Sem autorizados.</td></tr>';
+        } else {
+          aclAuthorizedRowsEl.innerHTML = effectiveAuthorized
+            .map((number) => {
+              if (!dynamicAuthorized.has(number)) {
+                return `<tr><td>-</td><td>${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-authorized-check" type="checkbox" value="${number}" /></td>
+                <td>${number}</td>
+                <td><button class="warn" onclick="removeAuthorized('${number}')">Bloquear</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        if (!effectiveAdmins.length) {
+          aclAdminRowsEl.innerHTML = '<tr><td colspan="3">Sem admins.</td></tr>';
+        } else {
+          aclAdminRowsEl.innerHTML = effectiveAdmins
+            .map((number) => {
+              if (!dynamicAdmins.has(number)) {
+                return `<tr><td>-</td><td>${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-admin-check" type="checkbox" value="${number}" /></td>
+                <td>${number}</td>
+                <td><button class="warn" onclick="removeAdmin('${number}')">Remover</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        if (!effectiveFulls.length) {
+          aclFullRowsEl.innerHTML = '<tr><td colspan="3">Sem FULL.</td></tr>';
+        } else {
+          aclFullRowsEl.innerHTML = effectiveFulls
+            .map((number) => {
+              if (!dynamicFulls.has(number)) {
+                return `<tr><td>-</td><td>${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-full-check" type="checkbox" value="${number}" /></td>
+                <td>${number}</td>
+                <td><button class="warn" onclick="removeFull('${number}')">Remover FULL</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        aclSelectAllAuthorizedEl.checked = false;
+        aclSelectAllAdminsEl.checked = false;
+        aclSelectAllFullEl.checked = false;
+      }
+
+      async function loadAccessControl() {
+        if (!hasAclPanel) return;
+        try {
+          const res = await fetch('/api/access-control');
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao carregar permissões');
+          renderAccessControl(data.accessControl);
+          setInfo(aclMsgEl, 'Permissões carregadas.');
+        } catch (error) {
+          setInfo(aclMsgEl, `Erro ao carregar permissões: ${String(error)}`, true);
+        }
+      }
+
+      async function readAccessSnapshot() {
+        const res = await fetch('/api/access-control');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar permissões');
+        return data.accessControl || {};
+      }
+
+      async function addAuthorizedNumber(number) {
+        const res = await fetch('/api/access-control/authorized', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') {
+          throw new Error(data.message || 'falha ao autorizar');
+        }
+        return data;
+      }
+
+      async function addAdmin(number) {
+        const res = await fetch('/api/access-control/admins', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') {
+          throw new Error(data.message || 'falha ao adicionar admin');
+        }
+        return data;
+      }
+
+      async function addFull(number) {
+        const res = await fetch('/api/access-control/full', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') {
+          throw new Error(data.message || 'falha ao adicionar full');
+        }
+        return data;
+      }
+
+      async function applyAclPermissions() {
+        if (!hasAclPanel) return;
+        try {
+          const number = normalizeDigits(aclNumberEl.value);
+          if (!number) throw new Error('Informe um número no campo principal.');
+
+          const wantFull = Boolean(aclGrantFullEl.checked);
+          const wantAdmin = Boolean(aclGrantAdminEl.checked) || wantFull;
+          const wantAuthorized = Boolean(aclGrantAuthorizedEl.checked) || wantAdmin;
+
+          if (wantFull) {
+            await addFull(number);
+          } else {
+            try {
+              await removeFull(number);
+            } catch {
+              // pode estar fixo no .env ou já removido; valida no snapshot final.
+            }
+          }
+
+          if (wantAdmin) {
+            await addAdmin(number);
+          } else {
+            try {
+              await removeAdmin(number);
+            } catch {
+              // pode estar fixo no .env ou já removido; valida no snapshot final.
+            }
+          }
+
+          if (wantAuthorized) {
+            await addAuthorizedNumber(number);
+          } else {
+            try {
+              await removeAuthorized(number);
+            } catch {
+              // pode estar fixo no .env ou já removido; valida no snapshot final.
+            }
+          }
+
+          const snapshot = await readAccessSnapshot();
+          renderAccessControl(snapshot);
+
+          const hasAuthorized = Array.isArray(snapshot.effectiveAuthorized)
+            ? snapshot.effectiveAuthorized.includes(number)
+            : false;
+          const hasAdmin = Array.isArray(snapshot.effectiveAdmins) ? snapshot.effectiveAdmins.includes(number) : false;
+          const hasFull = Array.isArray(snapshot.effectiveFulls) ? snapshot.effectiveFulls.includes(number) : false;
+          const isStaticAuthorized = Array.isArray(snapshot.staticAuthorized)
+            ? snapshot.staticAuthorized.includes(number)
+            : false;
+          const isStaticAdmin = Array.isArray(snapshot.staticAdmins) ? snapshot.staticAdmins.includes(number) : false;
+          const isStaticFull = Array.isArray(snapshot.staticFulls) ? snapshot.staticFulls.includes(number) : false;
+
+          const staticHints = [];
+          if (isStaticAuthorized) staticHints.push('interação fixa no .env');
+          if (isStaticAdmin) staticHints.push('admin fixo no .env');
+          if (isStaticFull) staticHints.push('full fixo no .env');
+
+          setInfo(
+            aclMsgEl,
+            `Permissões aplicadas para ${number}: interagir=${hasAuthorized ? 'sim' : 'não'}, admin=${hasAdmin ? 'sim' : 'não'}, full=${hasFull ? 'sim' : 'não'}.${
+              staticHints.length ? ` (${staticHints.join(' | ')})` : ''
+            }`
+          );
+        } catch (error) {
+          setInfo(aclMsgEl, `Erro ao aplicar permissões: ${String(error)}`, true);
+        }
+      }
+
+      async function bulkRemoveSelected() {
+        if (!hasAclPanel) return;
+        try {
+          const selectedAuthorized = Array.from(document.querySelectorAll('.acl-authorized-check:checked')).map((el) =>
+            normalizeDigits(el.value)
+          );
+          const selectedAdmins = Array.from(document.querySelectorAll('.acl-admin-check:checked')).map((el) =>
+            normalizeDigits(el.value)
+          );
+          const selectedFull = Array.from(document.querySelectorAll('.acl-full-check:checked')).map((el) =>
+            normalizeDigits(el.value)
+          );
+
+          const all = new Set([...selectedAuthorized, ...selectedAdmins, ...selectedFull].filter(Boolean));
+          if (!all.size) {
+            throw new Error('Selecione pelo menos um número nas tabelas.');
+          }
+
+          let removedCount = 0;
+
+          for (const number of all) {
+            if (selectedAdmins.includes(number)) {
+              try {
+                await removeAdmin(number);
+                removedCount += 1;
+              } catch {
+                // segue fluxo
+              }
+            }
+
+            if (selectedFull.includes(number)) {
+              try {
+                await removeFull(number);
+                removedCount += 1;
+              } catch {
+                // segue fluxo
+              }
+            }
+
+            if (selectedAuthorized.includes(number)) {
+              try {
+                await removeAuthorized(number);
+                removedCount += 1;
+              } catch {
+                // segue fluxo
+              }
+            }
+          }
+
+          await loadAccessControl();
+          setInfo(aclMsgEl, `Bloqueio em lote concluído. Ações executadas: ${removedCount}.`);
+        } catch (error) {
+          setInfo(aclMsgEl, `Erro ao bloquear selecionados: ${String(error)}`, true);
+        }
+      }
+
+      async function removeAuthorized(number) {
+        if (!hasAclPanel) return;
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Número inválido.');
+        const res = await fetch(`/api/access-control/authorized/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao bloquear número');
+        renderAccessControl(data.accessControl);
+        setInfo(aclMsgEl, `Número bloqueado: ${data.number}`);
+      }
+
+      async function removeAdmin(number) {
+        if (!hasAclPanel) return;
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Número inválido.');
+        const res = await fetch(`/api/access-control/admins/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao remover admin');
+        renderAccessControl(data.accessControl);
+        setInfo(aclMsgEl, `Admin removido: ${data.number}`);
+      }
+
+      async function removeFull(number) {
+        if (!hasAclPanel) return;
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Número inválido.');
+        const res = await fetch(`/api/access-control/full/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao remover full');
+        renderAccessControl(data.accessControl);
+        setInfo(aclMsgEl, `FULL removido: ${data.number}`);
+      }
+
+      window.deleteMedia = deleteMedia;
+      window.toggleProtect = toggleProtect;
+      window.downloadMedia = downloadMedia;
+      window.removeModerationKeyword = removeModerationKeyword;
+      window.resetModerationWarningFor = resetModerationWarningFor;
+      window.removeAuthorized = removeAuthorized;
+      window.removeAdmin = removeAdmin;
+      window.removeFull = removeFull;
+
+      let cachedActiveProvider = 'codex';
+
+      function uniqueModels(models = [], current = '') {
+        const all = [];
+        if (current) all.push(current);
+        for (const item of models) {
+          const value = String(item || '').trim();
+          if (value) all.push(value);
+        }
+        return Array.from(new Set(all));
+      }
+
+      function buildModelOptions(currentValue, presets = []) {
+        const current = String(currentValue || '').trim();
+        const items = uniqueModels(presets, current);
+        const emptySelected = current ? '' : ' selected';
+        return [
+          `<option value=""${emptySelected}>(padrão automático)</option>`,
+          ...items.map((model) => {
+            const selected = model === current ? ' selected' : '';
+            return `<option value="${escapeHtml(model)}"${selected}>${escapeHtml(model)}</option>`;
+          })
+        ].join('');
+      }
+
+      function providerModelState(providerId, settings = {}) {
+        if (providerId === 'copilot') {
+          return {
+            title: 'Modelos Copilot',
+            primaryLabel: 'Modelo principal',
+            primaryKey: 'copilotModel',
+            primaryValue: String(settings.copilotModel || ''),
+            primaryPresets: ['gpt-5-mini', 'gpt-5', 'gpt-4.1', 'claude-sonnet-4.6', 'claude-3.7-sonnet'],
+            fullLabel: 'Modelo FULL',
+            fullKey: 'copilotFullModel',
+            fullValue: String(settings.copilotFullModel || ''),
+            fullPresets: ['gpt-5-mini', 'gpt-5', 'gpt-4.1', 'claude-sonnet-4.6', 'claude-3.7-sonnet'],
+            fallbackLabel: 'Fallback',
+            fallbackKey: 'copilotFallbackModel',
+            fallbackValue: String(settings.copilotFallbackModel || ''),
+            fallbackPresets: ['gpt-4.1', 'gpt-5-mini', 'gpt-4.1-mini', 'claude-sonnet-4.6']
+          };
+        }
+
+        return {
+          title: 'Modelos Codex',
+          primaryLabel: 'Modelo principal',
+          primaryKey: 'codexModel',
+          primaryValue: String(settings.codexModel || ''),
+          primaryPresets: ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5-mini', 'gpt-5'],
+          fullLabel: '',
+          fullKey: '',
+          fullValue: '',
+          fullPresets: [],
+          fallbackLabel: 'Fallback',
+          fallbackKey: 'codexFallbackModel',
+          fallbackValue: String(settings.codexFallbackModel || ''),
+          fallbackPresets: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5']
+        };
+      }
+
+      function resolveModelInput(selectId, customId, currentValue = '') {
+        const selectEl = document.getElementById(selectId);
+        const customEl = document.getElementById(customId);
+        const selected = String(selectEl?.value || '').trim();
+        if (selected) return selected;
+        const custom = String(customEl?.value || '').trim();
+        if (custom) return custom;
+        return String(currentValue || '').trim();
+      }
+
+      function normalizeModelAlias(providerId, mode, rawValue, modelState) {
+        const raw = String(rawValue || '').trim();
+        if (!raw) return '';
+        const compact = raw
+          .toLowerCase()
+          .replace(/\s+/g, '')
+          .replace(/_/g, '-');
+
+        const isFull = mode === 'full';
+        const providerDefault = providerId === 'copilot'
+          ? (isFull ? (modelState.fullValue || modelState.primaryValue || 'gpt-5-mini') : (modelState.primaryValue || 'gpt-5-mini'))
+          : (modelState.primaryValue || 'gpt-5.4-mini');
+        const providerFallback = providerId === 'copilot'
+          ? (modelState.fallbackValue || 'gpt-4.1')
+          : (modelState.fallbackValue || 'gpt-5.4');
+
+        if (['gpt', 'chatgpt', 'openai'].includes(compact)) {
+          return mode === 'fallback' ? providerFallback : providerDefault;
+        }
+        if (['gpt5', 'gpt-5', 'gptmini', 'gpt-mini', 'gpt5mini', 'gpt-5-mini'].includes(compact)) {
+          return providerId === 'copilot' ? 'gpt-5-mini' : 'gpt-5.4-mini';
+        }
+        if (['gpt4', 'gpt-4', 'gpt4.1', 'gpt-4.1'].includes(compact)) {
+          return providerId === 'copilot' ? 'gpt-4.1' : providerFallback;
+        }
+        return raw;
+      }
+
+      function renderAiProviders(data) {
+        if (!aiProvidersAreaEl) return;
+        const providers = Array.isArray(data.providers) ? data.providers : [];
+        const active = data.activeProvider || 'codex';
+        cachedActiveProvider = active;
+
+        if (!providers.length) {
+          aiProvidersAreaEl.innerHTML = '<div class="muted">Nenhum provedor detectado.</div>';
+          return;
+        }
+
+        aiProvidersAreaEl.innerHTML = providers.map((p) => {
+          const isActive = p.id === active;
+          const statusBadge = p.installed
+            ? '<span class="provider-badge installed">Instalado</span>'
+            : '<span class="provider-badge missing">Não encontrado</span>';
+          const activeBadge = isActive
+            ? ' <span class="provider-badge active-label">ATIVO</span>'
+            : '';
+          const model = providerModelState(p.id, latestRuntimeSettings);
+          const primaryOptions = buildModelOptions(model.primaryValue, model.primaryPresets);
+          const fallbackOptions = buildModelOptions(model.fallbackValue, model.fallbackPresets);
+          const fullBlock = model.fullKey
+            ? `
+              <label>
+                ${model.fullLabel}
+                <select id="modelFullSelect_${p.id}">${buildModelOptions(model.fullValue, model.fullPresets)}</select>
+                <input id="modelFullCustom_${p.id}" type="text" placeholder="ou digite o modelo exato (ex: gpt-5-mini)" />
+              </label>
+            `
+            : '';
+
+          return `<div class="ai-provider-card${isActive ? ' active' : ''}" data-provider="${p.id}">
+            <div class="provider-header">
+              <span class="provider-name">${escapeHtml(p.name)}</span>
+              ${statusBadge}${activeBadge}
+            </div>
+            <div class="provider-detail">
+              <div>Binário: <code>${escapeHtml(p.bin || '(não detectado)')}</code></div>
+              <div>Origem: ${escapeHtml(p.source || '-')}</div>
+            </div>
+            <div class="provider-actions">
+              <button onclick="testAiProvider('${p.id}', 'normal')" ${!p.installed ? 'disabled title="Binário não encontrado"' : ''}>Testar</button>
+              ${model.fullKey
+                ? `<button class="alt" onclick="testAiProvider('${p.id}', 'full')" ${!p.installed ? 'disabled title="Binário não encontrado"' : ''}>Testar FULL</button>`
+                : ''}
+              ${!isActive && p.installed
+                ? `<button class="alt" onclick="activateAiProvider('${p.id}')">Ativar como padrão</button>`
+                : ''}
+              ${isActive ? '<span class="muted" style="font-size:0.8rem">Provedor em uso</span>' : ''}
+            </div>
+            <div class="provider-models">
+              <div class="muted" style="font-size:0.76rem;margin-bottom:0.35rem">${escapeHtml(model.title)}: selecione, marque e salve.</div>
+              <div class="provider-model-grid">
+                <label>
+                  ${model.primaryLabel}
+                  <select id="modelPrimarySelect_${p.id}">${primaryOptions}</select>
+                  <input id="modelPrimaryCustom_${p.id}" type="text" placeholder="ou digite o modelo exato (ex: gpt-5-mini)" />
+                </label>
+                ${fullBlock}
+                <label>
+                  ${model.fallbackLabel}
+                  <select id="modelFallbackSelect_${p.id}">${fallbackOptions}</select>
+                  <input id="modelFallbackCustom_${p.id}" type="text" placeholder="ou digite o modelo exato (ex: gpt-4.1)" />
+                </label>
+              </div>
+              <div class="provider-model-actions">
+                <button class="alt" onclick="saveProviderModels('${p.id}')">Salvar modelos</button>
+                <span class="muted" style="font-size:0.76rem">Select tem prioridade. Campo custom só é usado quando o select estiver em "(padrão automático)".</span>
+              </div>
+            </div>
+            <div id="testResult_${p.id}"></div>
+          </div>`;
+        }).join('');
+      }
+
+      async function loadAiProviders() {
+        try {
+          const res = await fetch('/api/ai-providers');
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+          renderAiProviders(data);
+        } catch (error) {
+          if (aiProvidersAreaEl) {
+            aiProvidersAreaEl.innerHTML = `<div class="muted" style="color:var(--error)">Erro ao carregar provedores: ${escapeHtml(String(error))}</div>`;
+          }
+        }
+      }
+
+      async function testAiProvider(providerId, mode = 'normal') {
+        const resultEl = document.getElementById(`testResult_${providerId}`);
+        if (resultEl) resultEl.innerHTML = '<div class="muted">Testando... aguarde até 20s</div>';
+
+        const modelState = providerModelState(providerId, latestRuntimeSettings);
+        const useFull = mode === 'full' && modelState.fullKey;
+        const rawSelectedModel = useFull
+          ? resolveModelInput(
+            `modelFullSelect_${providerId}`,
+            `modelFullCustom_${providerId}`,
+            modelState.fullValue
+          )
+          : resolveModelInput(
+            `modelPrimarySelect_${providerId}`,
+            `modelPrimaryCustom_${providerId}`,
+            modelState.primaryValue
+          );
+        const selectedModel = normalizeModelAlias(
+          providerId,
+          useFull ? 'full' : 'normal',
+          rawSelectedModel,
+          modelState
+        );
+
+        try {
+          const res = await fetch('/api/ai-providers/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: providerId,
+              mode: useFull ? 'full' : 'normal',
+              model: selectedModel || undefined
+            })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            if (resultEl) resultEl.innerHTML =
+              `<div class="test-result success">` +
+              `Modelo: ${escapeHtml(data.model || selectedModel || '(automatico)')} | Modo: ${escapeHtml(data.mode || (useFull ? 'full' : 'normal'))}<br/>` +
+              `Resposta: ${escapeHtml(data.output || '(vazio)')}<br/>` +
+              `Tempo: ${data.elapsedMs || 0}ms | Exit: ${data.exitCode ?? '-'}` +
+              `</div>`;
+          } else {
+            if (resultEl) resultEl.innerHTML =
+              `<div class="test-result error">` +
+              `Falha no teste (${escapeHtml(useFull ? 'FULL' : 'normal')}): ${escapeHtml(data.message || 'erro desconhecido')}<br/>` +
+              `Modelo tentado: ${escapeHtml(selectedModel || '(automatico)')}` +
+              `</div>`;
+          }
+        } catch (error) {
+          if (resultEl) resultEl.innerHTML =
+            `<div class="test-result error">Erro: ${escapeHtml(String(error))}</div>`;
+        }
+      }
+
+      async function activateAiProvider(providerId) {
+        try {
+          const res = await fetch('/api/ai-providers/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: providerId })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+
+          aiProviderEl.value = providerId;
+          await loadAiProviders();
+          updateHeroAiDisplay(providerId);
+        } catch (error) {
+          alert(`Erro ao ativar provedor: ${String(error)}`);
+        }
+      }
+
+      async function saveProviderModels(providerId) {
+        const resultEl = document.getElementById(`testResult_${providerId}`);
+        if (resultEl) resultEl.innerHTML = '<div class="muted">Salvando modelos...</div>';
+
+        const model = providerModelState(providerId, latestRuntimeSettings);
+        const payload = {
+          actor: 'painel-web',
+          reason: `modelo_${providerId}_manual`
+        };
+
+        payload[model.primaryKey] = normalizeModelAlias(
+          providerId,
+          'normal',
+          resolveModelInput(
+            `modelPrimarySelect_${providerId}`,
+            `modelPrimaryCustom_${providerId}`,
+            model.primaryValue
+          ),
+          model
+        );
+        payload[model.fallbackKey] = normalizeModelAlias(
+          providerId,
+          'fallback',
+          resolveModelInput(
+            `modelFallbackSelect_${providerId}`,
+            `modelFallbackCustom_${providerId}`,
+            model.fallbackValue
+          ),
+          model
+        );
+        if (model.fullKey) {
+          payload[model.fullKey] = normalizeModelAlias(
+            providerId,
+            'full',
+            resolveModelInput(
+              `modelFullSelect_${providerId}`,
+              `modelFullCustom_${providerId}`,
+              model.fullValue
+            ),
+            model
+          );
+        }
+
+        try {
+          const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao salvar modelos');
+
+          fillSettings(data.settings || {});
+          await loadAiProviders();
+          if (resultEl) {
+            resultEl.innerHTML =
+              `<div class="test-result success">Modelos salvos com sucesso.${data.auditId ? ` Auditoria: ${escapeHtml(data.auditId)}` : ''}</div>`;
+          }
+        } catch (error) {
+          if (resultEl) {
+            resultEl.innerHTML = `<div class="test-result error">Erro ao salvar modelos: ${escapeHtml(String(error))}</div>`;
+          }
+        }
+      }
+
+      function updateHeroAiDisplay(activeProvider) {
+        const label = activeProvider === 'copilot' ? 'Copilot CLI' : 'Codex CLI';
+        heroCodexTextEl.textContent = label;
+        codexBinEl.textContent = label;
+        cachedActiveProvider = activeProvider;
+      }
+
+      window.testAiProvider = testAiProvider;
+      window.activateAiProvider = activateAiProvider;
+      window.saveProviderModels = saveProviderModels;
+
+      async function loadInitialState() {
+        try {
+          const runtimeRes = await fetch('/api/runtime');
+          const runtimeData = await runtimeRes.json();
+          updateStatus(runtimeData.state);
+          (runtimeData.logs || []).forEach(appendLog);
+          fillSettings(runtimeData.settings || {});
+
+          const activeProvider = (runtimeData.settings || {}).aiProvider || 'codex';
+          updateHeroAiDisplay(activeProvider);
+        } catch (error) {
+          appendLog({
+            ts: new Date().toISOString(),
+            level: 'error',
+            message: 'Nao foi possivel carregar estado inicial',
+            meta: { error: String(error) }
+          });
+        }
+      }
+
+      function setupStream() {
+        const stream = new EventSource('/events');
+
+        stream.addEventListener('state', (event) => {
+          try {
+            updateStatus(JSON.parse(event.data));
+          } catch {}
+        });
+
+        stream.addEventListener('log', (event) => {
+          try {
+            appendLog(JSON.parse(event.data));
+          } catch {}
+        });
+
+        stream.addEventListener('inbox_message', (event) => {
+        try {
+          const entry = JSON.parse(event.data);
+          inboxMergeMessage(entry);
+          inboxRenderConvList();
+          if (selectedInboxChatId === entry.chatId) {
+            inboxRenderThread(selectedInboxChatId);
+          }
+        } catch {}
+      });
+
+      stream.onerror = () => {
+          appendLog({
+            ts: new Date().toISOString(),
+            level: 'warn',
+            message: 'Conexao SSE instavel. Tentando reconectar automaticamente.'
+          });
+        };
+      }
+
+      document.getElementById('reloadSettings').addEventListener('click', loadSettings);
+      document.getElementById('saveSettings').addEventListener('click', saveSettings);
+      document.getElementById('reloadAudit').addEventListener('click', loadAudit);
+      document.getElementById('loadMedia').addEventListener('click', loadMedia);
+      document.getElementById('cleanupMedia').addEventListener('click', cleanupMedia);
+      document.getElementById('reloadModeration').addEventListener('click', loadModeration);
+      document.getElementById('saveModeration').addEventListener('click', saveModeration);
+      document.getElementById('addModerationKeyword').addEventListener('click', addModerationKeyword);
+      document.getElementById('clearModerationKeywords').addEventListener('click', clearModerationKeywords);
+      logoutButtonEl.addEventListener('click', logoutFromPanel);
+      document.getElementById('resetModerationWarnings').addEventListener('click', resetModerationWarnings);
+      if (hasAclPanel) {
+        document.getElementById('aclAuthorize').addEventListener('click', applyAclPermissions);
+        document.getElementById('aclBulkRemove').addEventListener('click', bulkRemoveSelected);
+        document.getElementById('reloadAcl').addEventListener('click', loadAccessControl);
+
+        aclGrantAdminEl.addEventListener('change', () => {
+          if (aclGrantAdminEl.checked) {
+            aclGrantAuthorizedEl.checked = true;
+          }
+          if (!aclGrantAdminEl.checked && aclGrantFullEl.checked) {
+            aclGrantFullEl.checked = false;
+          }
+        });
+
+        aclGrantFullEl.addEventListener('change', () => {
+          if (aclGrantFullEl.checked) {
+            aclGrantAdminEl.checked = true;
+            aclGrantAuthorizedEl.checked = true;
+          }
+        });
+
+        aclGrantAuthorizedEl.addEventListener('change', () => {
+          if (!aclGrantAuthorizedEl.checked && (aclGrantAdminEl.checked || aclGrantFullEl.checked)) {
+            aclGrantAdminEl.checked = false;
+            aclGrantFullEl.checked = false;
+          }
+        });
+
+        aclSelectAllAuthorizedEl.addEventListener('change', () => {
+          const checked = Boolean(aclSelectAllAuthorizedEl.checked);
+          document.querySelectorAll('.acl-authorized-check').forEach((el) => {
+            el.checked = checked;
+          });
+        });
+
+        aclSelectAllAdminsEl.addEventListener('change', () => {
+          const checked = Boolean(aclSelectAllAdminsEl.checked);
+          document.querySelectorAll('.acl-admin-check').forEach((el) => {
+            el.checked = checked;
+          });
+        });
+
+        aclSelectAllFullEl.addEventListener('change', () => {
+          const checked = Boolean(aclSelectAllFullEl.checked);
+          document.querySelectorAll('.acl-full-check').forEach((el) => {
+            el.checked = checked;
+          });
+        });
+      }
+
+      if (hasGroupControlPanel) {
+        document.getElementById('groupControlReload').addEventListener('click', () => loadGroupControl(true, true));
+        document.getElementById('groupGetInvite').addEventListener('click', () =>
+          runGroupControlAction('get_invite_link', {}, 'Link de convite consultado.')
+        );
+        document.getElementById('groupRefreshInvite').addEventListener('click', () =>
+          runGroupControlAction('refresh_invite_link', {}, 'Link de convite renovado.')
+        );
+        document.getElementById('groupSetSubject').addEventListener('click', () =>
+          runGroupControlAction(
+            'set_subject',
+            { subject: groupSubjectInputEl.value.trim() },
+            'Nome do grupo atualizado.'
+          )
+        );
+        document.getElementById('groupSetDescription').addEventListener('click', () =>
+          runGroupControlAction(
+            'set_description',
+            { description: groupDescriptionInputEl.value.trim() },
+            'Descrição do grupo atualizada.'
+          )
+        );
+        document.getElementById('groupCloseMessages').addEventListener('click', () =>
+          runGroupControlAction('set_messages_admins_only', { value: true }, 'Grupo fechado para envio somente por admins.')
+        );
+        document.getElementById('groupOpenMessages').addEventListener('click', () =>
+          runGroupControlAction('set_messages_admins_only', { value: false }, 'Grupo aberto para mensagens.')
+        );
+        document.getElementById('groupLockInfo').addEventListener('click', () =>
+          runGroupControlAction('set_info_admins_only', { value: true }, 'Edição de informações restrita aos admins.')
+        );
+        document.getElementById('groupUnlockInfo').addEventListener('click', () =>
+          runGroupControlAction('set_info_admins_only', { value: false }, 'Edição de informações liberada aos participantes.')
+        );
+        document.getElementById('groupAdminsOnlyMembers').addEventListener('click', () =>
+          runGroupControlAction(
+            'set_add_members_admins_only',
+            { value: true },
+            'Somente admins podem adicionar participantes.'
+          )
+        );
+        document.getElementById('groupAllowMembers').addEventListener('click', () =>
+          runGroupControlAction(
+            'set_add_members_admins_only',
+            { value: false },
+            'Participantes podem adicionar novos membros.'
+          )
+        );
+        document.getElementById('groupListRequests').addEventListener('click', () =>
+          runGroupControlAction('list_membership_requests', {}, 'Solicitações de entrada consultadas.')
+        );
+        document.getElementById('groupApproveRequests').addEventListener('click', () =>
+          runGroupControlAction(
+            'approve_membership_requests',
+            { requesterIds: parseGroupRequesterIds(groupRequesterInputEl.value) },
+            'Solicitações aprovadas.'
+          )
+        );
+        document.getElementById('groupRejectRequests').addEventListener('click', () =>
+          runGroupControlAction(
+            'reject_membership_requests',
+            { requesterIds: parseGroupRequesterIds(groupRequesterInputEl.value) },
+            'Solicitações rejeitadas.'
+          )
+        );
+      }
+
+      // ─── Inbox ────────────────────────────────────────────────────────────────
+      const inboxConvListEl  = document.getElementById('inboxConvList');
+      const inboxThreadEl    = document.getElementById('inboxThread');
+      const inboxThreadHeaderEl = document.getElementById('inboxThreadHeader');
+      const inboxReplyInputEl = document.getElementById('inboxReplyInput');
+      const inboxSendBtnEl   = document.getElementById('inboxSendBtn');
+      const inboxAuthorizeBtnEl = document.getElementById('inboxAuthorizeBtn');
+      const inboxBadgeEl     = document.getElementById('inboxBadge');
+      const inboxMsgEl       = document.getElementById('inboxMsg');
+
+      // In-memory inbox state: Map chatId -> { chatId, chatType, senderNumber, messages[] }
+      const inboxConversations = new Map();
+      let selectedInboxChatId = null;
+      // Outbound messages sent from the panel (chatId -> [{ text, ts }])
+      const inboxOutbound = new Map();
+
+      function inboxFormatTime(ts) {
+        const d = new Date(Number(ts) || 0);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function inboxMergeMessage(entry) {
+        const chatId = String(entry.chatId || '');
+        if (!chatId) return;
+        if (!inboxConversations.has(chatId)) {
+          inboxConversations.set(chatId, {
+            chatId,
+            chatType: entry.chatType || 'unknown',
+            senderNumber: String(entry.senderNumber || entry.senderJid || '').replace(/\D/g,'').slice(-11),
+            messages: []
+          });
+        }
+        const conv = inboxConversations.get(chatId);
+        // avoid duplicates by id
+        if (!conv.messages.some((m) => m.id === entry.id)) {
+          conv.messages.push(entry);
+          conv.messages.sort((a, b) => Number(a.ts) - Number(b.ts));
+        }
+      }
+
+      function inboxCountUnread() {
+        let count = 0;
+        for (const conv of inboxConversations.values()) {
+          for (const m of conv.messages) {
+            if (!m.read) count++;
+          }
+        }
+        return count;
+      }
+
+      function inboxUpdateBadge() {
+        if (!inboxBadgeEl) return;
+        const n = inboxCountUnread();
+        if (n > 0) {
+          inboxBadgeEl.textContent = n;
+          inboxBadgeEl.style.display = '';
+        } else {
+          inboxBadgeEl.style.display = 'none';
+        }
+      }
+
+      function inboxRenderConvList() {
+        if (!inboxConvListEl) return;
+        if (!inboxConversations.size) {
+          inboxConvListEl.innerHTML = '<div class="inbox-convs-empty">Nenhuma mensagem ainda.</div>';
+          return;
+        }
+        const convs = Array.from(inboxConversations.values()).sort((a, b) => {
+          const lastA = a.messages.at(-1)?.ts || 0;
+          const lastB = b.messages.at(-1)?.ts || 0;
+          return Number(lastB) - Number(lastA);
+        });
+        inboxConvListEl.innerHTML = convs.map((conv) => {
+          const last = conv.messages.at(-1);
+          const preview = escapeHtml(String(last?.text || '').slice(0, 60));
+          const unread = conv.messages.some((m) => !m.read);
+          const isActive = conv.chatId === selectedInboxChatId;
+          const num = conv.senderNumber || conv.chatId.split('@')[0];
+          return `<div class="inbox-conv-item${isActive ? ' active' : ''}" onclick="inboxSelectConversation('${escapeHtml(conv.chatId)}')">
+            <div class="inbox-conv-header">
+              <span class="inbox-conv-number">${escapeHtml(num)}</span>
+              ${unread ? '<span class="inbox-conv-badge"></span>' : ''}
+            </div>
+            <span class="inbox-conv-type">${escapeHtml(conv.chatType)}</span>
+            <span class="inbox-conv-preview">${preview}</span>
+          </div>`;
+        }).join('');
+        inboxUpdateBadge();
+      }
+
+      function inboxRenderThread(chatId) {
+        if (!inboxThreadEl || !inboxThreadHeaderEl) return;
+        const conv = chatId ? inboxConversations.get(chatId) : null;
+        if (!conv) {
+          inboxThreadHeaderEl.innerHTML = '<span class="muted">Selecione uma conversa à esquerda.</span>';
+          inboxThreadEl.innerHTML = '<div class="inbox-thread-empty">Selecione uma conversa para ver as mensagens.</div>';
+          if (inboxReplyInputEl) inboxReplyInputEl.disabled = true;
+          if (inboxSendBtnEl) inboxSendBtnEl.disabled = true;
+          if (inboxAuthorizeBtnEl) inboxAuthorizeBtnEl.style.display = 'none';
+          return;
+        }
+
+        const num = conv.senderNumber || conv.chatId.split('@')[0];
+        inboxThreadHeaderEl.innerHTML =
+          `<strong>${escapeHtml(num)}</strong> <span class="muted">${escapeHtml(conv.chatType)}</span>` +
+          `<span class="muted" style="font-size:0.7rem;margin-left:auto">${escapeHtml(conv.chatId)}</span>`;
+
+        // Mark all as read
+        for (const m of conv.messages) m.read = true;
+        inboxUpdateBadge();
+
+        // Inbound messages
+        const inMsgs = conv.messages.map((m) =>
+          `<div class="inbox-msg inbox-msg-in">
+            ${escapeHtml(m.text)}
+            <div class="inbox-msg-ts">${inboxFormatTime(m.ts)}</div>
+          </div>`
+        );
+
+        // Outbound messages (replies sent from panel)
+        const outList = inboxOutbound.get(chatId) || [];
+        const outMsgs = outList.map((m) =>
+          `<div class="inbox-msg inbox-msg-out">
+            ${escapeHtml(m.text)}
+            <div class="inbox-msg-ts">${inboxFormatTime(m.ts)}</div>
+          </div>`
+        );
+
+        // Merge and sort by ts
+        const allMsgs = [
+          ...conv.messages.map((m) => ({ ts: m.ts, html: `<div class="inbox-msg inbox-msg-in">${escapeHtml(m.text)}<div class="inbox-msg-ts">${inboxFormatTime(m.ts)}</div></div>` })),
+          ...outList.map((m) => ({ ts: m.ts, html: `<div class="inbox-msg inbox-msg-out">${escapeHtml(m.text)}<div class="inbox-msg-ts">${inboxFormatTime(m.ts)}</div></div>` }))
+        ].sort((a, b) => Number(a.ts) - Number(b.ts));
+
+        inboxThreadEl.innerHTML = allMsgs.length
+          ? allMsgs.map((m) => m.html).join('')
+          : '<div class="inbox-thread-empty">Sem mensagens.</div>';
+
+        inboxThreadEl.scrollTop = inboxThreadEl.scrollHeight;
+
+        if (inboxReplyInputEl) inboxReplyInputEl.disabled = false;
+        if (inboxSendBtnEl) inboxSendBtnEl.disabled = false;
+        if (inboxAuthorizeBtnEl) {
+          inboxAuthorizeBtnEl.style.display = '';
+          inboxAuthorizeBtnEl.dataset.number = num;
+        }
+      }
+
+      window.inboxSelectConversation = function(chatId) {
+        selectedInboxChatId = chatId;
+        inboxRenderConvList();
+        inboxRenderThread(chatId);
+        if (inboxReplyInputEl) inboxReplyInputEl.focus();
+      };
+
+      async function inboxSendReply() {
+        if (!selectedInboxChatId) return;
+        const text = (inboxReplyInputEl?.value || '').trim();
+        if (!text) return;
+        inboxSendBtnEl.disabled = true;
+        try {
+          const res = await fetch('/api/inbox/reply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chatId: selectedInboxChatId, text })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao enviar');
+          if (inboxReplyInputEl) inboxReplyInputEl.value = '';
+          // Store outbound message
+          if (!inboxOutbound.has(selectedInboxChatId)) inboxOutbound.set(selectedInboxChatId, []);
+          inboxOutbound.get(selectedInboxChatId).push({ text, ts: Date.now() });
+          inboxRenderThread(selectedInboxChatId);
+          setInfo(inboxMsgEl, 'Mensagem enviada.');
+        } catch (err) {
+          setInfo(inboxMsgEl, `Erro ao enviar: ${String(err)}`, true);
+        } finally {
+          inboxSendBtnEl.disabled = false;
+        }
+      }
+
+      async function inboxAuthorize() {
+        const number = inboxAuthorizeBtnEl?.dataset.number || '';
+        if (!number) return;
+        if (!window.confirm(`Autorizar número ${number} no bot?`)) return;
+        try {
+          const res = await fetch('/api/inbox/authorize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number })
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+          setInfo(inboxMsgEl, `${number} autorizado com sucesso.`);
+          if (hasAclPanel) await loadAccessControl();
+        } catch (err) {
+          setInfo(inboxMsgEl, `Erro ao autorizar: ${String(err)}`, true);
+        }
+      }
+
+      async function loadInbox() {
+        try {
+          const res = await fetch('/api/inbox');
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha');
+          for (const entry of (data.messages || [])) {
+            inboxMergeMessage(entry);
+          }
+          inboxRenderConvList();
+          setInfo(inboxMsgEl, `${(data.messages || []).length} mensagem(ns) na caixa de entrada.`);
+        } catch (err) {
+          setInfo(inboxMsgEl, `Erro ao carregar inbox: ${String(err)}`, true);
+        }
+      }
+
+      if (inboxSendBtnEl) inboxSendBtnEl.addEventListener('click', inboxSendReply);
+      if (inboxAuthorizeBtnEl) inboxAuthorizeBtnEl.addEventListener('click', inboxAuthorize);
+      if (inboxReplyInputEl) {
+        inboxReplyInputEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); inboxSendReply(); }
+        });
+      }
+      document.getElementById('refreshInbox')?.addEventListener('click', loadInbox);
+      // ──────────────────────────────────────────────────────────────────────────
+
+      loadCurrentSession().catch((error) => {
+        sessionBadgeEl.textContent = 'sessão indisponível';
+        appendLog({
+          ts: new Date().toISOString(),
+          level: 'warn',
+          message: 'Falha ao carregar sessão do painel',
+          meta: { error: String(error) }
+        });
+      });
+      loadInitialState();
+      setupStream();
+      loadAudit();
+      loadMedia();
+      loadModeration();
+      loadAiProviders();
+      loadInbox();
+      if (hasAclPanel) {
+        loadAccessControl();
+      } else {
+        setInfo(groupAclMigrationMsgEl, 'Permissões movidas para /multi-grupos.html');
+      }
+      if (hasGroupControlPanel) {
+        loadGroupControl(true, false);
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,390 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { config } from './config.js';
+
+export const ALARM_REPEAT_MS = 30 * 1000;
+
+function compactSpaces(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function clampText(value, maxChars = 420) {
+  const normalized = compactSpaces(String(value || '').replace(/\u0000/g, ''));
+  if (!normalized) return '';
+  if (normalized.length <= maxChars) return normalized;
+  return normalized.slice(0, maxChars);
+}
+
+function normalizeGroupId(value) {
+  const normalized = compactSpaces(value);
+  return normalized.endsWith('@g.us') ? normalized : '';
+}
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizeIso(value) {
+  const date = new Date(String(value || ''));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString();
+}
+
+function toFiniteTime(value) {
+  const date = new Date(String(value || ''));
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+function normalizeCode(value) {
+  return String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 10);
+}
+
+function createAlarmCode() {
+  return randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
+}
+
+function toNonNegativeInt(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+function latestAlarmActivity(item) {
+  return Math.max(
+    toFiniteTime(item?.createdAt),
+    toFiniteTime(item?.dueAt),
+    toFiniteTime(item?.nextRingAt),
+    toFiniteTime(item?.lastTriggeredAt),
+    toFiniteTime(item?.snoozeUntil),
+    toFiniteTime(item?.stoppedAt)
+  );
+}
+
+function isActiveAlarm(item) {
+  return Boolean(item?.active !== false && !item?.stoppedAt);
+}
+
+function inferAlarmStatus(item) {
+  const normalized = compactSpaces(item?.status).toLowerCase();
+  if (['scheduled', 'ringing', 'snoozed', 'stopped'].includes(normalized)) {
+    return normalized;
+  }
+  if (item?.stoppedAt || item?.active === false) return 'stopped';
+  if (item?.snoozeUntil) return 'snoozed';
+  if (item?.lastTriggeredAt) return 'ringing';
+  return 'scheduled';
+}
+
+function normalizeState(input) {
+  const rows = Array.isArray(input?.items) ? input.items : [];
+  const items = rows
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+
+      const groupId = normalizeGroupId(item.groupId);
+      const dueAt = normalizeIso(item.dueAt);
+      const nextRingAt = normalizeIso(item.nextRingAt) || dueAt;
+      const text = clampText(item.text, 500);
+      const code = normalizeCode(item.code) || createAlarmCode();
+
+      if (!groupId || !dueAt || !nextRingAt || !text || !code) return null;
+
+      const stoppedAt = normalizeIso(item.stoppedAt);
+      const snoozeUntil = normalizeIso(item.snoozeUntil);
+      const active = item.active !== false && !stoppedAt;
+
+      return {
+        id: String(item.id || randomUUID()),
+        code,
+        groupId,
+        senderNumber: normalizePhone(item.senderNumber || ''),
+        text,
+        dueAt,
+        nextRingAt,
+        status: inferAlarmStatus({ ...item, active, stoppedAt, snoozeUntil }),
+        active,
+        ringCount: toNonNegativeInt(item.ringCount, 0),
+        createdAt: normalizeIso(item.createdAt) || new Date().toISOString(),
+        lastTriggeredAt: normalizeIso(item.lastTriggeredAt) || '',
+        snoozeUntil,
+        stoppedAt
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    items,
+    updatedAt: normalizeIso(input?.updatedAt) || new Date().toISOString()
+  };
+}
+
+export class AlarmStore {
+  constructor(filePath = config.alarmsFile) {
+    this.filePath = filePath;
+    this.state = normalizeState({});
+    this.ready = this.load();
+    this.chain = Promise.resolve();
+  }
+
+  async ensureReady() {
+    await this.ready;
+  }
+
+  async withLock(task) {
+    this.chain = this.chain
+      .catch(() => {
+        // Mantem encadeamento.
+      })
+      .then(task);
+    return this.chain;
+  }
+
+  async load() {
+    try {
+      const content = await readFile(this.filePath, 'utf8');
+      this.state = normalizeState(JSON.parse(content));
+    } catch {
+      this.state = normalizeState({});
+      await this.save();
+    }
+  }
+
+  async save() {
+    await mkdir(dirname(this.filePath), { recursive: true });
+    this.state.updatedAt = new Date().toISOString();
+    await writeFile(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8');
+  }
+
+  async addAlarm({ groupId, senderNumber = '', dueAt, text }) {
+    await this.ensureReady();
+
+    const normalizedGroup = normalizeGroupId(groupId);
+    const normalizedDueAt = normalizeIso(dueAt);
+    const normalizedText = clampText(text, 500);
+    const normalizedSender = normalizePhone(senderNumber);
+
+    if (!normalizedGroup || !normalizedDueAt || !normalizedText) {
+      return { ok: false, message: 'Dados invalidos para alarme.' };
+    }
+
+    return this.withLock(async () => {
+      const created = {
+        id: randomUUID(),
+        code: createAlarmCode(),
+        groupId: normalizedGroup,
+        senderNumber: normalizedSender,
+        text: normalizedText,
+        dueAt: normalizedDueAt,
+        nextRingAt: normalizedDueAt,
+        status: 'scheduled',
+        active: true,
+        ringCount: 0,
+        createdAt: new Date().toISOString(),
+        lastTriggeredAt: '',
+        snoozeUntil: '',
+        stoppedAt: ''
+      };
+
+      this.state.items.push(created);
+      await this.save();
+      return { ok: true, item: { ...created } };
+    });
+  }
+
+  listActiveByGroup(groupId, limit = 20) {
+    const normalizedGroup = normalizeGroupId(groupId);
+    if (!normalizedGroup) return [];
+
+    return this.state.items
+      .filter((item) => item.groupId === normalizedGroup)
+      .filter((item) => isActiveAlarm(item))
+      .sort((left, right) => new Date(left.nextRingAt).getTime() - new Date(right.nextRingAt).getTime())
+      .slice(0, Math.max(1, limit))
+      .map((item, index) => ({ ...item, index: index + 1 }));
+  }
+
+  listRingingByGroup(groupId, limit = 20) {
+    return this.listActiveByGroup(groupId, limit).filter((item) => item.status === 'ringing');
+  }
+
+  findActiveByCode(groupId, code) {
+    const normalizedGroup = normalizeGroupId(groupId);
+    const normalizedCode = normalizeCode(code);
+    if (!normalizedGroup || !normalizedCode) return null;
+
+    return (
+      this.state.items
+        .filter((item) => item.groupId === normalizedGroup)
+        .filter((item) => isActiveAlarm(item))
+        .find((item) => item.code === normalizedCode) || null
+    );
+  }
+
+  findLatestActiveByGroupSender(groupId, senderNumber = '') {
+    const normalizedGroup = normalizeGroupId(groupId);
+    const normalizedSender = normalizePhone(senderNumber);
+    if (!normalizedGroup) return null;
+
+    return (
+      this.state.items
+        .filter((item) => item.groupId === normalizedGroup)
+        .filter((item) => isActiveAlarm(item))
+        .filter((item) => !normalizedSender || item.senderNumber === normalizedSender)
+        .sort((left, right) => latestAlarmActivity(right) - latestAlarmActivity(left))
+        .map((item) => ({ ...item }))
+        .at(0) || null
+    );
+  }
+
+  findLatestRingingByGroupSender(groupId, senderNumber = '') {
+    const normalizedGroup = normalizeGroupId(groupId);
+    const normalizedSender = normalizePhone(senderNumber);
+    if (!normalizedGroup) return null;
+
+    return (
+      this.state.items
+        .filter((item) => item.groupId === normalizedGroup)
+        .filter((item) => isActiveAlarm(item) && item.status === 'ringing')
+        .filter((item) => !normalizedSender || item.senderNumber === normalizedSender)
+        .sort((left, right) => latestAlarmActivity(right) - latestAlarmActivity(left))
+        .map((item) => ({ ...item }))
+        .at(0) || null
+    );
+  }
+
+  getDueItems(now = new Date()) {
+    const nowMs = now.getTime();
+    const maxDelayMs = 24 * 60 * 60 * 1000;
+
+    return this.state.items
+      .filter((item) => isActiveAlarm(item))
+      .filter((item) => {
+        const nextRingMs = new Date(item.nextRingAt || item.dueAt).getTime();
+        if (!Number.isFinite(nextRingMs)) return false;
+        return nextRingMs <= nowMs && nowMs - nextRingMs <= maxDelayMs;
+      })
+      .sort((left, right) => new Date(left.nextRingAt).getTime() - new Date(right.nextRingAt).getTime())
+      .map((item) => ({ ...item }));
+  }
+
+  async markTriggered(id, sentAt = new Date()) {
+    await this.ensureReady();
+    const alarmId = String(id || '').trim();
+    if (!alarmId) return { ok: false };
+
+    return this.withLock(async () => {
+      const idx = this.state.items.findIndex((item) => item.id === alarmId);
+      if (idx < 0) return { ok: false };
+
+      const current = this.state.items[idx];
+      if (!isActiveAlarm(current)) return { ok: false };
+
+      const triggeredAt = sentAt instanceof Date ? sentAt : new Date(String(sentAt || ''));
+      const nextRingAt = new Date(triggeredAt.getTime() + ALARM_REPEAT_MS);
+
+      this.state.items[idx] = {
+        ...current,
+        status: 'ringing',
+        active: true,
+        ringCount: toNonNegativeInt(current.ringCount, 0) + 1,
+        lastTriggeredAt: triggeredAt.toISOString(),
+        nextRingAt: nextRingAt.toISOString(),
+        snoozeUntil: ''
+      };
+
+      await this.save();
+      return { ok: true, item: { ...this.state.items[idx] } };
+    });
+  }
+
+  async snooze(id, delayMs, now = new Date()) {
+    await this.ensureReady();
+    const alarmId = String(id || '').trim();
+    const delay = Number(delayMs || 0);
+    if (!alarmId || !Number.isFinite(delay) || delay <= 0) return { ok: false };
+
+    return this.withLock(async () => {
+      const idx = this.state.items.findIndex((item) => item.id === alarmId);
+      if (idx < 0) return { ok: false };
+
+      const current = this.state.items[idx];
+      if (!isActiveAlarm(current)) return { ok: false };
+
+      const reference = now instanceof Date ? now : new Date(String(now || ''));
+      const snoozeUntil = new Date(reference.getTime() + delay);
+
+      this.state.items[idx] = {
+        ...current,
+        status: 'snoozed',
+        active: true,
+        nextRingAt: snoozeUntil.toISOString(),
+        snoozeUntil: snoozeUntil.toISOString()
+      };
+
+      await this.save();
+      return { ok: true, item: { ...this.state.items[idx] } };
+    });
+  }
+
+  async stop(id, stoppedAt = new Date()) {
+    await this.ensureReady();
+    const alarmId = String(id || '').trim();
+    if (!alarmId) return { ok: false };
+
+    return this.withLock(async () => {
+      const idx = this.state.items.findIndex((item) => item.id === alarmId);
+      if (idx < 0) return { ok: false };
+
+      const current = this.state.items[idx];
+      if (!isActiveAlarm(current)) return { ok: false, alreadyStopped: true };
+
+      this.state.items[idx] = {
+        ...current,
+        status: 'stopped',
+        active: false,
+        stoppedAt: (stoppedAt instanceof Date ? stoppedAt : new Date(String(stoppedAt || ''))).toISOString()
+      };
+
+      await this.save();
+      return { ok: true, item: { ...this.state.items[idx] } };
+    });
+  }
+
+  async stopByIndex(groupId, indexOneBased) {
+    await this.ensureReady();
+    const normalizedGroup = normalizeGroupId(groupId);
+    const index = Number.parseInt(String(indexOneBased || ''), 10);
+    if (!normalizedGroup || !Number.isFinite(index) || index <= 0) {
+      return { ok: false, stopped: false };
+    }
+
+    return this.withLock(async () => {
+      const pending = this.state.items
+        .map((item, itemIndex) => ({ item, itemIndex }))
+        .filter((entry) => entry.item.groupId === normalizedGroup)
+        .filter((entry) => isActiveAlarm(entry.item))
+        .sort((left, right) => new Date(left.item.nextRingAt).getTime() - new Date(right.item.nextRingAt).getTime());
+
+      const target = pending[index - 1];
+      if (!target) return { ok: true, stopped: false };
+
+      const current = this.state.items[target.itemIndex];
+      this.state.items[target.itemIndex] = {
+        ...current,
+        status: 'stopped',
+        active: false,
+        stoppedAt: new Date().toISOString()
+      };
+
+      await this.save();
+      return { ok: true, stopped: true, item: { ...this.state.items[target.itemIndex] } };
+    });
+  }
+}
+
+export const alarmStore = new AlarmStore();

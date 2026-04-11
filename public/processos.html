@@ -1,0 +1,1157 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Processos FULL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; font-family: 'Space Grotesk', sans-serif; color: var(--ink); background: var(--bg); }
+      .page { width: min(1600px, 97vw); margin: 1rem auto 3rem; }
+
+      .nav-bar { display: flex; align-items: center; gap: .5rem; padding: .55rem 1.1rem; background: var(--bg-2); border-bottom: 1px solid var(--line); font-size: .88rem; }
+      .nav-bar a { color: var(--muted); text-decoration: none; padding: .35rem .7rem; border-radius: 8px; transition: background .15s, color .15s; }
+      .nav-bar a:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+      .nav-bar a.active { color: var(--accent); font-weight: 600; }
+      .nav-bar .spacer { flex: 1; }
+      .nav-bar .session-tag { color: var(--muted); font-size: .78rem; font-family: 'IBM Plex Mono', monospace; }
+      .nav-bar button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
+      .nav-bar button:hover { color: var(--error); border-color: var(--error); }
+
+      .hero, .panel { border: 1px solid var(--line); border-radius: 24px; background: var(--card); box-shadow: 0 18px 42px rgba(0,0,0,.25); backdrop-filter: blur(10px); }
+      .hero { padding: 1.25rem; background: linear-gradient(135deg, rgba(45,212,191,.13), rgba(56,189,248,.10)); border: 1px solid var(--line); }
+      .hero-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+      @media (min-width: 980px) { .hero-grid { grid-template-columns: 1.4fr 1fr; align-items: center; } }
+      h1, h2 { margin: 0; }
+      h1 { font-size: clamp(1.35rem, 2.4vw, 2rem); }
+      .subtitle { margin-top: .5rem; max-width: 72ch; color: var(--muted); }
+      .hero-actions { margin-top: .95rem; display: flex; gap: .6rem; flex-wrap: wrap; }
+
+      .summary-grid { display: grid; gap: .7rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-card { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: .8rem; }
+      .summary-card small { display: block; color: var(--muted); font-size: .76rem; }
+      .summary-card strong { display: block; margin-top: .2rem; font-size: 1.02rem; }
+
+      .panel { margin-top: 1rem; padding: 1rem; }
+      .panel-head { display: flex; justify-content: space-between; gap: .8rem; align-items: center; flex-wrap: wrap; margin-bottom: .75rem; }
+      .panel-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+      .status-line { display: inline-flex; align-items: center; gap: .48rem; padding: .4rem .72rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .84rem; }
+      .dot { width: .62rem; height: .62rem; border-radius: 50%; background: var(--warn); }
+      .dot.ok { background: var(--ok); }
+      .dot.error { background: var(--error); }
+      .muted { color: var(--muted); font-size: .84rem; }
+
+      button { border: 0; border-radius: 12px; cursor: pointer; padding: .6rem .86rem; font: inherit; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--accent), #0b948d); transition: opacity .15s; }
+      button:hover { opacity: .85; }
+      button.alt { background: linear-gradient(135deg, #0f4c81, var(--accent-2)); }
+      button.danger { background: linear-gradient(135deg, #7f1d1d, var(--error)); }
+      button.sm { padding: .35rem .65rem; font-size: .78rem; border-radius: 8px; }
+
+      .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-2); }
+      table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: .84rem; }
+      th, td { padding: .65rem .7rem; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { position: sticky; top: 0; background: #1c2128; z-index: 1; }
+      tr:last-child td { border-bottom: 0; }
+      tr.data-row { cursor: pointer; transition: background .12s; }
+      tr.data-row:hover td { background: rgba(45,212,191,.05); }
+      tr.data-row.selected td { background: rgba(45,212,191,.09); }
+
+      .mono { font-family: 'IBM Plex Mono', monospace; font-size: .76rem; }
+      .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: .24rem .55rem; font-size: .75rem; font-weight: 700; letter-spacing: .02em; }
+      .pill.running { background: rgba(180,83,9,.12); color: var(--warn); }
+      .pill.done { background: rgba(21,128,61,.12); color: var(--ok); }
+      .pill.error { background: rgba(180,35,24,.12); color: var(--error); }
+
+      .job-request { max-width: 28ch; line-height: 1.4; }
+      .empty-state { padding: 1.2rem; color: var(--muted); text-align: center; }
+
+      /* Detail panel */
+      .detail-panel {
+        margin-top: .75rem;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg-2);
+        overflow: hidden;
+        display: none;
+      }
+      .detail-panel.visible { display: block; }
+      .detail-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: .75rem 1rem;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+        gap: .6rem;
+        flex-wrap: wrap;
+      }
+      .detail-header h3 { margin: 0; font-size: .95rem; }
+      .detail-body { padding: .85rem 1rem; }
+      .detail-section { margin-bottom: 1rem; }
+      .detail-section:last-child { margin-bottom: 0; }
+      .detail-section-title { font-size: .78rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .4rem; }
+      .detail-request { font-style: italic; color: var(--ink); line-height: 1.5; }
+      .log-container {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .6rem .8rem;
+        max-height: 320px;
+        overflow-y: auto;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .75rem;
+        line-height: 1.6;
+        color: #a5d6ff;
+      }
+      .log-container .log-line { display: block; }
+      .log-container .log-empty { color: var(--muted); font-style: italic; }
+      .final-response {
+        background: rgba(45,212,191,.06);
+        border: 1px solid rgba(45,212,191,.25);
+        border-radius: 10px;
+        padding: .75rem 1rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        font-size: .88rem;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .error-box {
+        background: rgba(248,81,73,.07);
+        border: 1px solid rgba(248,81,73,.3);
+        border-radius: 10px;
+        padding: .75rem 1rem;
+        color: var(--error);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: .78rem;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html" class="active">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
+      <a href="/bot-config-menu.html">Config Bot</a>
+      <a href="/usuarios.html">Usuários</a>
+      <span class="spacer"></span>
+      <span class="session-tag" id="sessionText">sessão: carregando</span>
+      <button id="logoutButton">Sair</button>
+    </nav>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Processos FULL em tempo real</h1>
+            <p class="subtitle">
+              Log completo de execução, resposta final da IA, histórico persistente de 30 dias no banco de dados — sobrevive a reinicializações do servidor.
+            </p>
+            <div class="hero-actions">
+              <button id="reloadJobs">Atualizar agora</button>
+            </div>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-card"><small>Em execução</small><strong id="runningCount">0</strong></div>
+            <div class="summary-card"><small>Monitorados</small><strong id="totalCount">0</strong></div>
+            <div class="summary-card"><small>Última atualização</small><strong id="updatedAtText">-</strong></div>
+            <div class="summary-card"><small>Conexão SSE</small><strong id="streamStateText">conectando</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Fila FULL</h2>
+            <div class="muted">Clique em uma linha para ver o log completo. Histórico de 30 dias persistido no banco.</div>
+          </div>
+          <div class="panel-actions">
+            <div class="status-line">
+              <span class="dot" id="streamDot"></span>
+              <span id="streamBadgeText">Conectando ao stream...</span>
+            </div>
+            <button class="alt sm" id="exportAllBtn" title="Exportar todos os jobs visíveis como texto">Exportar todos</button>
+            <button class="danger sm" id="clearBtn" title="Limpar todo o histórico persistido no banco">Limpar histórico</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Remetente</th>
+                <th>Status</th>
+                <th>Pedido</th>
+                <th>Início</th>
+                <th>Tempo</th>
+                <th>Log / Resposta</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="jobsRows">
+              <tr><td colspan="8" class="empty-state">Carregando processos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Detail panel shown on row click -->
+        <div class="detail-panel" id="detailPanel">
+          <div class="detail-header">
+            <h3 id="detailTitle">Detalhes do job</h3>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+              <button class="sm alt" id="detailExportBtn">Exportar este job</button>
+              <button class="sm" id="detailCloseBtn">Fechar</button>
+            </div>
+          </div>
+          <div class="detail-body" id="detailBody"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const runningCountEl = document.getElementById('runningCount');
+      const totalCountEl = document.getElementById('totalCount');
+      const updatedAtTextEl = document.getElementById('updatedAtText');
+      const streamStateTextEl = document.getElementById('streamStateText');
+      const streamDotEl = document.getElementById('streamDot');
+      const streamBadgeTextEl = document.getElementById('streamBadgeText');
+      const jobsRowsEl = document.getElementById('jobsRows');
+      const sessionTextEl = document.getElementById('sessionText');
+      const detailPanel = document.getElementById('detailPanel');
+      const detailTitle = document.getElementById('detailTitle');
+      const detailBody = document.getElementById('detailBody');
+      const nativeFetch = window.fetch.bind(window);
+
+      let selectedJobId = null;
+      const state = { items: [], runningCount: 0, total: 0, updatedAt: '' };
+
+      function redirectToLogin() {
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.replace(`/login.html?next=${next}`);
+      }
+
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        if (response.status === 401) { redirectToLogin(); throw new Error('Sessão expirada.'); }
+        return response;
+      };
+
+      function escapeHtml(value) {
+        return String(value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+      }
+
+      function clampText(value, maxChars) {
+        const text = String(value || '').trim();
+        return text.length <= maxChars ? text : `${text.slice(0, maxChars)}...`;
+      }
+
+      function formatDateTime(value) {
+        const date = new Date(typeof value === 'number' ? value : value);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      function formatElapsed(ms) {
+        const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+        if (minutes > 0) return `${minutes}m ${seconds}s`;
+        return `${seconds}s`;
+      }
+
+      function getElapsedMs(job) {
+        const startedAt = Number(job?.startedAt || 0);
+        const finishedAt = Number(job?.finishedAt || 0);
+        if (!startedAt) return 0;
+        return Math.max(0, (finishedAt || Date.now()) - startedAt);
+      }
+
+      function getStatusClass(status) {
+        if (status === 'done') return 'done';
+        if (status === 'error') return 'error';
+        return 'running';
+      }
+
+      function getLogSummary(job) {
+        const lines = Array.isArray(job.logLines) ? job.logLines : [];
+        if (job.status === 'done' && job.summary) return clampText(job.summary, 80);
+        if (job.status === 'error' && job.error) return clampText(job.error, 80);
+        if (lines.length) return clampText(lines[lines.length - 1], 80);
+        return job.detail ? clampText(job.detail, 80) : '-';
+      }
+
+      function updateStreamBadge(kind, text) {
+        streamDotEl.classList.remove('ok', 'error');
+        if (kind === 'ok') streamDotEl.classList.add('ok');
+        if (kind === 'error') streamDotEl.classList.add('error');
+        streamStateTextEl.textContent = kind === 'ok' ? 'conectado' : kind === 'error' ? 'instável' : 'conectando';
+        streamBadgeTextEl.textContent = text;
+      }
+
+      function renderDetailPanel(job) {
+        if (!job) { detailPanel.classList.remove('visible'); return; }
+        selectedJobId = job.id;
+        const lines = Array.isArray(job.logLines) ? job.logLines : [];
+        const statusLabel = String(job.statusLabel || '').trim() || (job.status === 'done' ? 'concluída' : job.status === 'error' ? 'erro' : 'em andamento');
+
+        detailTitle.textContent = `Job #${job.id} — ${statusLabel} (${formatElapsed(getElapsedMs(job))})`;
+        document.getElementById('detailExportBtn').dataset.jobId = job.id;
+
+        let html = '';
+
+        html += `<div class="detail-section">
+          <div class="detail-section-title">Pedido</div>
+          <div class="detail-request">${escapeHtml(job.request || '-')}</div>
+        </div>`;
+
+        html += `<div class="detail-section">
+          <div class="detail-section-title">Log de execução (${lines.length} linhas)</div>
+          <div class="log-container" id="logContainer">`;
+        if (lines.length) {
+          html += lines.map(l => `<span class="log-line">${escapeHtml(l)}</span>`).join('');
+        } else {
+          html += `<span class="log-empty">Nenhuma linha de log registrada ainda.</span>`;
+        }
+        html += `</div></div>`;
+
+        if (job.summary) {
+          html += `<div class="detail-section">
+            <div class="detail-section-title">Resposta final da IA</div>
+            <div class="final-response">${escapeHtml(job.summary)}</div>
+          </div>`;
+        }
+
+        if (job.error) {
+          html += `<div class="detail-section">
+            <div class="detail-section-title">Erro</div>
+            <div class="error-box">${escapeHtml(job.error)}</div>
+          </div>`;
+        }
+
+        html += `<div class="detail-section" style="display:flex;gap:1.5rem;font-size:.8rem;color:var(--muted)">
+          <span>Remetente: <b>${escapeHtml(job.senderNumber)}</b></span>
+          <span>Início: <b>${escapeHtml(formatDateTime(job.startedAt))}</b></span>
+          ${job.finishedAt ? `<span>Conclusão: <b>${escapeHtml(formatDateTime(job.finishedAt))}</b></span>` : ''}
+          <span>Status validação: <b>${escapeHtml(job.validationStatus || '-')}</b></span>
+        </div>`;
+
+        detailBody.innerHTML = html;
+        detailPanel.classList.add('visible');
+
+        // Auto-scroll log to bottom
+        const logEl = document.getElementById('logContainer');
+        if (logEl) logEl.scrollTop = logEl.scrollHeight;
+
+        detailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      function renderJobs() {
+        runningCountEl.textContent = String(state.runningCount || 0);
+        totalCountEl.textContent = String(state.total || 0);
+        updatedAtTextEl.textContent = state.updatedAt ? formatDateTime(state.updatedAt) : '-';
+        document.title = `Processos FULL (${state.runningCount || 0} em execução)`;
+
+        if (!Array.isArray(state.items) || !state.items.length) {
+          jobsRowsEl.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhuma solicitação FULL monitorada até agora.</td></tr>';
+          return;
+        }
+
+        jobsRowsEl.innerHTML = state.items.map((job) => {
+          const statusLabel = String(job.statusLabel || '').trim() || (job.status === 'done' ? 'concluída' : job.status === 'error' ? 'erro' : 'em andamento');
+          const logSummary = getLogSummary(job);
+          const request = clampText(job.request || '-', 80);
+          const lines = Array.isArray(job.logLines) ? job.logLines : [];
+          const isSelected = job.id === selectedJobId;
+
+          return `<tr class="data-row${isSelected ? ' selected' : ''}" data-job-id="${escapeHtml(job.id)}">
+            <td class="mono">${escapeHtml(job.id || '-')}</td>
+            <td class="mono">${escapeHtml(job.senderNumber || '-')}</td>
+            <td><span class="pill ${getStatusClass(job.status)}">${escapeHtml(statusLabel)}</span></td>
+            <td class="job-request" title="${escapeHtml(job.request || '-')}">${escapeHtml(request)}</td>
+            <td>${escapeHtml(formatDateTime(job.startedAt))}</td>
+            <td>${escapeHtml(formatElapsed(getElapsedMs(job)))}</td>
+            <td style="max-width:32ch;opacity:.8;font-size:.78rem" title="${escapeHtml(logSummary)}">${escapeHtml(logSummary)} <small style="color:var(--muted)">(${lines.length} linhas)</small></td>
+            <td><button class="sm" data-export-job="${escapeHtml(job.id)}" onclick="event.stopPropagation()">Exportar</button></td>
+          </tr>`;
+        }).join('');
+
+        // Attach row click listeners
+        for (const row of jobsRowsEl.querySelectorAll('tr.data-row')) {
+          row.addEventListener('click', () => {
+            const jobId = row.dataset.jobId;
+            const job = state.items.find(j => j.id === jobId);
+            if (job) {
+              if (selectedJobId === jobId) {
+                selectedJobId = null;
+                detailPanel.classList.remove('visible');
+                row.classList.remove('selected');
+              } else {
+                document.querySelectorAll('tr.data-row.selected').forEach(r => r.classList.remove('selected'));
+                row.classList.add('selected');
+                renderDetailPanel(job);
+              }
+            }
+          });
+        }
+
+        // Attach per-row export buttons
+        for (const btn of jobsRowsEl.querySelectorAll('[data-export-job]')) {
+          btn.addEventListener('click', () => exportJob(btn.dataset.exportJob));
+        }
+
+        // If detail panel is open, refresh it with updated data
+        if (selectedJobId) {
+          const updatedJob = state.items.find(j => j.id === selectedJobId);
+          if (updatedJob) renderDetailPanel(updatedJob);
+        }
+      }
+
+      function applySnapshot(snapshot) {
+        state.items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+        state.runningCount = Number(snapshot?.runningCount || 0);
+        state.total = Number(snapshot?.total || 0);
+        state.updatedAt = String(snapshot?.updatedAt || '').trim();
+        renderJobs();
+      }
+
+      async function loadJobs() {
+        const res = await fetch('/api/full-jobs?limit=200&days=30');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar processos');
+        applySnapshot(data);
+      }
+
+      async function exportJob(jobId) {
+        window.open(`/api/full-jobs/${encodeURIComponent(jobId)}/export`, '_blank');
+      }
+
+      async function exportAllJobs() {
+        if (!state.items.length) return alert('Nenhum job para exportar.');
+        const lines = state.items.flatMap(job => {
+          const logLines = Array.isArray(job.logLines) ? job.logLines : [];
+          return [
+            `=== FULL Job #${job.id} ===`,
+            `Remetente: ${job.senderNumber}`,
+            `Status: ${job.status}`,
+            `Início: ${formatDateTime(job.startedAt)}`,
+            job.finishedAt ? `Conclusão: ${formatDateTime(job.finishedAt)}` : '',
+            ``,
+            `Pedido: ${job.request}`,
+            ``,
+            `Log (${logLines.length} linhas):`,
+            ...logLines,
+            ``,
+            job.summary ? `Resposta Final:\n${job.summary}` : '',
+            job.error ? `Erro:\n${job.error}` : '',
+            ``.padEnd(60, '-'),
+            ``
+          ].filter(Boolean);
+        });
+        const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement('a'), { href: url, download: 'full-jobs-export.txt' });
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      }
+
+      async function clearHistory() {
+        if (!confirm('Limpar TODO o histórico de processos FULL do banco de dados?\n\nEsta ação não pode ser desfeita.')) return;
+        try {
+          const res = await fetch('/api/full-jobs/clear', { method: 'DELETE' });
+          const data = await res.json();
+          if (data.ok) {
+            alert(`Histórico limpo. ${data.deleted || 0} registro(s) removido(s).`);
+            state.items = [];
+            state.total = 0;
+            state.runningCount = 0;
+            selectedJobId = null;
+            detailPanel.classList.remove('visible');
+            renderJobs();
+          } else {
+            alert('Erro ao limpar histórico: ' + (data.error || 'erro desconhecido'));
+          }
+        } catch (err) {
+          alert('Erro: ' + String(err));
+        }
+      }
+
+      function setupStream() {
+        const stream = new EventSource('/events');
+        stream.onopen = () => updateStreamBadge('ok', 'Stream conectado. Atualizações em tempo real ativas.');
+        stream.addEventListener('full_jobs', (event) => {
+          try {
+            applySnapshot(JSON.parse(event.data));
+            updateStreamBadge('ok', 'Recebendo atualizações dos processos FULL.');
+          } catch {
+            updateStreamBadge('error', 'Evento inválido recebido do stream.');
+          }
+        });
+        stream.onerror = () => updateStreamBadge('error', 'Conexão SSE instável. O navegador vai tentar reconectar.');
+      }
+
+      async function loadCurrentSession() {
+        const res = await fetch('/api/panel-auth/me');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar sessão');
+        const username = String(data.user?.username || '').trim();
+        sessionTextEl.textContent = username ? `sessão: ${username}` : 'sessão ativa';
+      }
+
+      document.getElementById('reloadJobs').addEventListener('click', async () => {
+        try { await loadJobs(); updateStreamBadge('ok', 'Snapshot recarregado manualmente.'); }
+        catch (error) { updateStreamBadge('error', `Erro ao recarregar: ${String(error)}`); }
+      });
+      document.getElementById('clearBtn').addEventListener('click', clearHistory);
+      document.getElementById('exportAllBtn').addEventListener('click', exportAllJobs);
+      document.getElementById('detailCloseBtn').addEventListener('click', () => {
+        selectedJobId = null;
+        detailPanel.classList.remove('visible');
+        document.querySelectorAll('tr.data-row.selected').forEach(r => r.classList.remove('selected'));
+      });
+      document.getElementById('detailExportBtn').addEventListener('click', (e) => {
+        const jobId = e.target.dataset.jobId;
+        if (jobId) exportJob(jobId);
+      });
+      document.getElementById('logoutButton').addEventListener('click', async () => {
+        try { await fetch('/api/panel-auth/logout', { method: 'POST' }); } catch {}
+        redirectToLogin();
+      });
+
+      setInterval(renderJobs, 1000);
+      loadCurrentSession().catch((error) => updateStreamBadge('error', `Erro ao carregar sessão: ${String(error)}`));
+      loadJobs().then(() => updateStreamBadge('ok', 'Snapshot inicial carregado.')).catch((error) => updateStreamBadge('error', `Erro ao carregar: ${String(error)}`));
+      setupStream();
+    </script>
+  </body>
+</html>
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .page {
+        width: min(1500px, 95vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .55rem 1.1rem;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        font-size: .88rem;
+      }
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: .35rem .7rem;
+        border-radius: 8px;
+        transition: background .15s, color .15s;
+      }
+      .nav-bar a:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+      .nav-bar a.active { color: var(--accent); font-weight: 600; }
+      .nav-bar .spacer { flex: 1; }
+      .nav-bar .session-tag { color: var(--muted); font-size: .78rem; font-family: 'IBM Plex Mono', monospace; }
+      .nav-bar button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
+      .nav-bar button:hover { color: var(--error); border-color: var(--error); }
+
+      .hero,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
+        backdrop-filter: blur(10px);
+      }
+
+      .hero {
+        padding: 1.25rem;
+        background: linear-gradient(135deg, rgba(45, 212, 191, 0.13), rgba(56, 189, 248, 0.10));
+        border: 1px solid var(--line);
+        color: var(--ink);
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 980px) {
+        .hero-grid {
+          grid-template-columns: 1.4fr 1fr;
+          align-items: center;
+        }
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+      }
+
+      .subtitle {
+        margin-top: 0.5rem;
+        max-width: 72ch;
+        color: var(--muted);
+      }
+
+      .hero-actions {
+        margin-top: 0.95rem;
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      .summary-grid {
+        display: grid;
+        gap: 0.7rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: 0.8rem;
+      }
+
+      .summary-card small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 1.02rem;
+      }
+
+      .panel {
+        margin-top: 1rem;
+        padding: 1rem;
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .status-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.48rem;
+        padding: 0.4rem 0.72rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .dot {
+        width: 0.62rem;
+        height: 0.62rem;
+        border-radius: 50%;
+        background: var(--warn);
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .dot.error {
+        background: var(--error);
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        cursor: pointer;
+        padding: 0.6rem 0.86rem;
+        font: inherit;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), #0b948d);
+        transition: opacity .15s;
+      }
+      button:hover { opacity: .85; }
+
+      button.alt {
+        background: linear-gradient(135deg, #0f4c81, var(--accent-2));
+      }
+
+      .table-wrap {
+        margin-top: 0.85rem;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg-2);
+      }
+
+      table {
+        width: 100%;
+        min-width: 1200px;
+        border-collapse: collapse;
+        font-size: 0.84rem;
+      }
+
+      th,
+      td {
+        padding: 0.65rem 0.7rem;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #1c2128;
+        z-index: 1;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.76rem;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.24rem 0.55rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .pill.running {
+        background: rgba(180, 83, 9, 0.12);
+        color: var(--warn);
+      }
+
+      .pill.done {
+        background: rgba(21, 128, 61, 0.12);
+        color: var(--ok);
+      }
+
+      .pill.error {
+        background: rgba(180, 35, 24, 0.12);
+        color: var(--error);
+      }
+
+      .job-request {
+        max-width: 34ch;
+        line-height: 1.4;
+      }
+
+      .job-detail {
+        max-width: 42ch;
+        line-height: 1.42;
+      }
+
+      .empty-state {
+        padding: 1.2rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      /* ── Responsive mobile (≤ 640px) ─────────────────────────── */
+      @media (max-width: 640px) {
+        .page {
+          width: 100%;
+          margin: 0.3rem auto 1.5rem;
+          padding: 0 0.5rem;
+        }
+        .nav-bar {
+          flex-wrap: wrap;
+          overflow-x: hidden;
+          gap: 0.2rem;
+          row-gap: 0.2rem;
+          padding: 0.4rem 0.5rem;
+        }
+        .nav-bar .spacer { display: block; flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+        .nav-bar a { flex-shrink: 0; white-space: nowrap; font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+        .nav-bar .session-tag { flex-shrink: 0; white-space: nowrap; font-size: 0.7rem; padding: 0.22rem 0.45rem; }
+        .nav-bar button { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.73rem; }
+        .table-wrap { -webkit-overflow-scrolling: touch; }
+        .table-wrap table { min-width: 420px; }
+        .hero, .panel { border-radius: 14px; padding: 0.8rem; }
+        h1 { font-size: 1.05rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html" class="active">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
+      <a href="/bot-config-menu.html">Config Bot</a>
+      <a href="/usuarios.html">Usuários</a>
+      <span class="spacer"></span>
+      <span class="session-tag" id="sessionText">sessão: carregando</span>
+      <button id="logoutButton">Sair</button>
+    </nav>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Processos FULL em tempo real</h1>
+            <p class="subtitle">
+              Acompanhe solicitações FULL: status atual, início, tempo decorrido e conclusão ou
+              erro conforme o backend publica cada atualização.
+            </p>
+            <div class="hero-actions">
+              <button id="reloadJobs">Atualizar agora</button>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card">
+              <small>Em execução</small>
+              <strong id="runningCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <small>Monitorados</small>
+              <strong id="totalCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <small>Última atualização</small>
+              <strong id="updatedAtText">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Conexão SSE</small>
+              <strong id="streamStateText">conectando</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Fila FULL</h2>
+            <div class="muted">Ordenada do processo mais recente para o mais antigo.</div>
+          </div>
+
+          <div class="status-line">
+            <span class="dot" id="streamDot"></span>
+            <span id="streamBadgeText">Conectando ao stream...</span>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Remetente</th>
+                <th>Grupo</th>
+                <th>Pedido</th>
+                <th>Status</th>
+                <th>Início</th>
+                <th>Tempo decorrido</th>
+                <th>Conclusão / Erro</th>
+              </tr>
+            </thead>
+            <tbody id="jobsRows">
+              <tr>
+                <td colspan="8" class="empty-state">Carregando processos...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const runningCountEl = document.getElementById('runningCount');
+      const totalCountEl = document.getElementById('totalCount');
+      const updatedAtTextEl = document.getElementById('updatedAtText');
+      const streamStateTextEl = document.getElementById('streamStateText');
+      const streamDotEl = document.getElementById('streamDot');
+      const streamBadgeTextEl = document.getElementById('streamBadgeText');
+      const jobsRowsEl = document.getElementById('jobsRows');
+      const sessionTextEl = document.getElementById('sessionText');
+      const nativeFetch = window.fetch.bind(window);
+
+      const state = {
+        items: [],
+        runningCount: 0,
+        total: 0,
+        updatedAt: ''
+      };
+
+      function redirectToLogin() {
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.replace(`/login.html?next=${next}`);
+      }
+
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+        return response;
+      };
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function clampText(value, maxChars) {
+        const text = String(value || '').trim();
+        if (text.length <= maxChars) return text;
+        return `${text.slice(0, maxChars)}...`;
+      }
+
+      function formatDateTime(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      function formatElapsed(ms) {
+        const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+        if (minutes > 0) return `${minutes}m ${seconds}s`;
+        return `${seconds}s`;
+      }
+
+      function getElapsedMs(job) {
+        const startedAt = Number(job?.startedAt || 0);
+        const finishedAt = Number(job?.finishedAt || 0);
+        if (!startedAt) return 0;
+        return Math.max(0, (finishedAt || Date.now()) - startedAt);
+      }
+
+      function getStatusClass(status) {
+        if (status === 'done') return 'done';
+        if (status === 'error') return 'error';
+        return 'running';
+      }
+
+      function getDetailText(job) {
+        if (job.status === 'error') {
+          return job.error || job.detail || '-';
+        }
+        if (job.status === 'done') {
+          return job.summary || job.detail || '-';
+        }
+        return job.detail || '-';
+      }
+
+      function updateStreamBadge(kind, text) {
+        streamDotEl.classList.remove('ok', 'error');
+        if (kind === 'ok') streamDotEl.classList.add('ok');
+        if (kind === 'error') streamDotEl.classList.add('error');
+        streamStateTextEl.textContent = kind === 'ok' ? 'conectado' : kind === 'error' ? 'instavel' : 'conectando';
+        streamBadgeTextEl.textContent = text;
+      }
+
+      async function loadCurrentSession() {
+        const res = await fetch('/api/panel-auth/me');
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'falha ao carregar sessão');
+        }
+
+        const username = String(data.user?.username || '').trim();
+        sessionTextEl.textContent = username ? `sessão: ${username}` : 'sessão ativa';
+      }
+
+
+
+      async function logoutFromPanel() {
+        try {
+          await fetch('/api/panel-auth/logout', { method: 'POST' });
+        } catch {}
+
+        redirectToLogin();
+      }
+
+      function renderJobs() {
+        runningCountEl.textContent = String(state.runningCount || 0);
+        totalCountEl.textContent = String(state.total || 0);
+        updatedAtTextEl.textContent = state.updatedAt ? formatDateTime(state.updatedAt) : '-';
+        document.title = `Processos FULL (${state.runningCount || 0} em execução)`;
+
+        if (!Array.isArray(state.items) || !state.items.length) {
+          jobsRowsEl.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhuma solicitação FULL monitorada até agora.</td></tr>';
+          return;
+        }
+
+        jobsRowsEl.innerHTML = state.items
+          .map((job) => {
+            const statusLabel =
+              String(job.statusLabel || '').trim() ||
+              (job.status === 'done' ? 'concluída' : job.status === 'error' ? 'erro' : 'em andamento');
+            const detail = clampText(getDetailText(job), 220);
+            const request = clampText(job.request || '-', 160);
+            const finishedText = job.finishedAt ? formatDateTime(job.finishedAt) : job.status === 'running' ? 'em andamento' : '-';
+
+            return `
+              <tr>
+                <td class="mono">${escapeHtml(job.id || '-')}</td>
+                <td class="mono">${escapeHtml(job.senderNumber || '-')}</td>
+                <td class="mono">${escapeHtml(job.groupId || '-')}</td>
+                <td class="job-request" title="${escapeHtml(job.request || '-')}">${escapeHtml(request)}</td>
+                <td>
+                  <span class="pill ${getStatusClass(job.status)}">${escapeHtml(statusLabel)}</span>
+                </td>
+                <td>${escapeHtml(formatDateTime(job.startedAt))}</td>
+                <td>${escapeHtml(formatElapsed(getElapsedMs(job)))}</td>
+                <td class="job-detail" title="${escapeHtml(getDetailText(job))}">
+                  <strong>${escapeHtml(finishedText)}</strong><br />
+                  ${escapeHtml(detail)}
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      function applySnapshot(snapshot) {
+        state.items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+        state.runningCount = Number(snapshot?.runningCount || 0);
+        state.total = Number(snapshot?.total || 0);
+        state.updatedAt = String(snapshot?.updatedAt || '').trim();
+        renderJobs();
+      }
+
+      async function loadJobs() {
+        const res = await fetch('/api/full-jobs?limit=120');
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'falha ao carregar processos');
+        }
+        applySnapshot(data);
+      }
+
+      function setupStream() {
+        const stream = new EventSource('/events');
+
+        stream.onopen = () => {
+          updateStreamBadge('ok', 'Stream conectado. Atualizações em tempo real ativas.');
+        };
+
+        stream.addEventListener('full_jobs', (event) => {
+          try {
+            applySnapshot(JSON.parse(event.data));
+            updateStreamBadge('ok', 'Recebendo atualizações dos processos FULL.');
+          } catch {
+            updateStreamBadge('error', 'Recebi um evento inválido do stream.');
+          }
+        });
+
+        stream.onerror = () => {
+          updateStreamBadge('error', 'Conexão SSE instável. O navegador vai tentar reconectar.');
+        };
+      }
+
+      document.getElementById('reloadJobs').addEventListener('click', async () => {
+        try {
+          await loadJobs();
+          updateStreamBadge('ok', 'Snapshot recarregado manualmente.');
+        } catch (error) {
+          updateStreamBadge('error', `Erro ao recarregar: ${String(error)}`);
+        }
+      });
+
+      document.getElementById('logoutButton').addEventListener('click', logoutFromPanel);
+
+      setInterval(renderJobs, 1000);
+      loadCurrentSession().catch((error) => {
+        updateStreamBadge('error', `Erro ao carregar sessão: ${String(error)}`);
+      });
+
+      loadJobs()
+        .then(() => {
+          updateStreamBadge('ok', 'Snapshot inicial carregado.');
+        })
+        .catch((error) => {
+          updateStreamBadge('error', `Erro ao carregar snapshot inicial: ${String(error)}`);
+        });
+
+      setupStream();
+    </script>
+  </body>
+</html>

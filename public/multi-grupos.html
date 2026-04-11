@@ -1,0 +1,2418 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Grupo e Permissoes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --card: rgba(22, 27, 34, 0.95);
+        --teal: #2dd4bf;
+        --blue: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .page {
+        width: min(1500px, 96vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .hero,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+        box-shadow: 0 20px 42px rgba(0, 0, 0, 0.25);
+      }
+
+      .hero {
+        padding: 1.2rem;
+        color: var(--ink);
+        background: linear-gradient(132deg, rgba(45, 212, 191, 0.13), rgba(56, 189, 248, 0.10));
+        border: 1px solid var(--line);
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1040px) {
+        .hero-grid {
+          grid-template-columns: 1.2fr 1fr;
+          align-items: center;
+        }
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+      }
+
+      .hero .subtitle {
+        margin-top: 0.55rem;
+        max-width: 78ch;
+        color: var(--muted);
+      }
+
+      .hero-actions {
+        margin-top: 0.9rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+      }
+
+      .summary-grid {
+        display: grid;
+        gap: 0.62rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-card {
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: var(--surface);
+        padding: 0.78rem;
+      }
+
+      .summary-card small {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 1rem;
+        word-break: break-all;
+      }
+
+      .layout {
+        margin-top: 1rem;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1200px) {
+        .layout {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .panel {
+        padding: 1rem;
+      }
+
+      .panel.full {
+        grid-column: 1 / -1;
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+      }
+
+      .panel-head .subtitle {
+        margin-top: 0.3rem;
+        color: var(--muted);
+      }
+
+      .grid {
+        margin-top: 0.85rem;
+        display: grid;
+        gap: 0.7rem;
+      }
+
+      @media (min-width: 760px) {
+        .grid.cols-2 {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      label {
+        display: grid;
+        gap: 0.28rem;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      input,
+      button,
+      select {
+        font: inherit;
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--ink);
+        padding: 0.62rem 0.72rem;
+      }
+      select option { background: var(--surface); color: var(--ink); }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        cursor: pointer;
+        padding: 0.62rem 0.9rem;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, var(--teal), #0b938b);
+        transition: opacity .15s;
+      }
+      button:hover { opacity: .85; }
+
+      button.alt {
+        background: linear-gradient(135deg, #0f4a7c, var(--blue));
+      }
+
+      button.warn {
+        background: linear-gradient(135deg, #b42318, #dc2626);
+      }
+
+      button.soft {
+        background: linear-gradient(135deg, #475569, #64748b);
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .row {
+        display: flex;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+      }
+
+      .tip {
+        margin-top: 0.7rem;
+        border: 1px solid rgba(45, 212, 191, 0.24);
+        border-radius: 12px;
+        background: rgba(45, 212, 191, 0.07);
+        padding: 0.72rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .msg {
+        margin-top: 0.72rem;
+        font-size: 0.84rem;
+      }
+
+      .msg.error {
+        color: var(--error);
+      }
+
+      .msg.ok {
+        color: var(--ok);
+      }
+
+      .msg.muted {
+        color: var(--muted);
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .table-wrap {
+        margin-top: 0.85rem;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg-2);
+      }
+
+      table {
+        width: 100%;
+        min-width: 940px;
+        border-collapse: collapse;
+        font-size: 0.84rem;
+      }
+
+      th,
+      td {
+        padding: 0.64rem 0.7rem;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #1c2128;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.77rem;
+      }
+
+      .subject {
+        font-weight: 600;
+      }
+
+      .pill-row {
+        display: flex;
+        gap: 0.3rem;
+        flex-wrap: wrap;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.19rem 0.52rem;
+        font-size: 0.73rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+
+      .pill.info {
+        background: rgba(56, 189, 248, 0.14);
+        color: #7dd3fc;
+      }
+
+      .pill.ok {
+        background: rgba(63, 185, 80, 0.14);
+        color: var(--ok);
+      }
+
+      .pill.warn {
+        background: rgba(210, 153, 34, 0.14);
+        color: var(--warn);
+      }
+
+      .pill.neutral {
+        background: rgba(139, 148, 158, 0.15);
+        color: var(--muted);
+      }
+
+      .status-ok {
+        color: var(--ok);
+        font-weight: 700;
+      }
+
+      .status-no {
+        color: var(--error);
+        font-weight: 700;
+      }
+
+      .checkboxes {
+        display: flex;
+        gap: 0.7rem;
+        flex-wrap: wrap;
+        margin-top: 0.3rem;
+      }
+
+      .checkboxes label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        color: var(--ink);
+      }
+
+      .group-summary {
+        margin-top: 0.72rem;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 12px;
+        background: rgba(56, 189, 248, 0.06);
+        padding: 0.7rem;
+        font-size: 0.84rem;
+        line-height: 1.45;
+      }
+
+      .flag-box {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.42rem 0.62rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+
+      .flag-box input[type='checkbox'] {
+        width: 16px;
+        height: 16px;
+      }
+
+      .flag-grid {
+        margin-top: 0.65rem;
+        display: grid;
+        gap: 0.55rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      /* ── Diagnostics card grid ─────────────────────────────────── */
+      .diag-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+
+      .diag-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+
+      .diag-stat .num {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .diag-stat.ok { background: rgba(63,185,80,0.12); border-color: rgba(63,185,80,0.3); color: var(--ok); }
+      .diag-stat.ok .num { color: var(--ok); }
+      .diag-stat.warn { background: rgba(210,153,34,0.12); border-color: rgba(210,153,34,0.3); color: var(--warn); }
+      .diag-stat.warn .num { color: var(--warn); }
+      .diag-stat.info { background: rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.3); color: #7dd3fc; }
+      .diag-stat.info .num { color: #7dd3fc; }
+
+      .diag-grid {
+        margin-top: 0.85rem;
+        display: grid;
+        gap: 0.65rem;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      }
+
+      .diag-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg-2);
+        padding: 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        transition: border-color 0.15s;
+      }
+
+      .diag-card.routing-active {
+        border-color: rgba(63, 185, 80, 0.35);
+        background: rgba(63, 185, 80, 0.04);
+      }
+
+      .diag-card.routing-primary {
+        border-color: rgba(56, 189, 248, 0.45);
+        background: rgba(56, 189, 248, 0.05);
+      }
+
+      .diag-card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      .diag-card-title {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .diag-card-title .subject {
+        font-size: 0.92rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .diag-card-title .mono {
+        margin-top: 0.1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+
+      .diag-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      .diag-card-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.15rem 0.5rem;
+      }
+
+      .diag-card-flags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+      }
+
+      .diag-card-controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem;
+        border-top: 1px solid var(--line);
+        padding-top: 0.55rem;
+        margin-top: 0.1rem;
+      }
+
+      .diag-ctrl-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+
+      /* Toggle switch */
+      .toggle {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        height: 20px;
+        flex-shrink: 0;
+      }
+
+      .toggle input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+
+      .toggle-track {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        transition: background 0.2s, border-color 0.2s;
+        cursor: pointer;
+      }
+
+      .toggle input:checked + .toggle-track {
+        background: rgba(63, 185, 80, 0.7);
+        border-color: rgba(63, 185, 80, 0.9);
+      }
+
+      .toggle input:disabled + .toggle-track {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .toggle-track::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: transform 0.2s, background 0.2s;
+      }
+
+      .toggle input:checked + .toggle-track::after {
+        transform: translateX(16px);
+        background: #fff;
+      }
+
+      .diag-reason {
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-style: italic;
+        border-top: 1px solid var(--line);
+        padding-top: 0.4rem;
+        word-break: break-word;
+      }
+
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .55rem 1.1rem;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        font-size: .88rem;
+      }
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: .35rem .7rem;
+        border-radius: 8px;
+        transition: background .15s, color .15s;
+      }
+      .nav-bar a:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+      .nav-bar a.active { color: var(--teal); font-weight: 600; }
+      .nav-bar .spacer { flex: 1; }
+      .nav-bar .session-tag { color: var(--muted); font-size: .78rem; font-family: 'IBM Plex Mono', monospace; }
+      .nav-bar button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
+      .nav-bar button:hover { color: var(--error); border-color: var(--error); }
+
+      @media (max-width: 900px) {
+        .page {
+          width: min(100%, 100vw);
+          margin: 0;
+          padding: 0.6rem;
+        }
+
+        .hero,
+        .panel {
+          border-radius: 18px;
+        }
+
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-actions button {
+          flex: 1 1 48%;
+          min-width: 120px;
+        }
+
+        .row input {
+          width: 100% !important;
+        }
+
+        table {
+          min-width: 620px;
+        }
+
+        .flag-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* ── Responsive mobile (≤ 640px) ─────────────────────────── */
+      @media (max-width: 640px) {
+        .page {
+          width: 100%;
+          margin: 0.3rem auto 1.5rem;
+          padding: 0 0.5rem;
+        }
+        .nav-bar {
+          flex-wrap: wrap;
+          overflow-x: hidden;
+          gap: 0.2rem;
+          row-gap: 0.2rem;
+          padding: 0.4rem 0.5rem;
+        }
+        .nav-bar .spacer { display: block; flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+        .nav-bar a { flex-shrink: 0; white-space: nowrap; font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+        .nav-bar .session-tag { flex-shrink: 0; white-space: nowrap; font-size: 0.7rem; padding: 0.22rem 0.45rem; }
+        .nav-bar { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.73rem; }
+        .table-wrap table { min-width: 420px; }
+        .hero-actions button { width: 100%; }
+        h1 { font-size: 1.05rem; }
+        .diag-grid { grid-template-columns: 1fr; }
+        .diag-stats { gap: 0.3rem; }
+        .diag-stat { font-size: 0.72rem; padding: 0.22rem 0.55rem; }
+        .diag-stat .num { font-size: 0.88rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html">Processos</a>
+      <a href="/multi-grupos.html" class="active">Multi-Grupo</a>
+      <a href="/bot-config-menu.html">Config Bot</a>
+      <a href="/usuarios.html">Usuários</a>
+      <span class="spacer"></span>
+      <span class="session-tag" id="sessionText">sessao: carregando</span>
+      <button id="logoutButton">Sair</button>
+    </nav>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Multi-Grupo, Controle de Grupo e Permissoes</h1>
+            <p class="subtitle">
+              Painel centralizado para roteamento de resposta, controle do grupo principal e permissoes de interacao
+              (autorizado/admin/FULL/privado), com flags detalhadas para saber quando o bot responde ou bloqueia.
+            </p>
+            <div class="hero-actions">
+              <button id="reloadAll">Recarregar Tudo</button>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card">
+              <small>Grupo principal</small>
+              <strong id="summaryPrimaryGroup">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Grupos no roteamento</small>
+              <strong id="summaryGroupsCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <small>Privado autorizado</small>
+              <strong id="summaryPrivateCount">0</strong>
+            </div>
+            <div class="summary-card">
+              <small>Modo de mencao</small>
+              <strong id="summaryMentionMode">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Status runtime</small>
+              <strong id="summaryRuntimeStatus">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Ultima atualizacao</small>
+              <strong id="summaryUpdatedAt">-</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="panel full">
+          <div class="panel-head">
+            <div>
+              <h2>Mapa de Resposta por Grupo</h2>
+              <div class="subtitle">
+                Flags de roteamento por grupo — ative resposta com ou sem mencao diretamente nos cards abaixo.
+              </div>
+            </div>
+            <div class="row" style="flex-wrap:wrap;gap:0.45rem">
+              <input id="diagnosticsFilter" placeholder="Filtrar por nome ou ID…" style="min-width:180px;flex:1" />
+              <button class="alt" id="reloadDiagnosticsButton">↺ Atualizar</button>
+            </div>
+          </div>
+
+          <div id="diagnosticsStats" class="diag-stats">
+            <span class="diag-stat"><span class="num" id="diagStatTotal">0</span> grupos</span>
+            <span class="diag-stat ok"><span class="num" id="diagStatActive">0</span> no roteamento</span>
+            <span class="diag-stat warn"><span class="num" id="diagStatOff">0</span> fora do roteamento</span>
+            <span class="diag-stat info"><span class="num" id="diagStatPrimary">0</span> principal</span>
+          </div>
+
+          <div id="diagnosticsMsg" class="msg muted"></div>
+
+          <div id="diagnosticsRows" class="diag-grid"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Modo de Resposta (flags)</h2>
+              <div class="subtitle">Essas flags valem para todos os grupos de resposta.</div>
+            </div>
+          </div>
+
+          <div class="flag-grid">
+            <label class="flag-box">
+              <input id="modeMentionFlag" type="checkbox" />
+              Responder se mencionar
+            </label>
+            <label class="flag-box">
+              <input id="modeNoMentionFlag" type="checkbox" />
+              Responder sem mencionar
+            </label>
+            <button id="saveModeFlags">Salvar Flags de Resposta</button>
+          </div>
+
+          <div id="modeFlagsMsg" class="msg muted"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Grupos de Resposta</h2>
+              <div class="subtitle">O bot detecta os grupos e voce marca apenas a flag de resposta.</div>
+            </div>
+          </div>
+
+          <div class="grid cols-2">
+            <label>
+              ID do grupo
+              <input id="groupIdInput" placeholder="120363400000000000@g.us" />
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.7rem">
+            <button id="addGroupButton">Adicionar Grupo</button>
+            <button class="warn" id="removeSelectedGroupsButton">Remover Selecionados</button>
+            <button class="alt" id="reloadGroupsButton">Atualizar Lista</button>
+          </div>
+
+          <div class="tip">
+            Comandos no bot: <code>listar grupos de resposta</code>, <code>adicionar grupo de resposta &lt;id&gt;</code>,
+            <code>remover grupo de resposta &lt;id&gt;</code>. Na tabela, basta marcar/desmarcar a flag.
+          </div>
+
+          <div id="groupsMsg" class="msg muted"></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="selectAllGroups" type="checkbox" /></th>
+                  <th>Grupo</th>
+                  <th>Origem</th>
+                  <th>Flag Responder</th>
+                </tr>
+              </thead>
+              <tbody id="groupsRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Permissao de Chat Privado</h2>
+              <div class="subtitle">Separado de autorizado/admin/FULL. Aqui controla somente resposta em privado.</div>
+            </div>
+          </div>
+
+          <div class="grid cols-2">
+            <label>
+              Numero para liberar
+              <input id="privateNumberInput" placeholder="21 96486-6832" />
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.7rem">
+            <button id="addPrivateButton">Liberar Privado</button>
+            <button class="warn" id="removeSelectedPrivateButton">Bloquear Selecionados</button>
+            <button class="alt" id="reloadPrivateButton">Atualizar Lista</button>
+          </div>
+
+          <div class="tip">
+            Comandos no bot: <code>listar privado</code>, <code>autorizar privado 21...</code>, <code>remover privado 21...</code>.
+          </div>
+
+          <div id="privateMsg" class="msg muted"></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="selectAllPrivate" type="checkbox" /></th>
+                  <th>Numero</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody id="privateRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel full">
+          <div class="panel-head">
+            <div>
+              <h2>Controle do Grupo Principal</h2>
+              <div class="subtitle">Nome, descricao, convite, solicitacoes e flags de travas operacionais do grupo autorizado.</div>
+            </div>
+          </div>
+
+          <div id="gcSummary" class="group-summary">Carregando status do grupo principal...</div>
+          <div id="gcMsg" class="msg muted"></div>
+
+          <div class="grid cols-2">
+            <label>
+              Novo nome do grupo
+              <input id="gcSubjectInput" placeholder="ex.: Time Operacoes" />
+            </label>
+            <label>
+              Nova descricao
+              <input id="gcDescriptionInput" placeholder="ex.: regras, escopo e horarios" />
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="gcReload">Atualizar Status</button>
+            <button class="alt" id="gcGetInvite">Mostrar Link</button>
+            <button class="warn" id="gcRefreshInvite">Renovar Link</button>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="gcSetSubject">Atualizar Nome</button>
+            <button class="alt" id="gcSetDescription">Atualizar Descricao</button>
+          </div>
+
+          <div class="flag-grid">
+            <label class="flag-box">
+              <input id="gcFlagMessagesAdminsOnly" type="checkbox" />
+              Somente admin fala no grupo
+            </label>
+            <label class="flag-box">
+              <input id="gcFlagInfoAdminsOnly" type="checkbox" />
+              Somente admin edita info
+            </label>
+            <label class="flag-box">
+              <input id="gcFlagAddMembersAdminsOnly" type="checkbox" />
+              Somente admin adiciona membros
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="gcApplyFlags">Aplicar Flags do Grupo</button>
+          </div>
+
+          <div class="grid cols-2" style="margin-top: 0.7rem">
+            <label>
+              Solicitacoes (numeros opcionais)
+              <input id="gcRequesterInput" placeholder="ex.: 21999990000, 5521977777777" />
+            </label>
+          </div>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="gcListRequests">Listar Solicitacoes</button>
+            <button class="alt" id="gcApproveRequests">Aprovar Solicitacoes</button>
+            <button class="warn" id="gcRejectRequests">Rejeitar Solicitacoes</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Solicitante</th>
+                  <th>Quando</th>
+                </tr>
+              </thead>
+              <tbody id="gcRequestsRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel full">
+          <div class="panel-head">
+            <div>
+              <h2>Permissoes de Interacao</h2>
+              <div class="subtitle">Gerencie autorizado/admin/FULL com flags e autorizacao rapida de remetentes recentes.</div>
+            </div>
+          </div>
+
+          <div class="summary-grid" style="margin-top: 0.75rem">
+            <div class="summary-card" style="border-color: var(--line); background: rgba(255, 255, 255, 0.66); color: var(--ink)">
+              <small style="color: var(--muted)">Autorizados efetivos</small>
+              <strong id="summaryAuthorizedCount" style="color: var(--ink)">0</strong>
+            </div>
+            <div class="summary-card" style="border-color: var(--line); background: rgba(255, 255, 255, 0.66); color: var(--ink)">
+              <small style="color: var(--muted)">Admins efetivos</small>
+              <strong id="summaryAdminsCount" style="color: var(--ink)">0</strong>
+            </div>
+            <div class="summary-card" style="border-color: var(--line); background: rgba(255, 255, 255, 0.66); color: var(--ink)">
+              <small style="color: var(--muted)">FULL efetivos</small>
+              <strong id="summaryFullCount" style="color: var(--ink)">0</strong>
+            </div>
+            <div class="summary-card" style="border-color: var(--line); background: rgba(255, 255, 255, 0.66); color: var(--ink)">
+              <small style="color: var(--muted)">Atualizacao ACL</small>
+              <strong id="summaryAclUpdatedAt" style="color: var(--ink)">-</strong>
+            </div>
+          </div>
+
+          <div class="grid cols-2" style="margin-top: 0.9rem">
+            <label>
+              Numero (com DDD)
+              <input id="aclNumber" placeholder="21 96486-6832" />
+            </label>
+          </div>
+
+          <label style="margin-top: 0.5rem">
+            Permissoes para este numero
+            <div class="checkboxes">
+              <label><input id="aclGrantAuthorized" type="checkbox" checked /> Pode interagir</label>
+              <label><input id="aclGrantAdmin" type="checkbox" /> Admin do bot</label>
+              <label><input id="aclGrantFull" type="checkbox" /> FULL (acesso total)</label>
+            </div>
+          </label>
+
+          <div class="row" style="margin-top: 0.65rem">
+            <button id="aclApply">Aplicar Permissoes</button>
+            <button class="warn" id="aclBulkRemove">Bloquear Selecionados</button>
+            <button class="alt" id="aclReload">Recarregar</button>
+          </div>
+
+          <div class="tip">
+            Comandos no bot: <code>autoriza 21...</code>, <code>adiciona admin do bot 21...</code>, <code>adicionar full 21...</code>,
+            <code>listar autorizados</code>, <code>listar admins do bot</code>, <code>listar full</code>.
+          </div>
+
+          <div id="aclMsg" class="msg muted"></div>
+
+          <div class="grid cols-2" style="margin-top: 0.5rem">
+            <div>
+              <div class="muted" style="margin-bottom: 0.4rem">Autorizados efetivos</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="aclSelectAllAuthorized" type="checkbox" /></th>
+                      <th>Numero</th>
+                      <th>Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="aclAuthorizedRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <div class="muted" style="margin-bottom: 0.4rem">Admins efetivos</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><input id="aclSelectAllAdmins" type="checkbox" /></th>
+                      <th>Numero</th>
+                      <th>Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="aclAdminRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 0.7rem">
+            <div class="muted" style="margin-bottom: 0.4rem">FULL efetivos</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th><input id="aclSelectAllFull" type="checkbox" /></th>
+                    <th>Numero</th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody id="aclFullRows"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel-head" style="margin-top: 1rem">
+            <div>
+              <h3>Autorizacao Rapida por Mensagens Recentes</h3>
+              <div class="subtitle">
+                Assim que novas mensagens chegam no grupo, os remetentes aparecem aqui para voce liberar/bloquear por flags.
+              </div>
+            </div>
+            <div class="row">
+              <button class="alt" id="reloadRecentSenders">Atualizar Recentes</button>
+            </div>
+          </div>
+
+          <div id="recentSendersMsg" class="msg muted"></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Numero</th>
+                  <th>Ultima mensagem</th>
+                  <th>Interagir</th>
+                  <th>Admin</th>
+                  <th>FULL</th>
+                  <th>Privado</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody id="recentSendersRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const summaryPrimaryGroupEl = document.getElementById('summaryPrimaryGroup');
+      const summaryGroupsCountEl = document.getElementById('summaryGroupsCount');
+      const summaryPrivateCountEl = document.getElementById('summaryPrivateCount');
+      const summaryMentionModeEl = document.getElementById('summaryMentionMode');
+      const summaryRuntimeStatusEl = document.getElementById('summaryRuntimeStatus');
+      const summaryUpdatedAtEl = document.getElementById('summaryUpdatedAt');
+      const summaryAuthorizedCountEl = document.getElementById('summaryAuthorizedCount');
+      const summaryAdminsCountEl = document.getElementById('summaryAdminsCount');
+      const summaryFullCountEl = document.getElementById('summaryFullCount');
+      const summaryAclUpdatedAtEl = document.getElementById('summaryAclUpdatedAt');
+
+      const sessionTextEl = document.getElementById('sessionText');
+
+      const diagnosticsFilterEl = document.getElementById('diagnosticsFilter');
+      const diagnosticsMsgEl = document.getElementById('diagnosticsMsg');
+      const diagnosticsRowsEl = document.getElementById('diagnosticsRows');
+      const modeMentionFlagEl = document.getElementById('modeMentionFlag');
+      const modeNoMentionFlagEl = document.getElementById('modeNoMentionFlag');
+      const modeFlagsMsgEl = document.getElementById('modeFlagsMsg');
+
+      const groupIdInputEl = document.getElementById('groupIdInput');
+      const groupsMsgEl = document.getElementById('groupsMsg');
+      const groupsRowsEl = document.getElementById('groupsRows');
+      const selectAllGroupsEl = document.getElementById('selectAllGroups');
+
+      const privateNumberInputEl = document.getElementById('privateNumberInput');
+      const privateMsgEl = document.getElementById('privateMsg');
+      const privateRowsEl = document.getElementById('privateRows');
+      const selectAllPrivateEl = document.getElementById('selectAllPrivate');
+
+      const gcSummaryEl = document.getElementById('gcSummary');
+      const gcMsgEl = document.getElementById('gcMsg');
+      const gcSubjectInputEl = document.getElementById('gcSubjectInput');
+      const gcDescriptionInputEl = document.getElementById('gcDescriptionInput');
+      const gcRequesterInputEl = document.getElementById('gcRequesterInput');
+      const gcRequestsRowsEl = document.getElementById('gcRequestsRows');
+      const gcFlagMessagesAdminsOnlyEl = document.getElementById('gcFlagMessagesAdminsOnly');
+      const gcFlagInfoAdminsOnlyEl = document.getElementById('gcFlagInfoAdminsOnly');
+      const gcFlagAddMembersAdminsOnlyEl = document.getElementById('gcFlagAddMembersAdminsOnly');
+
+      const aclNumberEl = document.getElementById('aclNumber');
+      const aclGrantAuthorizedEl = document.getElementById('aclGrantAuthorized');
+      const aclGrantAdminEl = document.getElementById('aclGrantAdmin');
+      const aclGrantFullEl = document.getElementById('aclGrantFull');
+      const aclSelectAllAuthorizedEl = document.getElementById('aclSelectAllAuthorized');
+      const aclSelectAllAdminsEl = document.getElementById('aclSelectAllAdmins');
+      const aclSelectAllFullEl = document.getElementById('aclSelectAllFull');
+      const aclMsgEl = document.getElementById('aclMsg');
+      const aclAuthorizedRowsEl = document.getElementById('aclAuthorizedRows');
+      const aclAdminRowsEl = document.getElementById('aclAdminRows');
+      const aclFullRowsEl = document.getElementById('aclFullRows');
+      const recentSendersMsgEl = document.getElementById('recentSendersMsg');
+      const recentSendersRowsEl = document.getElementById('recentSendersRows');
+
+      const nativeFetch = window.fetch.bind(window);
+
+      const state = {
+        routing: {
+          primaryGroupId: '',
+          dynamicResponseGroups: [],
+          effectiveResponseGroups: [],
+          dynamicPrivate: [],
+          effectivePrivate: [],
+          updatedAt: ''
+        },
+        accessControl: {
+          effectiveAuthorized: [],
+          effectiveAdmins: [],
+          effectiveFulls: [],
+          updatedAt: ''
+        },
+        diagnostics: {
+          runtimeStatus: '-',
+          runtimeReady: false,
+          requireMention: true,
+          groups: [],
+          counts: {
+            totalKnownGroups: 0,
+            groupsInRouting: 0,
+            groupsRespondingWhenMentioned: 0,
+            groupsRespondingWithoutMention: 0
+          },
+          updatedAt: ''
+        },
+        groupControl: null,
+        recentSenders: []
+      };
+
+      function redirectToLogin() {
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.replace(`/login.html?next=${next}`);
+      }
+
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error('Sessao expirada. Faça login novamente.');
+        }
+        return response;
+      };
+
+      function setMsg(target, text, isError = false) {
+        if (!target) return;
+        target.textContent = String(text || '');
+        target.classList.toggle('error', Boolean(isError));
+        target.classList.toggle('ok', !isError && Boolean(text));
+        target.classList.toggle('muted', !text);
+      }
+
+      function normalizeDigits(value) {
+        return String(value || '').replace(/\D/g, '');
+      }
+
+      function normalizeGroupId(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        if (/@g\.us$/i.test(raw)) return raw;
+        const digits = normalizeDigits(raw);
+        return digits ? `${digits}@g.us` : '';
+      }
+
+      function formatDateTime(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function formatEpochDateTime(value) {
+        const n = Number(value || 0);
+        if (!Number.isFinite(n) || n <= 0) return '-';
+        const ms = n > 1_000_000_000_000 ? n : n * 1000;
+        const date = new Date(ms);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      function parseGroupRequesterIds(rawText) {
+        return Array.from(
+          new Set(
+            String(rawText || '')
+              .split(/[\s,;\n]+/g)
+              .map((item) => normalizeDigits(item))
+              .filter((item) => item.length >= 8)
+              .map((item) => `${item}@c.us`)
+          )
+        );
+      }
+
+
+
+      function renderSummary() {
+        const routing = state.routing || {};
+        const access = state.accessControl || {};
+        const diagnostics = state.diagnostics || {};
+
+        summaryPrimaryGroupEl.textContent = routing.primaryGroupId || '-';
+        summaryGroupsCountEl.textContent = String(Array.isArray(routing.effectiveResponseGroups) ? routing.effectiveResponseGroups.length : 0);
+        summaryPrivateCountEl.textContent = String(Array.isArray(routing.effectivePrivate) ? routing.effectivePrivate.length : 0);
+        summaryMentionModeEl.textContent = diagnostics.requireMention ? 'Mencao obrigatoria' : 'Responde sem mencao';
+        summaryRuntimeStatusEl.textContent = diagnostics.runtimeStatus || '-';
+        summaryUpdatedAtEl.textContent = formatDateTime(diagnostics.updatedAt || routing.updatedAt || '');
+
+        modeMentionFlagEl.checked = Boolean(diagnostics.requireMention);
+        modeNoMentionFlagEl.checked = !Boolean(diagnostics.requireMention);
+
+        summaryAuthorizedCountEl.textContent = String(Array.isArray(access.effectiveAuthorized) ? access.effectiveAuthorized.length : 0);
+        summaryAdminsCountEl.textContent = String(Array.isArray(access.effectiveAdmins) ? access.effectiveAdmins.length : 0);
+        summaryFullCountEl.textContent = String(Array.isArray(access.effectiveFulls) ? access.effectiveFulls.length : 0);
+        summaryAclUpdatedAtEl.textContent = formatDateTime(access.updatedAt || '');
+      }
+
+      function renderGroupRequests(items) {
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) {
+          gcRequestsRowsEl.innerHTML = '<tr><td colspan="3">Sem solicitacoes pendentes.</td></tr>';
+          return;
+        }
+
+        gcRequestsRowsEl.innerHTML = list
+          .map((item, index) => {
+            const requesterRaw = String(item.requester || '').trim();
+            const requester = normalizeDigits(requesterRaw.split('@')[0] || requesterRaw) || requesterRaw || '-';
+            return `<tr>
+              <td>${index + 1}</td>
+              <td>${escapeHtml(requester)}</td>
+              <td>${escapeHtml(formatEpochDateTime(item.createdAt))}</td>
+            </tr>`;
+          })
+          .join('');
+      }
+
+      function renderGroupSnapshot(group) {
+        if (!group || typeof group !== 'object') {
+          gcSummaryEl.innerHTML = 'Sem dados do grupo no momento.';
+          renderGroupRequests([]);
+          return;
+        }
+
+        const subject = String(group.subject || '').trim() || '(sem nome)';
+        const description = String(group.description || '').trim() || '(sem descricao)';
+        const messagesMode = group.messagesAdminsOnly ? 'somente admins' : 'todos podem falar';
+        const infoMode = group.infoAdminsOnly ? 'somente admins' : 'participantes podem editar';
+        const addMembersMode = group.addMembersAdminsOnly ? 'somente admins' : 'participantes podem adicionar';
+        const inviteText = group.inviteLink
+          ? `<a href="${escapeHtml(group.inviteLink)}" target="_blank" rel="noreferrer">${escapeHtml(group.inviteLink)}</a>`
+          : 'indisponivel no momento';
+
+        gcSummaryEl.innerHTML =
+          `<b>Grupo:</b> ${escapeHtml(subject)}<br/>` +
+          `<b>Descricao:</b> ${escapeHtml(description)}<br/>` +
+          `<b>Participantes:</b> ${Number(group.participantsCount || 0)} | <b>Admins:</b> ${Number(group.adminsCount || 0)}<br/>` +
+          `<b>Mensagens:</b> ${escapeHtml(messagesMode)} | <b>Info:</b> ${escapeHtml(infoMode)} | <b>Adicionar:</b> ${escapeHtml(addMembersMode)}<br/>` +
+          `<b>Solicitacoes pendentes:</b> ${Number(group.membershipRequestsCount || 0)}<br/>` +
+          `<b>Link atual:</b> ${inviteText}`;
+
+        gcSubjectInputEl.value = subject === '(sem nome)' ? '' : subject;
+        gcDescriptionInputEl.value = description === '(sem descricao)' ? '' : description;
+        gcFlagMessagesAdminsOnlyEl.checked = Boolean(group.messagesAdminsOnly);
+        gcFlagInfoAdminsOnlyEl.checked = Boolean(group.infoAdminsOnly);
+        gcFlagAddMembersAdminsOnlyEl.checked = Boolean(group.addMembersAdminsOnly);
+        renderGroupRequests(group.membershipRequests || []);
+      }
+
+      function renderGroupsTable() {
+        const routing = state.routing || {};
+        const diagnostics = state.diagnostics || {};
+        const primary = String(routing.primaryGroupId || '').trim();
+        const dynamic = new Set(Array.isArray(routing.dynamicResponseGroups) ? routing.dynamicResponseGroups : []);
+        const diagnosed = Array.isArray(diagnostics.groups) ? diagnostics.groups : [];
+        const fallback = Array.isArray(routing.effectiveResponseGroups)
+          ? routing.effectiveResponseGroups.map((groupId) => ({
+              groupId,
+              subject: '',
+              flags: {
+                isPrimary: groupId === primary,
+                inRouting: true,
+                isDynamic: dynamic.has(groupId)
+              }
+            }))
+          : [];
+        const source = diagnosed.length ? diagnosed : fallback;
+
+        if (!source.length) {
+          groupsRowsEl.innerHTML = '<tr><td colspan="4">Nenhum grupo detectado no momento.</td></tr>';
+          return;
+        }
+
+        groupsRowsEl.innerHTML = source
+          .map((item) => {
+            const groupId = String(item.groupId || '').trim();
+            if (!groupId) return '';
+
+            const flags = item.flags || {};
+            const isPrimary = Boolean(flags.isPrimary || (primary && groupId === primary));
+            const inRouting = Boolean(flags.inRouting || (Array.isArray(routing.effectiveResponseGroups) && routing.effectiveResponseGroups.includes(groupId)));
+            const isDynamic = Boolean(flags.isDynamic || dynamic.has(groupId));
+            const origin = isPrimary ? 'principal' : isDynamic ? 'dinamico' : 'detectado';
+            const routeFlag = `<input class="group-route-flag" type="checkbox" data-group-id="${groupId}" ${inRouting ? 'checked' : ''} ${
+              isPrimary ? 'disabled' : ''
+            } />`;
+            const selectFlag = isDynamic ? `<input class="group-check" type="checkbox" value="${groupId}" />` : '-';
+            const title = String(item.subject || '').trim() || '(sem nome)';
+
+            return `<tr>
+              <td>${selectFlag}</td>
+              <td><div>${escapeHtml(title)}</div><div class="mono">${groupId}</div></td>
+              <td>${origin}</td>
+              <td>${routeFlag}</td>
+            </tr>`;
+          })
+          .filter(Boolean)
+          .join('');
+
+        selectAllGroupsEl.checked = false;
+      }
+
+      function renderPrivateTable() {
+        const routing = state.routing || {};
+        const list = Array.isArray(routing.effectivePrivate) ? routing.effectivePrivate : [];
+
+        if (!list.length) {
+          privateRowsEl.innerHTML = '<tr><td colspan="3">Nenhum numero liberado para chat privado.</td></tr>';
+          return;
+        }
+
+        privateRowsEl.innerHTML = list
+          .map((number) => {
+            return `<tr>
+              <td><input class="private-check" type="checkbox" value="${number}" /></td>
+              <td class="mono">${number}</td>
+              <td><button class="warn" onclick="removePrivate('${number}')">Bloquear</button></td>
+            </tr>`;
+          })
+          .join('');
+
+        selectAllPrivateEl.checked = false;
+      }
+
+      function renderAccessControl(snapshot) {
+        const data = snapshot || {};
+        const effectiveAuthorized = Array.isArray(data.effectiveAuthorized) ? data.effectiveAuthorized : [];
+        const effectiveAdmins = Array.isArray(data.effectiveAdmins) ? data.effectiveAdmins : [];
+        const effectiveFulls = Array.isArray(data.effectiveFulls) ? data.effectiveFulls : [];
+        const dynamicAuthorized = new Set(Array.isArray(data.dynamicAuthorized) ? data.dynamicAuthorized : []);
+        const dynamicAdmins = new Set(Array.isArray(data.dynamicAdmins) ? data.dynamicAdmins : []);
+        const dynamicFulls = new Set(Array.isArray(data.dynamicFulls) ? data.dynamicFulls : []);
+
+        if (!effectiveAuthorized.length) {
+          aclAuthorizedRowsEl.innerHTML = '<tr><td colspan="3">Sem autorizados.</td></tr>';
+        } else {
+          aclAuthorizedRowsEl.innerHTML = effectiveAuthorized
+            .map((number) => {
+              if (!dynamicAuthorized.has(number)) {
+                return `<tr><td>-</td><td class="mono">${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-authorized-check" type="checkbox" value="${number}" /></td>
+                <td class="mono">${number}</td>
+                <td><button class="warn" onclick="removeAuthorized('${number}')">Bloquear</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        if (!effectiveAdmins.length) {
+          aclAdminRowsEl.innerHTML = '<tr><td colspan="3">Sem admins.</td></tr>';
+        } else {
+          aclAdminRowsEl.innerHTML = effectiveAdmins
+            .map((number) => {
+              if (!dynamicAdmins.has(number)) {
+                return `<tr><td>-</td><td class="mono">${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-admin-check" type="checkbox" value="${number}" /></td>
+                <td class="mono">${number}</td>
+                <td><button class="warn" onclick="removeAdmin('${number}')">Remover</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        if (!effectiveFulls.length) {
+          aclFullRowsEl.innerHTML = '<tr><td colspan="3">Sem FULL.</td></tr>';
+        } else {
+          aclFullRowsEl.innerHTML = effectiveFulls
+            .map((number) => {
+              if (!dynamicFulls.has(number)) {
+                return `<tr><td>-</td><td class="mono">${number}</td><td>Fixo (.env)</td></tr>`;
+              }
+              return `<tr>
+                <td><input class="acl-full-check" type="checkbox" value="${number}" /></td>
+                <td class="mono">${number}</td>
+                <td><button class="warn" onclick="removeFull('${number}')">Remover FULL</button></td>
+              </tr>`;
+            })
+            .join('');
+        }
+
+        aclSelectAllAuthorizedEl.checked = false;
+        aclSelectAllAdminsEl.checked = false;
+        aclSelectAllFullEl.checked = false;
+      }
+
+      function renderRecentSenders() {
+        const list = Array.isArray(state.recentSenders) ? state.recentSenders : [];
+        if (!list.length) {
+          recentSendersRowsEl.innerHTML = '<tr><td colspan="7">Nenhum remetente recente detectado no grupo.</td></tr>';
+          return;
+        }
+
+        recentSendersRowsEl.innerHTML = list
+          .map((item) => {
+            const number = String(item.number || '');
+            const flags = item.flags || {};
+            const staticHint = [flags.fixedAuthorized ? 'fixo:autorizado' : '', flags.fixedAdmin ? 'fixo:admin' : '', flags.fixedFull ? 'fixo:full' : '']
+              .filter(Boolean)
+              .join(' | ');
+            const preview = String(item.lastPreview || '').trim() || '(sem preview)';
+
+            return `<tr data-recent-number="${number}">
+              <td><div class="mono">${number}</div>${staticHint ? `<div class="muted">${staticHint}</div>` : ''}</td>
+              <td>
+                <div class="muted">${formatDateTime(item.lastAt || '')} | msgs: ${Number(item.messages || 0)}</div>
+                <div>${escapeHtml(preview)}</div>
+              </td>
+              <td><input class="recent-flag-auth" type="checkbox" ${flags.authorized ? 'checked' : ''} /></td>
+              <td><input class="recent-flag-admin" type="checkbox" ${flags.admin ? 'checked' : ''} /></td>
+              <td><input class="recent-flag-full" type="checkbox" ${flags.full ? 'checked' : ''} /></td>
+              <td><input class="recent-flag-private" type="checkbox" ${flags.private ? 'checked' : ''} /></td>
+              <td><button class="alt recent-apply-flags">Aplicar</button></td>
+            </tr>`;
+          })
+          .join('');
+      }
+
+      function buildFlagPill(label, type) {
+        return `<span class="pill ${type}">${escapeHtml(label)}</span>`;
+      }
+
+      function renderDiagnosticsTable() {
+        const diagnostics = state.diagnostics || {};
+        const allRows = Array.isArray(diagnostics.groups) ? diagnostics.groups : [];
+        const filter = String(diagnosticsFilterEl.value || '').trim().toLowerCase();
+
+        const rows = filter
+          ? allRows.filter((item) => {
+              const haystack = `${item.subject || ''} ${item.groupId || ''}`.toLowerCase();
+              return haystack.includes(filter);
+            })
+          : allRows;
+
+        // Update stats counters
+        const totalEl = document.getElementById('diagStatTotal');
+        const activeEl = document.getElementById('diagStatActive');
+        const offEl = document.getElementById('diagStatOff');
+        const primaryEl = document.getElementById('diagStatPrimary');
+        if (totalEl) totalEl.textContent = String(rows.length);
+        if (activeEl) activeEl.textContent = String(rows.filter((r) => r.flags && r.flags.inRouting).length);
+        if (offEl) offEl.textContent = String(rows.filter((r) => r.flags && !r.flags.inRouting).length);
+        if (primaryEl) primaryEl.textContent = String(rows.filter((r) => r.flags && r.flags.isPrimary).length);
+
+        if (!rows.length) {
+          diagnosticsRowsEl.innerHTML = '<div style="padding:1.2rem;color:var(--muted);text-align:center">Nenhum grupo encontrado' + (filter ? ' para este filtro' : '') + '.</div>';
+          return;
+        }
+
+        diagnosticsRowsEl.innerHTML = rows
+          .map((item) => {
+            const flags = item.flags || {};
+            const subject = String(item.subject || '').trim() || '(sem nome)';
+            const groupId = String(item.groupId || '-');
+
+            const pills = [
+              flags.isPrimary ? buildFlagPill('principal', 'info') : '',
+              flags.isDynamic ? buildFlagPill('dinamico', 'neutral') : '',
+              flags.botIsAdmin ? buildFlagPill('bot admin', 'ok') : buildFlagPill('bot sem admin', 'warn'),
+              flags.messagesAdminsOnly ? buildFlagPill('fechado', 'warn') : buildFlagPill('aberto', 'ok'),
+              flags.requireMention ? buildFlagPill('mencao obrig.', 'info') : buildFlagPill('sem mencao', 'ok')
+            ].filter(Boolean).join('');
+
+            const cardClass = flags.isPrimary ? 'routing-primary' : flags.inRouting ? 'routing-active' : '';
+
+            const mentionToggle = `<label class="toggle">
+              <input class="mention-mode-flag" data-mode="mention" data-group-id="${groupId}" type="checkbox" ${flags.canRespondWhenMentioned ? 'checked' : ''} />
+              <span class="toggle-track"></span>
+            </label>`;
+            const freeToggle = `<label class="toggle">
+              <input class="mention-mode-flag" data-mode="no_mention" data-group-id="${groupId}" type="checkbox" ${flags.canRespondWithoutMention ? 'checked' : ''} />
+              <span class="toggle-track"></span>
+            </label>`;
+            const responseToggle = `<label class="toggle">
+              <input class="diag-response-flag" data-group-id="${groupId}" type="checkbox" ${flags.inRouting ? 'checked' : ''} ${flags.isPrimary ? 'disabled' : ''} />
+              <span class="toggle-track"></span>
+            </label>`;
+
+            const reason = String(item.responseReason || '').trim();
+
+            return `<div class="diag-card ${cardClass}">
+              <div class="diag-card-head">
+                <div class="diag-card-title">
+                  <div class="subject">${escapeHtml(subject)}</div>
+                  <div class="mono">${escapeHtml(groupId)}</div>
+                </div>
+              </div>
+              <div class="diag-card-meta">
+                <span>👥 ${Number(item.participantsCount || 0)} membros</span>
+                <span>🛡 ${Number(item.adminsCount || 0)} admins</span>
+              </div>
+              <div class="diag-card-flags pill-row">${pills}</div>
+              <div class="diag-card-controls">
+                <div class="diag-ctrl-label">
+                  <span>Resposta c/ mencao</span>
+                  ${mentionToggle}
+                </div>
+                <div class="diag-ctrl-label">
+                  <span>Resposta s/ mencao</span>
+                  ${freeToggle}
+                </div>
+                <div class="diag-ctrl-label" style="grid-column:1/-1">
+                  <span>Grupo de resposta${flags.isPrimary ? ' <em style="opacity:.6">(principal)</em>' : ''}</span>
+                  ${responseToggle}
+                </div>
+              </div>
+              ${reason ? `<div class="diag-reason">💬 ${escapeHtml(reason)}</div>` : ''}
+            </div>`;
+          })
+          .join('');
+      }
+
+      async function loadCurrentSession() {
+        const res = await fetch('/api/panel-auth/me');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar sessao');
+        const username = String(data.user?.username || '').trim();
+        sessionTextEl.textContent = username ? `sessao: ${username}` : 'sessao ativa';
+      }
+
+      async function logoutFromPanel() {
+        try {
+          await fetch('/api/panel-auth/logout', { method: 'POST' });
+        } catch {}
+        redirectToLogin();
+      }
+
+      async function loadRouting() {
+        const res = await fetch('/api/response-routing');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar roteamento');
+        state.routing = data.routing || state.routing;
+        renderSummary();
+        renderGroupsTable();
+        renderPrivateTable();
+      }
+
+      async function loadAccessControl() {
+        const res = await fetch('/api/access-control');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar permissoes');
+        state.accessControl = data.accessControl || state.accessControl;
+        renderAccessControl(state.accessControl);
+        renderSummary();
+      }
+
+      async function loadDiagnostics() {
+        const res = await fetch('/api/response-routing/diagnostics');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar flags de diagnostico');
+        state.diagnostics = data.diagnostics || state.diagnostics;
+        renderSummary();
+        renderDiagnosticsTable();
+        renderGroupsTable();
+      }
+
+      async function loadRecentSenders() {
+        const groupId = normalizeGroupId(state.routing?.primaryGroupId || state.diagnostics?.routing?.primaryGroupId || '');
+        const params = new URLSearchParams();
+        params.set('limit', '200');
+        if (groupId) params.set('groupId', groupId);
+
+        const res = await fetch(`/api/access-control/recent-senders?${params.toString()}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar remetentes recentes');
+        state.recentSenders = Array.isArray(data.items) ? data.items : [];
+        renderRecentSenders();
+      }
+
+      async function saveMentionModeFlags(requireMention) {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requireMention: Boolean(requireMention),
+            reason: 'multi_grupos_mode_flags'
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao salvar modo de resposta');
+      }
+
+      async function applyGroupControlFlags() {
+        const queue = [
+          { action: 'set_messages_admins_only', value: Boolean(gcFlagMessagesAdminsOnlyEl.checked) },
+          { action: 'set_info_admins_only', value: Boolean(gcFlagInfoAdminsOnlyEl.checked) },
+          { action: 'set_add_members_admins_only', value: Boolean(gcFlagAddMembersAdminsOnlyEl.checked) }
+        ];
+
+        for (const item of queue) {
+          await runGroupControlAction(item.action, { value: item.value }, 'Flags atualizadas.');
+        }
+
+        setMsg(gcMsgEl, 'Flags do grupo principal aplicadas com sucesso.');
+      }
+
+      async function loadGroupControl(includeInvite = true, includeRequests = false) {
+        const params = new URLSearchParams();
+        params.set('includeInvite', includeInvite ? 'true' : 'false');
+        params.set('includeRequests', includeRequests ? 'true' : 'false');
+        const res = await fetch(`/api/group/control?${params.toString()}`);
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar controle de grupo');
+        state.groupControl = data.group || null;
+        renderGroupSnapshot(state.groupControl);
+      }
+
+      async function runGroupControlAction(action, payload = {}, successFallback = 'Acao concluida.') {
+        const res = await fetch('/api/group/control/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, ...payload })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha na acao de grupo');
+        state.groupControl = data.group || state.groupControl;
+        renderGroupSnapshot(state.groupControl);
+        setMsg(gcMsgEl, data.detail || successFallback);
+      }
+
+      async function readAccessSnapshot() {
+        const res = await fetch('/api/access-control');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao carregar permissoes');
+        return data.accessControl || {};
+      }
+
+      async function addAuthorizedNumber(number) {
+        const res = await fetch('/api/access-control/authorized', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') throw new Error(data.message || 'falha ao autorizar');
+        return data;
+      }
+
+      async function addAdmin(number) {
+        const res = await fetch('/api/access-control/admins', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') throw new Error(data.message || 'falha ao adicionar admin');
+        return data;
+      }
+
+      async function addFull(number) {
+        const res = await fetch('/api/access-control/full', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') throw new Error(data.message || 'falha ao adicionar FULL');
+        return data;
+      }
+
+      async function addPrivateNumber(number) {
+        const res = await fetch('/api/response-routing/private', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') throw new Error(data.message || 'falha ao liberar privado');
+        return data;
+      }
+
+      async function removePrivateNumber(number) {
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Numero invalido.');
+        const res = await fetch(`/api/response-routing/private/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao bloquear privado');
+        return data;
+      }
+
+      async function setPermissionsForNumber(number, flags) {
+        const target = normalizeDigits(number);
+        if (!target) throw new Error('Numero invalido para permissao.');
+
+        const wantFull = Boolean(flags?.full);
+        const wantAdmin = Boolean(flags?.admin) || wantFull;
+        const wantAuthorized = Boolean(flags?.authorized) || wantAdmin;
+        const wantPrivate = Boolean(flags?.private);
+
+        if (wantFull) {
+          await addFull(target);
+        } else {
+          try {
+            await removeFull(target);
+          } catch {}
+        }
+
+        if (wantAdmin) {
+          await addAdmin(target);
+        } else {
+          try {
+            await removeAdmin(target);
+          } catch {}
+        }
+
+        if (wantAuthorized) {
+          await addAuthorizedNumber(target);
+        } else {
+          try {
+            await removeAuthorized(target);
+          } catch {}
+        }
+
+        if (wantPrivate) {
+          await addPrivateNumber(target);
+        } else {
+          try {
+            await removePrivateNumber(target);
+          } catch {}
+        }
+      }
+
+      async function applyAclPermissions() {
+        try {
+          const number = normalizeDigits(aclNumberEl.value);
+          if (!number) throw new Error('Informe um numero no campo principal.');
+
+          await setPermissionsForNumber(number, {
+            authorized: Boolean(aclGrantAuthorizedEl.checked),
+            admin: Boolean(aclGrantAdminEl.checked),
+            full: Boolean(aclGrantFullEl.checked),
+            private: false
+          });
+
+          state.accessControl = await readAccessSnapshot();
+          renderAccessControl(state.accessControl);
+          renderSummary();
+
+          const hasAuthorized = Array.isArray(state.accessControl.effectiveAuthorized)
+            ? state.accessControl.effectiveAuthorized.includes(number)
+            : false;
+          const hasAdmin = Array.isArray(state.accessControl.effectiveAdmins)
+            ? state.accessControl.effectiveAdmins.includes(number)
+            : false;
+          const hasFull = Array.isArray(state.accessControl.effectiveFulls)
+            ? state.accessControl.effectiveFulls.includes(number)
+            : false;
+
+          setMsg(
+            aclMsgEl,
+            `Permissoes aplicadas para ${number}: interagir=${hasAuthorized ? 'sim' : 'nao'}, admin=${hasAdmin ? 'sim' : 'nao'}, full=${hasFull ? 'sim' : 'nao'}.`
+          );
+        } catch (error) {
+          setMsg(aclMsgEl, `Erro ao aplicar permissoes: ${String(error)}`, true);
+        }
+      }
+
+      async function bulkRemoveSelectedAcl() {
+        try {
+          const selectedAuthorized = Array.from(document.querySelectorAll('.acl-authorized-check:checked')).map((el) => normalizeDigits(el.value));
+          const selectedAdmins = Array.from(document.querySelectorAll('.acl-admin-check:checked')).map((el) => normalizeDigits(el.value));
+          const selectedFull = Array.from(document.querySelectorAll('.acl-full-check:checked')).map((el) => normalizeDigits(el.value));
+
+          const all = new Set([...selectedAuthorized, ...selectedAdmins, ...selectedFull].filter(Boolean));
+          if (!all.size) throw new Error('Selecione pelo menos um numero nas tabelas.');
+
+          let removedCount = 0;
+
+          for (const number of all) {
+            if (selectedAdmins.includes(number)) {
+              try {
+                await removeAdmin(number);
+                removedCount += 1;
+              } catch {}
+            }
+            if (selectedFull.includes(number)) {
+              try {
+                await removeFull(number);
+                removedCount += 1;
+              } catch {}
+            }
+            if (selectedAuthorized.includes(number)) {
+              try {
+                await removeAuthorized(number);
+                removedCount += 1;
+              } catch {}
+            }
+          }
+
+          await loadAccessControl();
+          setMsg(aclMsgEl, `Bloqueio em lote concluido. Acoes executadas: ${removedCount}.`);
+        } catch (error) {
+          setMsg(aclMsgEl, `Erro no bloqueio em lote: ${String(error)}`, true);
+        }
+      }
+
+      async function removeAuthorized(number) {
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Numero invalido.');
+        const res = await fetch(`/api/access-control/authorized/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao bloquear numero');
+        state.accessControl = data.accessControl || state.accessControl;
+        renderAccessControl(state.accessControl);
+        renderSummary();
+        setMsg(aclMsgEl, `Numero bloqueado: ${data.number}`);
+      }
+
+      async function removeAdmin(number) {
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Numero invalido.');
+        const res = await fetch(`/api/access-control/admins/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao remover admin');
+        state.accessControl = data.accessControl || state.accessControl;
+        renderAccessControl(state.accessControl);
+        renderSummary();
+        setMsg(aclMsgEl, `Admin removido: ${data.number}`);
+      }
+
+      async function removeFull(number) {
+        const normalized = normalizeDigits(number);
+        if (!normalized) throw new Error('Numero invalido.');
+        const res = await fetch(`/api/access-control/full/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao remover FULL');
+        state.accessControl = data.accessControl || state.accessControl;
+        renderAccessControl(state.accessControl);
+        renderSummary();
+        setMsg(aclMsgEl, `FULL removido: ${data.number}`);
+      }
+
+      async function addGroupById(groupId) {
+        const normalized = normalizeGroupId(groupId);
+        if (!normalized) throw new Error('Group ID invalido.');
+        const res = await fetch('/api/response-routing/groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId: normalized })
+        });
+        const data = await res.json();
+        if (!data.ok && data.reason !== 'exists') {
+          throw new Error(data.message || 'falha ao adicionar grupo');
+        }
+        state.routing = data.routing || state.routing;
+        return data;
+      }
+
+      async function removeGroupById(groupId) {
+        const normalized = normalizeGroupId(groupId);
+        if (!normalized) throw new Error('Group ID invalido.');
+        const res = await fetch(`/api/response-routing/groups/${encodeURIComponent(normalized)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.message || 'falha ao remover grupo');
+        state.routing = data.routing || state.routing;
+        return data;
+      }
+
+      async function addGroup() {
+        try {
+          const groupId = normalizeGroupId(groupIdInputEl.value);
+          if (!groupId) throw new Error('Informe um Group ID valido.');
+          const data = await addGroupById(groupId);
+          groupIdInputEl.value = '';
+          renderSummary();
+          renderGroupsTable();
+          setMsg(groupsMsgEl, data.reason === 'exists' ? `Grupo ${groupId} ja estava ativo.` : `Grupo ${groupId} adicionado com sucesso.`);
+          await loadDiagnostics();
+        } catch (error) {
+          setMsg(groupsMsgEl, `Erro ao adicionar grupo: ${String(error)}`, true);
+        }
+      }
+
+      async function removeGroup(groupId) {
+        const normalized = normalizeGroupId(groupId);
+        if (!normalized) {
+          setMsg(groupsMsgEl, 'Group ID invalido para remocao.', true);
+          return;
+        }
+
+        try {
+          await removeGroupById(normalized);
+          renderSummary();
+          renderGroupsTable();
+          setMsg(groupsMsgEl, `Grupo removido: ${normalized}`);
+          await loadDiagnostics();
+        } catch (error) {
+          setMsg(groupsMsgEl, `Erro ao remover grupo: ${String(error)}`, true);
+        }
+      }
+
+      async function removeSelectedGroups() {
+        const selected = Array.from(document.querySelectorAll('.group-check:checked')).map((el) => normalizeGroupId(el.value));
+        const list = Array.from(new Set(selected.filter(Boolean)));
+        if (!list.length) {
+          setMsg(groupsMsgEl, 'Selecione ao menos um grupo dinamico para remover.', true);
+          return;
+        }
+
+        let okCount = 0;
+        for (const groupId of list) {
+          try {
+            await removeGroupById(groupId);
+            okCount += 1;
+          } catch {
+            // segue fluxo
+          }
+        }
+
+        renderSummary();
+        renderGroupsTable();
+        setMsg(groupsMsgEl, `Remocao em lote concluida. Grupos removidos: ${okCount}.`);
+        await loadDiagnostics();
+      }
+
+      async function addPrivate() {
+        try {
+          const number = normalizeDigits(privateNumberInputEl.value);
+          if (!number) throw new Error('Informe um numero valido.');
+
+          const res = await fetch('/api/response-routing/private', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number })
+          });
+          const data = await res.json();
+          if (!data.ok && data.reason !== 'exists') throw new Error(data.message || 'falha ao liberar privado');
+
+          state.routing = data.routing || state.routing;
+          privateNumberInputEl.value = '';
+          renderSummary();
+          renderPrivateTable();
+          setMsg(privateMsgEl, data.reason === 'exists' ? `Numero ${number} ja estava liberado para privado.` : `Numero ${number} liberado para chat privado.`);
+        } catch (error) {
+          setMsg(privateMsgEl, `Erro ao liberar privado: ${String(error)}`, true);
+        }
+      }
+
+      async function removePrivate(number) {
+        const normalized = normalizeDigits(number);
+        if (!normalized) {
+          setMsg(privateMsgEl, 'Numero invalido para remocao.', true);
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/response-routing/private/${encodeURIComponent(normalized)}`, {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.message || 'falha ao bloquear privado');
+
+          state.routing = data.routing || state.routing;
+          renderSummary();
+          renderPrivateTable();
+          setMsg(privateMsgEl, `Numero bloqueado no privado: ${normalized}`);
+        } catch (error) {
+          setMsg(privateMsgEl, `Erro ao bloquear privado: ${String(error)}`, true);
+        }
+      }
+
+      async function removeSelectedPrivate() {
+        const selected = Array.from(document.querySelectorAll('.private-check:checked')).map((el) => normalizeDigits(el.value));
+        const list = Array.from(new Set(selected.filter(Boolean)));
+        if (!list.length) {
+          setMsg(privateMsgEl, 'Selecione ao menos um numero para bloquear no privado.', true);
+          return;
+        }
+
+        let okCount = 0;
+        for (const number of list) {
+          try {
+            const res = await fetch(`/api/response-routing/private/${encodeURIComponent(number)}`, {
+              method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.ok) {
+              okCount += 1;
+              state.routing = data.routing || state.routing;
+            }
+          } catch {
+            // segue fluxo
+          }
+        }
+
+        renderSummary();
+        renderPrivateTable();
+        setMsg(privateMsgEl, `Bloqueio em lote concluido. Numeros removidos: ${okCount}.`);
+      }
+
+      async function refreshAll() {
+        await Promise.all([loadRouting(), loadAccessControl(), loadGroupControl(true, false), loadDiagnostics()]);
+        await loadRecentSenders();
+      }
+
+      window.removeGroup = removeGroup;
+      window.removePrivate = removePrivate;
+      window.removeAuthorized = removeAuthorized;
+      window.removeAdmin = removeAdmin;
+      window.removeFull = removeFull;
+
+      document.getElementById('reloadAll').addEventListener('click', () => {
+        refreshAll()
+          .then(() => {
+            setMsg(groupsMsgEl, 'Dados de multi-grupo atualizados.');
+            setMsg(privateMsgEl, 'Dados de privado atualizados.');
+            setMsg(diagnosticsMsgEl, 'Flags atualizadas com sucesso.');
+            setMsg(aclMsgEl, 'Permissoes recarregadas.');
+            setMsg(gcMsgEl, 'Controle do grupo principal atualizado.');
+          })
+          .catch((error) => {
+            setMsg(groupsMsgEl, `Falha ao atualizar: ${String(error)}`, true);
+            setMsg(privateMsgEl, `Falha ao atualizar: ${String(error)}`, true);
+            setMsg(diagnosticsMsgEl, `Falha ao atualizar: ${String(error)}`, true);
+            setMsg(aclMsgEl, `Falha ao atualizar: ${String(error)}`, true);
+            setMsg(gcMsgEl, `Falha ao atualizar: ${String(error)}`, true);
+          });
+      });
+
+      diagnosticsFilterEl.addEventListener('input', renderDiagnosticsTable);
+      document.getElementById('reloadDiagnosticsButton').addEventListener('click', () => {
+        loadDiagnostics()
+          .then(() => setMsg(diagnosticsMsgEl, 'Flags atualizadas.'))
+          .catch((error) => setMsg(diagnosticsMsgEl, `Erro ao atualizar flags: ${String(error)}`, true));
+      });
+
+      diagnosticsRowsEl.addEventListener('change', async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+
+        if (target.classList.contains('diag-response-flag')) {
+          const groupId = normalizeGroupId(target.dataset.groupId || '');
+          if (!groupId) return;
+          try {
+            if (target.checked) {
+              await addGroupById(groupId);
+            } else {
+              await removeGroupById(groupId);
+            }
+            await refreshAll();
+            setMsg(diagnosticsMsgEl, `Flag de resposta atualizada para ${groupId}.`);
+          } catch (error) {
+            target.checked = !target.checked;
+            setMsg(diagnosticsMsgEl, `Falha ao atualizar flag de grupo: ${String(error)}`, true);
+          }
+          return;
+        }
+
+        if (target.classList.contains('mention-mode-flag')) {
+          const mode = String(target.dataset.mode || '');
+          const requireMention = mode !== 'no_mention';
+          try {
+            await saveMentionModeFlags(requireMention);
+            await refreshAll();
+            setMsg(
+              diagnosticsMsgEl,
+              requireMention ? 'Modo aplicado: responder se mencionar.' : 'Modo aplicado: responder sem mencionar.'
+            );
+          } catch (error) {
+            setMsg(diagnosticsMsgEl, `Falha ao aplicar modo de mencao: ${String(error)}`, true);
+          }
+        }
+      });
+
+      document.getElementById('saveModeFlags').addEventListener('click', () => {
+        const useMention = Boolean(modeMentionFlagEl.checked);
+        const useNoMention = Boolean(modeNoMentionFlagEl.checked);
+        if (useMention === useNoMention) {
+          setMsg(modeFlagsMsgEl, 'Marque somente 1 flag: "se mencionar" ou "sem mencionar".', true);
+          return;
+        }
+
+        saveMentionModeFlags(useMention)
+          .then(() => refreshAll())
+          .then(() => setMsg(modeFlagsMsgEl, useMention ? 'Modo salvo: responder se mencionar.' : 'Modo salvo: responder sem mencionar.'))
+          .catch((error) => setMsg(modeFlagsMsgEl, `Falha ao salvar modo: ${String(error)}`, true));
+      });
+
+      modeMentionFlagEl.addEventListener('change', () => {
+        if (modeMentionFlagEl.checked) modeNoMentionFlagEl.checked = false;
+      });
+
+      modeNoMentionFlagEl.addEventListener('change', () => {
+        if (modeNoMentionFlagEl.checked) modeMentionFlagEl.checked = false;
+      });
+
+      document.getElementById('addGroupButton').addEventListener('click', addGroup);
+      document.getElementById('removeSelectedGroupsButton').addEventListener('click', removeSelectedGroups);
+      document.getElementById('reloadGroupsButton').addEventListener('click', () => {
+        loadRouting().then(() => setMsg(groupsMsgEl, 'Lista de grupos atualizada.')).catch((error) => {
+          setMsg(groupsMsgEl, `Erro ao atualizar grupos: ${String(error)}`, true);
+        });
+      });
+
+      document.getElementById('addPrivateButton').addEventListener('click', addPrivate);
+      document.getElementById('removeSelectedPrivateButton').addEventListener('click', removeSelectedPrivate);
+      document.getElementById('reloadPrivateButton').addEventListener('click', () => {
+        loadRouting().then(() => setMsg(privateMsgEl, 'Lista de privado atualizada.')).catch((error) => {
+          setMsg(privateMsgEl, `Erro ao atualizar privado: ${String(error)}`, true);
+        });
+      });
+
+      selectAllGroupsEl.addEventListener('change', () => {
+        const checked = Boolean(selectAllGroupsEl.checked);
+        document.querySelectorAll('.group-check').forEach((el) => {
+          el.checked = checked;
+        });
+      });
+
+      groupsRowsEl.addEventListener('change', async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (!target.classList.contains('group-route-flag')) return;
+
+        const groupId = normalizeGroupId(target.dataset.groupId || '');
+        if (!groupId) return;
+
+        try {
+          if (target.checked) {
+            await addGroupById(groupId);
+            setMsg(groupsMsgEl, `Flag ativa: bot responde no grupo ${groupId}.`);
+          } else {
+            await removeGroupById(groupId);
+            setMsg(groupsMsgEl, `Flag removida: bot nao responde no grupo ${groupId}.`);
+          }
+          await refreshAll();
+        } catch (error) {
+          target.checked = !target.checked;
+          setMsg(groupsMsgEl, `Falha ao aplicar flag de grupo: ${String(error)}`, true);
+        }
+      });
+
+      selectAllPrivateEl.addEventListener('change', () => {
+        const checked = Boolean(selectAllPrivateEl.checked);
+        document.querySelectorAll('.private-check').forEach((el) => {
+          el.checked = checked;
+        });
+      });
+
+      document.getElementById('gcReload').addEventListener('click', () => {
+        loadGroupControl(true, true)
+          .then(() => setMsg(gcMsgEl, 'Controle de grupo carregado.'))
+          .catch((error) => setMsg(gcMsgEl, `Erro no controle de grupo: ${String(error)}`, true));
+      });
+
+      document.getElementById('gcApplyFlags').addEventListener('click', () => {
+        applyGroupControlFlags()
+          .then(() => refreshAll())
+          .catch((error) => setMsg(gcMsgEl, `Falha ao aplicar flags do grupo: ${String(error)}`, true));
+      });
+
+      document.getElementById('gcGetInvite').addEventListener('click', () =>
+        runGroupControlAction('get_invite_link', {}, 'Link de convite consultado.').catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcRefreshInvite').addEventListener('click', () =>
+        runGroupControlAction('refresh_invite_link', {}, 'Link de convite renovado.').catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcSetSubject').addEventListener('click', () =>
+        runGroupControlAction('set_subject', { subject: gcSubjectInputEl.value.trim() }, 'Nome do grupo atualizado.').catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcSetDescription').addEventListener('click', () =>
+        runGroupControlAction(
+          'set_description',
+          { description: gcDescriptionInputEl.value.trim() },
+          'Descricao do grupo atualizada.'
+        ).catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcListRequests').addEventListener('click', () =>
+        runGroupControlAction('list_membership_requests', {}, 'Solicitacoes consultadas.').catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcApproveRequests').addEventListener('click', () =>
+        runGroupControlAction(
+          'approve_membership_requests',
+          { requesterIds: parseGroupRequesterIds(gcRequesterInputEl.value) },
+          'Solicitacoes aprovadas.'
+        ).catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+      document.getElementById('gcRejectRequests').addEventListener('click', () =>
+        runGroupControlAction(
+          'reject_membership_requests',
+          { requesterIds: parseGroupRequesterIds(gcRequesterInputEl.value) },
+          'Solicitacoes rejeitadas.'
+        ).catch((error) => {
+          setMsg(gcMsgEl, `Falha na acao de grupo: ${String(error)}`, true);
+        })
+      );
+
+      document.getElementById('aclApply').addEventListener('click', applyAclPermissions);
+      document.getElementById('aclBulkRemove').addEventListener('click', bulkRemoveSelectedAcl);
+      document.getElementById('aclReload').addEventListener('click', () => {
+        loadAccessControl().then(() => setMsg(aclMsgEl, 'Permissoes recarregadas.')).catch((error) => {
+          setMsg(aclMsgEl, `Erro ao recarregar permissoes: ${String(error)}`, true);
+        });
+      });
+
+      document.getElementById('reloadRecentSenders').addEventListener('click', () => {
+        loadRecentSenders()
+          .then(() => setMsg(recentSendersMsgEl, 'Remetentes recentes atualizados.'))
+          .catch((error) => setMsg(recentSendersMsgEl, `Erro ao carregar remetentes recentes: ${String(error)}`, true));
+      });
+
+      recentSendersRowsEl.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.classList.contains('recent-apply-flags')) return;
+        const row = target.closest('tr[data-recent-number]');
+        if (!row) return;
+        const number = normalizeDigits(row.getAttribute('data-recent-number') || '');
+        if (!number) return;
+
+        const auth = Boolean(row.querySelector('.recent-flag-auth')?.checked);
+        const admin = Boolean(row.querySelector('.recent-flag-admin')?.checked);
+        const full = Boolean(row.querySelector('.recent-flag-full')?.checked);
+        const priv = Boolean(row.querySelector('.recent-flag-private')?.checked);
+
+        setPermissionsForNumber(number, {
+          authorized: auth,
+          admin,
+          full,
+          private: priv
+        })
+          .then(() => refreshAll())
+          .then(() =>
+            setMsg(
+              recentSendersMsgEl,
+              `Permissoes aplicadas para ${number}: interagir=${auth ? 'sim' : 'nao'}, admin=${admin ? 'sim' : 'nao'}, full=${full ? 'sim' : 'nao'}, privado=${priv ? 'sim' : 'nao'}.`
+            )
+          )
+          .catch((error) => setMsg(recentSendersMsgEl, `Falha ao aplicar flags em ${number}: ${String(error)}`, true));
+      });
+
+      recentSendersRowsEl.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const row = target.closest('tr[data-recent-number]');
+        if (!row) return;
+
+        const authEl = row.querySelector('.recent-flag-auth');
+        const adminEl = row.querySelector('.recent-flag-admin');
+        const fullEl = row.querySelector('.recent-flag-full');
+
+        if (!(authEl instanceof HTMLInputElement) || !(adminEl instanceof HTMLInputElement) || !(fullEl instanceof HTMLInputElement)) {
+          return;
+        }
+
+        if (target.classList.contains('recent-flag-full') && fullEl.checked) {
+          adminEl.checked = true;
+          authEl.checked = true;
+        }
+
+        if (target.classList.contains('recent-flag-admin')) {
+          if (adminEl.checked) {
+            authEl.checked = true;
+          } else if (fullEl.checked) {
+            fullEl.checked = false;
+          }
+        }
+
+        if (target.classList.contains('recent-flag-auth') && !authEl.checked) {
+          adminEl.checked = false;
+          fullEl.checked = false;
+        }
+      });
+
+      aclGrantAdminEl.addEventListener('change', () => {
+        if (aclGrantAdminEl.checked) aclGrantAuthorizedEl.checked = true;
+        if (!aclGrantAdminEl.checked && aclGrantFullEl.checked) aclGrantFullEl.checked = false;
+      });
+
+      aclGrantFullEl.addEventListener('change', () => {
+        if (aclGrantFullEl.checked) {
+          aclGrantAdminEl.checked = true;
+          aclGrantAuthorizedEl.checked = true;
+        }
+      });
+
+      aclGrantAuthorizedEl.addEventListener('change', () => {
+        if (!aclGrantAuthorizedEl.checked && (aclGrantAdminEl.checked || aclGrantFullEl.checked)) {
+          aclGrantAdminEl.checked = false;
+          aclGrantFullEl.checked = false;
+        }
+      });
+
+      aclSelectAllAuthorizedEl.addEventListener('change', () => {
+        const checked = Boolean(aclSelectAllAuthorizedEl.checked);
+        document.querySelectorAll('.acl-authorized-check').forEach((el) => {
+          el.checked = checked;
+        });
+      });
+
+      aclSelectAllAdminsEl.addEventListener('change', () => {
+        const checked = Boolean(aclSelectAllAdminsEl.checked);
+        document.querySelectorAll('.acl-admin-check').forEach((el) => {
+          el.checked = checked;
+        });
+      });
+
+      aclSelectAllFullEl.addEventListener('change', () => {
+        const checked = Boolean(aclSelectAllFullEl.checked);
+        document.querySelectorAll('.acl-full-check').forEach((el) => {
+          el.checked = checked;
+        });
+      });
+
+      document.getElementById('logoutButton').addEventListener('click', logoutFromPanel);
+
+      loadCurrentSession().catch((error) => {
+        sessionTextEl.textContent = 'sessao indisponivel';
+        setMsg(diagnosticsMsgEl, `Erro de sessao: ${String(error)}`, true);
+      });
+
+      refreshAll().catch((error) => {
+        setMsg(diagnosticsMsgEl, `Erro ao carregar dados: ${String(error)}`, true);
+        setMsg(groupsMsgEl, `Erro ao carregar dados: ${String(error)}`, true);
+        setMsg(privateMsgEl, `Erro ao carregar dados: ${String(error)}`, true);
+        setMsg(aclMsgEl, `Erro ao carregar dados: ${String(error)}`, true);
+        setMsg(gcMsgEl, `Erro ao carregar dados: ${String(error)}`, true);
+      });
+
+      setInterval(() => {
+        loadRecentSenders().catch(() => {
+          // evita ruido visual em polling automatico
+        });
+      }, 12000);
+    </script>
+  </body>
+</html>

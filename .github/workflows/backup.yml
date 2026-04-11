@@ -1,0 +1,31 @@
+name: Daily Backup
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC (23:00 America/Sao_Paulo em horário padrão)
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.BACKUP_TOKEN != '' && secrets.BACKUP_REPO != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+
+      - name: Mirror to backup repo
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+        run: |
+          git remote remove backup 2>/dev/null || true
+          git remote add backup "https://x-access-token:${BACKUP_TOKEN}@github.com/${BACKUP_REPO}.git"
+          git push --prune backup "+refs/heads/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
+

@@ -1,0 +1,277 @@
+Remova essa configuração de despesa / despesas e implemente a configuração abaixo.
+Adequar ao nosso projeto e implemente por favor.
+
+Preciso implementar no bot de WhatsApp um módulo completo de controle financeiro conversacional.
+
+OBJETIVO
+Permitir que o usuário registre despesas, receitas e transferências por linguagem natural, usando texto inicialmente, com possibilidade de expansão para áudio, imagem, comprovantes e PDFs. O sistema deve interpretar a mensagem, extrair dados estruturados, validar, salvar em banco e responder no próprio WhatsApp.
+
+ARQUITETURA ESPERADA
+1. Camada de recepção via webhook do WhatsApp.
+2. Camada de orquestração/backend para processar mensagens.
+3. Camada de IA para identificar intenção e extrair entidades financeiras.
+4. Camada de regras de negócio para validar, pedir confirmação quando necessário e persistir os dados.
+5. Camada de persistência em banco relacional.
+6. Camada de relatórios, orçamento, recorrência e lembretes.
+
+FUNCIONALIDADES OBRIGATÓRIAS DO MVP
+- Registrar despesa por texto.
+- Registrar receita por texto.
+- Consultar total gasto hoje, na semana e no mês.
+- Consultar total por categoria.
+- Editar o último lançamento.
+- Excluir o último lançamento.
+- Manter estado conversacional para perguntas complementares quando faltarem dados.
+- Responder de forma curta e objetiva no WhatsApp.
+
+INTENÇÕES QUE O SISTEMA DEVE RECONHECER
+- registrar_despesa
+- registrar_receita
+- registrar_transferencia
+- consultar_resumo_periodo
+- consultar_gasto_categoria
+- consultar_saldo
+- editar_lancamento
+- excluir_lancamento
+- definir_orcamento
+- consultar_orcamento
+- criar_recorrencia
+- criar_lembrete
+
+A IA DEVE RETORNAR JSON ESTRUTURADO, NUNCA SALVAR DIRETAMENTE.
+Exemplo esperado:
+{
+  "intent": "registrar_despesa",
+  "confidence": 0.96,
+  "needs_confirmation": false,
+  "missing_fields": [],
+  "data": {
+    "tipo_movimento": "despesa",
+    "valor": 54.90,
+    "moeda": "BRL",
+    "categoria": "alimentacao",
+    "descricao": "jantar",
+    "data_evento": "2026-04-07",
+    "forma_pagamento": "cartao_credito",
+    "parcelado": false,
+    "numero_parcelas": 1
+  },
+  "follow_up_question": null
+}
+
+REGRAS DE NEGÓCIO
+- Se confiança alta e sem campos faltantes, salvar automaticamente.
+- Se houver ambiguidade, pedir confirmação.
+- Se faltar campo crítico, abrir fluxo guiado.
+- Usar categorias controladas, sem permitir que a IA invente categorias livres.
+- Tratar duplicidade provável de lançamentos.
+- Converter datas relativas para datas absolutas.
+- Manter a base como fonte de verdade, nunca a conversa.
+
+CATEGORIAS PADRÃO DE DESPESA
+- alimentacao
+- mercado
+- transporte
+- moradia
+- contas
+- saude
+- lazer
+- educacao
+- trabalho
+- assinaturas
+- impostos
+- presentes
+- pets
+- viagens
+- manutencao
+- taxas
+- outros
+
+CATEGORIAS PADRÃO DE RECEITA
+- salario
+- freelance
+- vendas
+- reembolso
+- renda_extra
+- aluguel_recebido
+- investimentos
+- presente_recebido
+- outros
+
+ESTRUTURA DE PERSISTÊNCIA MÍNIMA
+- users
+- accounts
+- categories
+- transactions
+- conversation_state
+- budgets
+- recurring_rules
+- reminders
+- attachments
+- audit_logs
+
+CAMPOS MÍNIMOS DE TRANSACTIONS
+- id
+- user_id
+- type
+- amount
+- currency
+- category_id
+- description
+- transaction_date
+- payment_method
+- account_id
+- destination_account_id
+- status
+- source
+- source_message_id
+- confidence
+- created_at
+- updated_at
+- deleted_at
+
+FLUXO PRINCIPAL
+1. Usuário envia “gastei 50 no mercado”.
+2. Sistema interpreta como despesa de R$ 50 em mercado na data atual.
+3. Regras validam.
+4. Sistema salva.
+5. Bot responde “Salvei R$ 50,00 em Mercado.”
+
+FLUXO COM AMBIGUIDADE
+1. Usuário envia “paguei 120”.
+2. Sistema identifica despesa de R$ 120, mas sem categoria.
+3. Bot pergunta “Foi com o quê?”
+4. Usuário responde.
+5. Sistema completa o draft e salva.
+
+EVOLUÇÕES DESEJADAS APÓS O MVP
+- suporte a áudio com transcrição
+- suporte a imagem/PDF com OCR
+- orçamento por categoria
+- alertas de limite
+- despesas recorrentes
+- parcelamento
+- múltiplas contas e cartões
+- dashboard administrativo/web
+
+TECNOLOGIA SUGERIDA
+- Backend: Node.js/NestJS ou Python/FastAPI
+- Banco: PostgreSQL
+- Fila: Redis/BullMQ ou RabbitMQ
+- Storage: S3 compatível
+- Logs e auditoria completos
+
+SEPARAÇÃO OBRIGATÓRIA DOS MÓDULOS
+- interpretação via IA
+- motor de regras
+- persistência transacional
+- contexto conversacional
+- geração de relatórios
+
+ARQUITETURA TÉCNICA SUGERIDA
+[WhatsApp API]
+      |
+      v
+[Webhook Receiver]
+      |
+      v
+[Message Ingestion Service]
+      |
+      +-----------------------> [Media Processing Service] -> [OCR/Transcription]
+      |
+      v
+[User Context Service]
+      |
+      v
+[AI Interpretation Service]
+      |
+      v
+[Financial Rules Engine]
+      |
+      +-------> [Conversation State Service]
+      |
+      +-------> [Transaction Service]
+      |              |
+      |              v
+      |         [PostgreSQL]
+      |
+      +-------> [Budget Service]
+      |
+      +-------> [Reporting Service]
+      |
+      v
+[Response Builder]
+      |
+      v
+[WhatsApp Sender]
+
+JSON PADRÃO DE INTERPRETAÇÃO
+{
+  "intent": "registrar_despesa",
+  "confidence": 0.96,
+  "needs_confirmation": false,
+  "missing_fields": [],
+  "data": {
+    "tipo_movimento": "despesa",
+    "valor": 54.90,
+    "moeda": "BRL",
+    "categoria": "alimentacao",
+    "subcategoria": "restaurante",
+    "descricao": "jantar",
+    "data_evento": "2026-04-07",
+    "forma_pagamento": "cartao_credito",
+    "conta": null,
+    "cartao": null,
+    "parcelado": false,
+    "numero_parcelas": 1,
+    "fornecedor": null,
+    "tags": []
+  },
+  "follow_up_question": null
+}
+
+EXEMPLO COM CAMPOS FALTANTES
+{
+  "intent": "registrar_despesa",
+  "confidence": 0.71,
+  "needs_confirmation": true,
+  "missing_fields": ["categoria"],
+  "data": {
+    "tipo_movimento": "despesa",
+    "valor": 120.00,
+    "moeda": "BRL",
+    "categoria": null,
+    "descricao": null,
+    "data_evento": "2026-04-07",
+    "forma_pagamento": null
+  },
+  "follow_up_question": "Qual foi a categoria desse gasto de R$ 120,00?"
+}
+
+EXEMPLOS DE MENSAGENS QUE O BOT DEVE ENTENDER
+- “Gastei 35 no almoço”
+- “Uber 22 reais”
+- “Mercado 189 no crédito”
+- “Recebi 2500 de salário”
+- “Transferi 500 da Nubank para Inter”
+- “Quanto gastei hoje?”
+- “Resumo do mês”
+- “Aquele gasto de 35 era jantar, não almoço”
+- “Apaga a despesa do café”
+- “Meu limite de alimentação no mês é 800”
+- “Todo dia 5 pago academia 120”
+
+RESPOSTAS ESPERADAS DO BOT
+- “Salvei R$ 35,00 em Alimentação.”
+- “Anotei R$ 120,00 em Contas.”
+- “Hoje você gastou R$ 92,00 em 3 lançamentos.”
+- “Você já usou 85% do orçamento de Lazer.”
+- “Entendi um gasto de R$ 120,00. Foi com o quê?”
+
+OBSERVAÇÕES IMPORTANTES
+- A fonte de verdade deve ser o banco de dados, não a memória da conversa.
+- A IA deve interpretar e estruturar, mas a decisão final é do backend.
+- O sistema deve ser tolerante a linguagem informal.
+- O sistema deve priorizar baixa fricção e respostas rápidas.
+- O processamento de mídia deve ser assíncrono.
+- O projeto deve ser iniciado pelo núcleo financeiro e depois expandido para multimodalidade e automações.

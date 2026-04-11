@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu de Configuracao do Bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+        --wpp-green: #075e54;
+        --wpp-light: #ece5dd;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        padding: 0.55rem 1.1rem;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        font-size: 0.88rem;
+      }
+
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 0.35rem 0.7rem;
+        border-radius: 8px;
+        transition: background 0.15s, color 0.15s;
+      }
+
+      .nav-bar a:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+      .nav-bar a.active { color: var(--accent); font-weight: 600; }
+      .nav-bar .spacer { flex: 1; }
+      .session-tag {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      .page {
+        width: min(1540px, 96vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .hero {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(132deg, rgba(45,212,191,.13), rgba(56,189,248,.1));
+        padding: 1.2rem;
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1100px) {
+        .hero-grid { grid-template-columns: 1.2fr 1fr; align-items: center; }
+      }
+
+      h1, h2, h3 { margin: 0; }
+      h1 { font-size: clamp(1.35rem, 2.4vw, 2rem); }
+      .subtitle { margin-top: 0.5rem; color: var(--muted); max-width: 80ch; }
+
+      .chips { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.45rem; }
+      .chip {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 0.32rem 0.65rem;
+        font-size: 0.78rem;
+      }
+
+      .kpis {
+        display: grid;
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .kpi {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(14,17,23,.6);
+        padding: 0.68rem;
+      }
+
+      .kpi small { display: block; color: var(--muted); font-size: 0.74rem; }
+      .kpi strong { display: block; margin-top: 0.18rem; font-size: 0.98rem; }
+
+      .layout {
+        margin-top: 1rem;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1280px) {
+        .layout { grid-template-columns: 430px 1fr; align-items: start; }
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 18px 42px rgba(0,0,0,.25);
+        padding: 0.95rem;
+      }
+
+      .sim-shell {
+        border: 1px solid #26313a;
+        border-radius: 22px;
+        overflow: hidden;
+        background: #202c33;
+      }
+
+      .sim-header {
+        background: var(--wpp-green);
+        color: #fff;
+        padding: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      .sim-avatar {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #25d366;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+
+      .sim-name { font-size: 0.93rem; font-weight: 600; }
+      .sim-sub { font-size: 0.73rem; color: #d9f9e5; }
+
+      .sim-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        background: #f0f2f5;
+        border-bottom: 1px solid #d5d8dc;
+        padding: 0.45rem;
+      }
+
+      .sim-tabs button {
+        border: 1px solid #ccd1d6;
+        background: #fff;
+        color: #2d343a;
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        font-size: 0.72rem;
+        cursor: pointer;
+      }
+
+      .sim-tabs button.active {
+        background: var(--wpp-green);
+        border-color: var(--wpp-green);
+        color: #fff;
+      }
+
+      .sim-body {
+        background: var(--wpp-light);
+        min-height: 560px;
+        max-height: 560px;
+        overflow: auto;
+        padding: 0.65rem;
+      }
+
+      .bubble {
+        max-width: 92%;
+        border-radius: 10px;
+        padding: 0.52rem 0.62rem;
+        margin-bottom: 0.55rem;
+        font-size: 0.82rem;
+        line-height: 1.44;
+      }
+
+      .bubble.user {
+        margin-left: auto;
+        background: #dcf8c6;
+        color: #0d2618;
+      }
+
+      .bubble.bot {
+        background: #fff;
+        color: #1e2328;
+      }
+
+      .menu-list {
+        margin-top: 0.38rem;
+        display: grid;
+        gap: 0.32rem;
+      }
+
+      .menu-item {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 0.45rem;
+        align-items: center;
+        border: 1px solid #e7eaed;
+        background: #fbfbfc;
+        border-radius: 8px;
+        padding: 0.34rem 0.44rem;
+      }
+
+      .menu-item .idx {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--wpp-green);
+        color: #fff;
+        font-size: 0.7rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .label-muted { color: #66707a; font-size: 0.75rem; }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.5rem;
+        border-bottom: 1px dashed #e8eaed;
+        padding: 0.24rem 0;
+        align-items: center;
+      }
+      .row:last-child { border-bottom: 0; }
+
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.74rem;
+      }
+
+      .ok { color: #197a3f; font-weight: 600; }
+      .off { color: #9c2d2d; font-weight: 600; }
+
+      .tag {
+        background: #ecfdf5;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        padding: 0.08rem 0.42rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+      }
+
+      .tag.off {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+      }
+
+      .cta-row {
+        margin-top: 0.45rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+      }
+
+      .cmd-btn {
+        border: 1px solid #d7dce1;
+        background: #111827;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 0.34rem 0.45rem;
+        font-size: 0.71rem;
+        cursor: pointer;
+      }
+
+      .cmd-btn:hover { opacity: 0.85; }
+
+      .panel-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 980px) {
+        .panel-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .section-title {
+        font-size: 0.86rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+
+      th, td {
+        border-bottom: 1px solid var(--line);
+        padding: 0.4rem 0.32rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th { color: var(--muted); font-size: 0.73rem; text-transform: uppercase; letter-spacing: .04em; }
+      td code { font-family: 'IBM Plex Mono', monospace; font-size: 0.74rem; }
+
+      .function-map {
+        display: grid;
+        gap: 0.6rem;
+      }
+
+      .function-item {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 0.58rem;
+      }
+
+      .function-item strong { display: block; font-size: 0.84rem; }
+      .function-item .examples { margin-top: 0.28rem; color: var(--muted); font-size: 0.76rem; }
+
+      .muted { color: var(--muted); font-size: 0.82rem; }
+
+      .toast {
+        position: fixed;
+        right: 1rem;
+        bottom: 1rem;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        padding: 0.55rem 0.75rem;
+        border-radius: 10px;
+        box-shadow: 0 12px 26px rgba(0,0,0,.35);
+        font-size: 0.78rem;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity .2s, transform .2s;
+        pointer-events: none;
+      }
+
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 860px) {
+        .nav-bar { padding: 0.45rem 0.58rem; }
+        .nav-bar .spacer { display: block; flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+        .nav-bar a, .session-tag { font-size: 0.75rem; }
+        .page { width: min(100%, 100vw); margin: 0.75rem auto 1.2rem; padding: 0 0.45rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
+      <a href="/bot-config-menu.html" class="active">Config Bot</a>
+      <a href="/usuarios.html">Usuarios</a>
+      <span class="spacer"></span>
+      <span class="session-tag" id="sessionText">sessao: carregando</span>
+    </nav>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Menu de configuracao do bot (chat + web)</h1>
+            <p class="subtitle">
+              Esta tela espelha o comando <code class="mono">@ configurar bot</code> e <code class="mono">@ bot configuracao</code>.
+              O objetivo e manter o menu didatico, interativo e alinhado com todas as configuracoes reais do projeto.
+            </p>
+            <div class="chips">
+              <span class="chip">Mesmo login do painel</span>
+              <span class="chip">Menu numerado por secao</span>
+              <span class="chip">Mapeado com as chaves reais</span>
+              <span class="chip">Comandos prontos para copiar</span>
+            </div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><small>Provedor ativo</small><strong id="kAiProvider">-</strong></div>
+            <div class="kpi"><small>Modelo Copilot</small><strong id="kCopilotModel">-</strong></div>
+            <div class="kpi"><small>Modelo Codex</small><strong id="kCodexModel">-</strong></div>
+            <div class="kpi"><small>Ultimo teste de modelos</small><strong id="kModelProbe">-</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <article class="card">
+          <h2>Simulador do menu no WhatsApp</h2>
+          <p class="muted" style="margin-top:.35rem;">Clique nas abas para navegar por secoes. Os valores sao carregados do runtime atual.</p>
+
+          <div class="sim-shell" style="margin-top:.7rem;">
+            <div class="sim-header">
+              <span class="sim-avatar">B</span>
+              <div>
+                <div class="sim-name"># Bot Avisos</div>
+                <div class="sim-sub">menu de configuracao ativo</div>
+              </div>
+            </div>
+
+            <div class="sim-tabs" id="simTabs">
+              <button class="active" data-screen="main">Menu</button>
+              <button data-screen="ia">1 IA</button>
+              <button data-screen="resp">2 Respostas</button>
+              <button data-screen="term">3 Terminal</button>
+              <button data-screen="midia">4 Midia</button>
+              <button data-screen="relay">5 Relay</button>
+              <button data-screen="silent">6 Silencioso</button>
+              <button data-screen="audit">7 Auditoria</button>
+              <button data-screen="status">8 Status</button>
+              <button data-screen="perm">9 Permissoes</button>
+              <button data-screen="mapa">10 Mapa</button>
+            </div>
+
+            <div class="sim-body">
+              <section class="screen" data-screen="main">
+                <div class="bubble user mono">@ configurar bot</div>
+                <div class="bubble bot">
+                  <div><strong>Menu de Configuracao do Bot</strong></div>
+                  <div class="label-muted">Escolha pelo numero: <code class="mono">configurar bot menu &lt;numero&gt;</code></div>
+                  <div class="menu-list" id="menuListMain"></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot menu 1">copiar: menu 1</button>
+                    <button class="cmd-btn" data-copy="configurar bot menu status">copiar: menu status</button>
+                    <button class="cmd-btn" data-copy="mostrar configuracao bot">copiar: resumo completo</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="ia" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 1</div>
+                <div class="bubble bot">
+                  <strong>Secao 1 - Inteligencia Artificial</strong>
+                  <div class="row"><span>Provedor ativo</span><strong data-bind="aiProvider">-</strong></div>
+                  <div class="row"><span>Modelo Copilot</span><strong data-bind="copilotModel">-</strong></div>
+                  <div class="row"><span>Modelo Copilot FULL</span><strong data-bind="copilotFullModel">-</strong></div>
+                  <div class="row"><span>Modelo Copilot fallback</span><strong data-bind="copilotFallbackModel">-</strong></div>
+                  <div class="row"><span>Modelo Codex</span><strong data-bind="codexModel">-</strong></div>
+                  <div class="row"><span>Modelo Codex fallback</span><strong data-bind="codexFallbackModel">-</strong></div>
+                  <div class="row"><span>Timeout IA</span><strong data-bind="codexTimeoutMs">-</strong></div>
+                  <div class="row"><span>Timeout Copilot</span><strong data-bind="copilotTimeoutMs">-</strong></div>
+                  <div class="row"><span>Timeout FULL Copilot</span><strong data-bind="copilotFullTimeoutMs">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot: provedor ia=copilot">provedor copilot</button>
+                    <button class="cmd-btn" data-copy="configurar bot: modelo copilot=gpt-5-mini">modelo copilot</button>
+                    <button class="cmd-btn" data-copy="configurar bot: testar modelos">testar modelos</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="resp" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 2</div>
+                <div class="bubble bot">
+                  <strong>Secao 2 - Comportamento de respostas</strong>
+                  <div class="row"><span>Mencao obrigatoria</span><span data-bind="requireMentionBadge">-</span></div>
+                  <div class="row"><span>Mostrar "Pesquisando"</span><span data-bind="showThinkingMessageBadge">-</span></div>
+                  <div class="row"><span>Texto "Pesquisando"</span><strong data-bind="thinkingMessageText">-</strong></div>
+                  <div class="row"><span>Limite entrada</span><strong data-bind="maxInputChars">-</strong></div>
+                  <div class="row"><span>Limite resposta</span><strong data-bind="maxOutputChars">-</strong></div>
+                  <div class="row"><span>Fallback</span><strong data-bind="fallbackMessage">-</strong></div>
+                  <div class="row"><span>Prompt do sistema</span><strong data-bind="systemPrompt">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot: mencao obrigatoria=true">mencao on</button>
+                    <button class="cmd-btn" data-copy="configurar bot: limite resposta=2200">limite resposta</button>
+                    <button class="cmd-btn" data-copy="configurar bot: prompt do sistema=Voce e objetivo">prompt</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="term" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 3</div>
+                <div class="bubble bot">
+                  <strong>Secao 3 - Terminal Linux</strong>
+                  <div class="row"><span>Execucao terminal</span><span data-bind="enableTerminalExecBadge">-</span></div>
+                  <div class="row"><span>Comandos permitidos</span><strong data-bind="terminalAllowlistCount">-</strong></div>
+                  <div class="row"><span>Allowlist (previa)</span><strong data-bind="terminalAllowlistPreview">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot: permitir comandos linux=true">terminal on</button>
+                    <button class="cmd-btn" data-copy="configurar bot: terminalAllowlist=ps,df,free,uptime">set allowlist</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="midia" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 4</div>
+                <div class="bubble bot">
+                  <strong>Secao 4 - Midia</strong>
+                  <div class="row"><span>Ingestao automatica</span><span data-bind="mediaIngestEnabledBadge">-</span></div>
+                  <div class="row"><span>Tamanho maximo</span><strong data-bind="mediaMaxBytes">-</strong></div>
+                  <div class="row"><span>Retencao (dias)</span><strong data-bind="mediaRetentionDays">-</strong></div>
+                  <div class="row"><span>Pasta raiz</span><strong data-bind="mediaRootDir">-</strong></div>
+                  <div class="row"><span>MIMEs permitidos</span><strong data-bind="mediaAllowedMimePrefixes">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot: salvar midia automatica=true">ingestao on</button>
+                    <button class="cmd-btn" data-copy="configurar bot: retencao de midia=30">retencao</button>
+                    <button class="cmd-btn" data-copy="configurar bot: pasta de midia=data/midias">pasta</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="relay" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 5</div>
+                <div class="bubble bot">
+                  <strong>Secao 5 - Relay privado</strong>
+                  <div class="row"><span>Nome do remetente</span><strong data-bind="relaySenderName">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="configurar bot: relaySenderName=Italo Teixeira">alterar nome</button>
+                    <button class="cmd-btn" data-copy="@ enviar mensagem">abrir wizard</button>
+                    <button class="cmd-btn" data-copy="!relays">listar relays</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="silent" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 6</div>
+                <div class="bubble bot">
+                  <strong>Secao 6 - Modo silencioso</strong>
+                  <div class="row"><span>Status</span><span data-bind="silentModeBadge">-</span></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="modo silencioso">ativar</button>
+                    <button class="cmd-btn" data-copy="modo normal">desativar</button>
+                    <button class="cmd-btn" data-copy="status modo silencioso">status</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="audit" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 7</div>
+                <div class="bubble bot">
+                  <strong>Secao 7 - Auditoria e rollback</strong>
+                  <div class="label-muted">Ultimas alteracoes em <code class="mono">data/bot-settings-audit.jsonl</code>:</div>
+                  <div id="auditPreview" style="margin-top:.4rem; display:grid; gap:.35rem;"></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="listar auditoria configuracao bot">listar auditoria</button>
+                    <button class="cmd-btn" data-copy="rollback configuracao <audit-id>">rollback</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="status" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 8</div>
+                <div class="bubble bot">
+                  <strong>Secao 8 - Status geral</strong>
+                  <div id="statusRows"></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="mostrar configuracao bot">resumo completo</button>
+                    <button class="cmd-btn" data-copy="listar modelos do bot">listar modelos</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="perm" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 9</div>
+                <div class="bubble bot">
+                  <strong>Secao 9 - Permissoes e multi-grupo</strong>
+                  <div class="row"><span>Autorizados</span><strong id="acAuthorizedCount">-</strong></div>
+                  <div class="row"><span>Admins</span><strong id="acAdminsCount">-</strong></div>
+                  <div class="row"><span>FULL</span><strong id="acFullCount">-</strong></div>
+                  <div class="row"><span>Privado liberado</span><strong id="acPrivateCount">-</strong></div>
+                  <div class="row"><span>Grupos de resposta</span><strong id="acGroupsCount">-</strong></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="listar autorizados">autorizados</button>
+                    <button class="cmd-btn" data-copy="adicionar admin do bot 21 99999-9999">add admin</button>
+                    <button class="cmd-btn" data-copy="listar grupos de resposta">grupos</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="screen" data-screen="mapa" style="display:none;">
+                <div class="bubble user mono">configurar bot menu 10</div>
+                <div class="bubble bot">
+                  <strong>Secao 10 - Mapa de recursos</strong>
+                  <div class="label-muted">Visao rapida do que o bot ja faz no projeto:</div>
+                  <div class="menu-list" id="resourceQuickList"></div>
+                  <div class="cta-row">
+                    <button class="cmd-btn" data-copy="ajuda configuracao bot">ajuda config</button>
+                    <button class="cmd-btn" data-copy="@ valida revisar parser de agenda">modo FULL</button>
+                    <button class="cmd-btn" data-copy="@ comandos">referencia</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Mapeamento completo (projeto + configuracao)</h2>
+          <p class="muted" style="margin-top:.35rem;">Tudo aqui esta alinhado com os comandos reais do bot e com as chaves dinamicas salvas em runtime.</p>
+
+          <div class="panel-grid" style="margin-top:.8rem;">
+            <section>
+              <div class="section-title">Chaves dinamicas atuais</div>
+              <div style="overflow:auto; border:1px solid var(--line); border-radius:14px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Chave</th>
+                      <th>Valor atual</th>
+                    </tr>
+                  </thead>
+                  <tbody id="settingsTableBody">
+                    <tr><td colspan="2" class="muted">Carregando...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section>
+              <div class="section-title">Mapa de funcoes do projeto</div>
+              <div class="function-map" id="functionMap"></div>
+            </section>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const MENU_ITEMS = [
+        '1. Inteligencia Artificial',
+        '2. Comportamento de respostas',
+        '3. Terminal Linux',
+        '4. Midia',
+        '5. Relay (mensagens privadas)',
+        '6. Modo silencioso',
+        '7. Auditoria e rollback',
+        '8. Status geral da configuracao',
+        '9. Permissoes e multi-grupo',
+        '10. Mapa de recursos do projeto'
+      ];
+
+      const FUNCTION_MAP = [
+        { title: 'IA e roteamento', examples: 'resposta no grupo autorizado, fallback, troca de provedor/modelo' },
+        { title: 'Modo FULL', examples: '@ valida, status da solicitacao, log full, jobs persistentes' },
+        { title: 'Agenda e lembretes', examples: 'agenda, agendar, limpar agenda, me lembra em X min' },
+        { title: 'Notas e textos', examples: 'salvar texto, listar textos, limpar textos' },
+        { title: 'Moderacao', examples: 'palavras proibidas, avisos, reset de avisos' },
+        { title: 'Controle de grupo', examples: 'adicionar/remover/promover, link, abrir/fechar grupo' },
+        { title: 'Permissoes ACL', examples: 'autoriza/bloqueia, admin/full/privado, multi-grupo' },
+        { title: 'Biblioteca de midia', examples: 'lista, baixar, proteger senha, apagar, cleanup' },
+        { title: 'Audio e contexto', examples: 'transcricao automatica de audio e leitura de anexo' },
+        { title: 'Financeiro', examples: 'despesas com OCR, consulta e exportacao CSV/XLSX' },
+        { title: 'Ops Linux', examples: 'status servidor, ping, comandos por allowlist' },
+        { title: 'Painel web', examples: 'SSE em tempo real, auditoria, rollback, usuarios do painel' }
+      ];
+
+      const SETTINGS_ORDER = [
+        'aiProvider', 'codexModel', 'codexFallbackModel', 'codexReasoningEffort', 'codexTimeoutMs',
+        'copilotModel', 'copilotFullModel', 'copilotFallbackModel', 'copilotReasoningEffort', 'copilotTimeoutMs', 'copilotFullTimeoutMs',
+        'requireMention', 'showThinkingMessage', 'thinkingMessageText', 'maxInputChars', 'maxOutputChars',
+        'fallbackMessage', 'systemPrompt', 'enableTerminalExec', 'terminalAllowlist',
+        'mediaIngestEnabled', 'mediaRootDir', 'mediaMaxBytes', 'mediaRetentionDays', 'mediaAllowedMimePrefixes',
+        'relaySenderName', 'silentMode'
+      ];
+
+      const state = {
+        settings: {},
+        providers: [],
+        audit: [],
+        accessControl: null
+      };
+
+      function fmtBoolTag(value) {
+        return value
+          ? '<span class="tag">ON</span>'
+          : '<span class="tag off">OFF</span>';
+      }
+
+      function fmtMs(ms) {
+        const n = Number(ms || 0);
+        if (!Number.isFinite(n) || n <= 0) return '0 s';
+        return `${Math.round(n / 1000)} s`;
+      }
+
+      function fmtBytesMb(bytes) {
+        const n = Number(bytes || 0);
+        if (!Number.isFinite(n) || n <= 0) return '0 MB';
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function esc(value) {
+        return String(value || '').replace(/[&<>'"]/g, (c) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        })[c]);
+      }
+
+      async function fetchJson(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.message || `Falha em ${url}`);
+        }
+        return data;
+      }
+
+      function showToast(text) {
+        const el = document.getElementById('toast');
+        el.textContent = text;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 1800);
+      }
+
+      async function copyText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Comando copiado: ' + text);
+        } catch {
+          showToast('Nao foi possivel copiar agora.');
+        }
+      }
+
+      function renderMenuList() {
+        const list = document.getElementById('menuListMain');
+        list.innerHTML = MENU_ITEMS.map((item, idx) => {
+          return `<div class="menu-item"><span class="idx">${idx + 1}</span><div>${esc(item)}</div></div>`;
+        }).join('');
+      }
+
+      function renderFunctionMap() {
+        const root = document.getElementById('functionMap');
+        root.innerHTML = FUNCTION_MAP.map((item) => `
+          <article class="function-item">
+            <strong>${esc(item.title)}</strong>
+            <div class="examples">${esc(item.examples)}</div>
+          </article>
+        `).join('');
+
+        const quick = document.getElementById('resourceQuickList');
+        quick.innerHTML = FUNCTION_MAP.slice(0, 10).map((item, i) => {
+          return `<div class="menu-item"><span class="idx">${i + 1}</span><div>${esc(item.title)}</div></div>`;
+        }).join('');
+      }
+
+      function renderStatusRows() {
+        const s = state.settings;
+        const rows = [
+          ['Provedor IA', s.aiProvider || '-'],
+          ['Modelo Copilot', s.copilotModel || '-'],
+          ['Modelo Copilot FULL', s.copilotFullModel || s.copilotModel || '-'],
+          ['Modelo Codex', s.codexModel || '-'],
+          ['Mencao obrigatoria', s.requireMention ? 'ON' : 'OFF'],
+          ['Texto Pesquisando', s.thinkingMessageText || '-'],
+          ['Terminal Linux', s.enableTerminalExec ? 'ON' : 'OFF'],
+          ['Ingestao de midia', s.mediaIngestEnabled ? 'ON' : 'OFF'],
+          ['Modo silencioso', s.silentMode ? 'ON' : 'OFF'],
+          ['Retencao de midia', `${s.mediaRetentionDays || 0} dias`],
+          ['Limite resposta', `${s.maxOutputChars || 0} chars`]
+        ];
+        document.getElementById('statusRows').innerHTML = rows.map(([k, v]) => (
+          `<div class="row"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`
+        )).join('');
+      }
+
+      function renderAuditPreview() {
+        const root = document.getElementById('auditPreview');
+        if (!state.audit.length) {
+          root.innerHTML = '<div class="label-muted">Sem auditoria registrada ainda.</div>';
+          return;
+        }
+        root.innerHTML = state.audit.slice(0, 4).map((item) => {
+          const keys = Array.isArray(item.changedKeys) ? item.changedKeys.join(', ') : 'sem chaves';
+          return `
+            <div class="menu-item" style="grid-template-columns:1fr;">
+              <div><strong>${esc(item.id || '-')}</strong></div>
+              <div class="label-muted">${esc(item.ts || '-')} | ${esc(item.actor || 'desconhecido')}</div>
+              <div class="mono">${esc(keys)}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function renderSettingsTable() {
+        const body = document.getElementById('settingsTableBody');
+        const s = state.settings;
+
+        const rows = SETTINGS_ORDER.map((key) => {
+          const raw = s[key];
+          let display = '';
+          if (typeof raw === 'boolean') display = raw ? 'true' : 'false';
+          else if (Array.isArray(raw)) display = raw.join(', ');
+          else if (key === 'mediaMaxBytes') display = `${raw || 0} (${fmtBytesMb(raw)})`;
+          else if (String(key).toLowerCase().includes('timeout')) display = `${raw || 0} ms (${fmtMs(raw)})`;
+          else display = raw == null || raw === '' ? '(vazio)' : String(raw);
+
+          return `<tr><td><code>${esc(key)}</code></td><td>${esc(display)}</td></tr>`;
+        }).join('');
+
+        body.innerHTML = rows || '<tr><td colspan="2" class="muted">Sem dados.</td></tr>';
+      }
+
+      function applyBindings() {
+        const s = state.settings;
+
+        const setText = (id, value) => {
+          const el = document.querySelector(`[data-bind="${id}"]`);
+          if (!el) return;
+          el.textContent = value;
+        };
+        const setHtml = (id, html) => {
+          const el = document.querySelector(`[data-bind="${id}"]`);
+          if (!el) return;
+          el.innerHTML = html;
+        };
+
+        setText('aiProvider', s.aiProvider || '-');
+        setText('copilotModel', s.copilotModel || '-');
+        setText('copilotFullModel', s.copilotFullModel || s.copilotModel || '-');
+        setText('copilotFallbackModel', s.copilotFallbackModel || '-');
+        setText('codexModel', s.codexModel || '-');
+        setText('codexFallbackModel', s.codexFallbackModel || '-');
+        setText('codexTimeoutMs', fmtMs(s.codexTimeoutMs));
+        setText('copilotTimeoutMs', fmtMs(s.copilotTimeoutMs));
+        setText('copilotFullTimeoutMs', fmtMs(s.copilotFullTimeoutMs));
+
+        setHtml('requireMentionBadge', fmtBoolTag(Boolean(s.requireMention)));
+        setHtml('showThinkingMessageBadge', fmtBoolTag(Boolean(s.showThinkingMessage)));
+        setText('thinkingMessageText', s.thinkingMessageText || '-');
+        setText('maxInputChars', `${s.maxInputChars || 0} chars`);
+        setText('maxOutputChars', `${s.maxOutputChars || 0} chars`);
+        setText('fallbackMessage', s.fallbackMessage || '-');
+        setText('systemPrompt', s.systemPrompt ? `${String(s.systemPrompt).slice(0, 70)}...` : '(vazio)');
+
+        setHtml('enableTerminalExecBadge', fmtBoolTag(Boolean(s.enableTerminalExec)));
+        setText('terminalAllowlistCount', `${Array.isArray(s.terminalAllowlist) ? s.terminalAllowlist.length : 0} comando(s)`);
+        setText('terminalAllowlistPreview', Array.isArray(s.terminalAllowlist) && s.terminalAllowlist.length
+          ? `${s.terminalAllowlist.slice(0, 8).join(', ')}${s.terminalAllowlist.length > 8 ? '...' : ''}`
+          : '(vazio)');
+
+        setHtml('mediaIngestEnabledBadge', fmtBoolTag(Boolean(s.mediaIngestEnabled)));
+        setText('mediaMaxBytes', fmtBytesMb(s.mediaMaxBytes));
+        setText('mediaRetentionDays', `${s.mediaRetentionDays || 0} dia(s)`);
+        setText('mediaRootDir', s.mediaRootDir || '(vazio)');
+        setText('mediaAllowedMimePrefixes', Array.isArray(s.mediaAllowedMimePrefixes) && s.mediaAllowedMimePrefixes.length
+          ? s.mediaAllowedMimePrefixes.join(', ')
+          : '(vazio)');
+
+        setText('relaySenderName', s.relaySenderName || '(vazio)');
+        setHtml('silentModeBadge', fmtBoolTag(Boolean(s.silentMode)));
+
+        document.getElementById('kAiProvider').textContent = s.aiProvider || '-';
+        document.getElementById('kCopilotModel').textContent = s.copilotModel || '-';
+        document.getElementById('kCodexModel').textContent = s.codexModel || '-';
+      }
+
+      function setupTabs() {
+        const tabs = Array.from(document.querySelectorAll('#simTabs button'));
+        const screens = Array.from(document.querySelectorAll('.screen'));
+
+        function open(screen) {
+          tabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.screen === screen));
+          screens.forEach((el) => {
+            el.style.display = el.dataset.screen === screen ? 'block' : 'none';
+          });
+        }
+
+        tabs.forEach((btn) => btn.addEventListener('click', () => open(btn.dataset.screen)));
+      }
+
+      async function loadSession() {
+        try {
+          const data = await fetchJson('/api/panel-auth/me');
+          document.getElementById('sessionText').textContent = `sessao: ${data.user?.username || 'admin'}`;
+        } catch {
+          document.getElementById('sessionText').textContent = 'sessao: indisponivel';
+        }
+      }
+
+      async function loadAll() {
+        const [settingsData, providersData, auditData, aclData] = await Promise.all([
+          fetchJson('/api/settings'),
+          fetchJson('/api/ai-providers'),
+          fetchJson('/api/settings/audit?limit=8'),
+          fetchJson('/api/access-control')
+        ]);
+
+        state.settings = settingsData.settings || {};
+        state.providers = providersData.providers || [];
+        state.audit = auditData.items || [];
+        state.accessControl = aclData.accessControl || null;
+
+        const generatedAt = state.audit.length ? (state.audit[0]?.ts || '-') : '-';
+        document.getElementById('kModelProbe').textContent = generatedAt;
+
+        const ac = state.accessControl || {};
+        const auth = Array.isArray(ac.authorized) ? ac.authorized.length : 0;
+        const admins = Array.isArray(ac.admins) ? ac.admins.length : 0;
+        const full = Array.isArray(ac.full) ? ac.full.length : 0;
+        const priv = Array.isArray(ac.private) ? ac.private.length : 0;
+        const groups = Array.isArray(ac.responseGroups) ? ac.responseGroups.length : 0;
+
+        document.getElementById('acAuthorizedCount').textContent = String(auth);
+        document.getElementById('acAdminsCount').textContent = String(admins);
+        document.getElementById('acFullCount').textContent = String(full);
+        document.getElementById('acPrivateCount').textContent = String(priv);
+        document.getElementById('acGroupsCount').textContent = String(groups);
+
+        applyBindings();
+        renderAuditPreview();
+        renderStatusRows();
+        renderSettingsTable();
+      }
+
+      function bindCopyButtons() {
+        document.addEventListener('click', async (event) => {
+          const btn = event.target.closest('[data-copy]');
+          if (!btn) return;
+          await copyText(btn.getAttribute('data-copy') || '');
+        });
+      }
+
+      (async function init() {
+        renderMenuList();
+        renderFunctionMap();
+        setupTabs();
+        bindCopyButtons();
+        await loadSession();
+        try {
+          await loadAll();
+        } catch (error) {
+          showToast(`Falha ao carregar dados: ${error?.message || error}`);
+        }
+      })();
+    </script>
+  </body>
+</html>

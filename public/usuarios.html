@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Usuários do Painel WhatsApp</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0e1117;
+        --bg-2: #161b22;
+        --card: rgba(22, 27, 34, 0.95);
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.1);
+        --accent: #2dd4bf;
+        --accent-2: #38bdf8;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --error: #f85149;
+        --surface: #21262d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      .page {
+        width: min(1380px, 95vw);
+        margin: 1rem auto 2rem;
+      }
+
+      .hero,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--card);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
+        backdrop-filter: blur(10px);
+      }
+
+      .hero {
+        padding: 1.25rem;
+        background: linear-gradient(135deg, rgba(45, 212, 191, 0.13), rgba(56, 189, 248, 0.10));
+        border: 1px solid var(--line);
+        color: var(--ink);
+      }
+
+      .hero-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 980px) {
+        .hero-grid {
+          grid-template-columns: 1.4fr 1fr;
+          align-items: center;
+        }
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.35rem, 2.4vw, 2rem);
+      }
+
+      .subtitle {
+        margin-top: 0.5rem;
+        max-width: 72ch;
+        color: var(--muted);
+      }
+
+      .hero-actions {
+        margin-top: 0.95rem;
+        display: flex;
+        gap: 0.6rem;
+        flex-wrap: wrap;
+      }
+
+      .summary-grid {
+        display: grid;
+        gap: 0.7rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: 0.8rem;
+      }
+
+      .summary-card small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 1.02rem;
+      }
+
+      .layout {
+        margin-top: 1rem;
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: 1fr;
+      }
+
+      @media (min-width: 1100px) {
+        .layout {
+          grid-template-columns: 360px 1fr;
+          align-items: start;
+        }
+      }
+
+      .panel {
+        padding: 1rem;
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .status-line {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.48rem;
+        padding: 0.4rem 0.72rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .dot {
+        width: 0.62rem;
+        height: 0.62rem;
+        border-radius: 50%;
+        background: var(--warn);
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .grid {
+        margin-top: 0.85rem;
+        display: grid;
+        gap: 0.72rem;
+      }
+
+      label {
+        display: grid;
+        gap: 0.28rem;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      input,
+      button {
+        font: inherit;
+      }
+
+      input {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        padding: 0.62rem 0.72rem;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        cursor: pointer;
+        padding: 0.62rem 0.88rem;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), #0b948d);
+        transition: opacity .15s;
+      }
+      button:hover { opacity: .85; }
+
+      button.alt {
+        background: linear-gradient(135deg, #0f4c81, var(--accent-2));
+      }
+
+      button.warn {
+        background: linear-gradient(135deg, #b42318, #dc2626);
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .msg {
+        margin-top: 0.72rem;
+        font-size: 0.84rem;
+      }
+
+      .msg.error {
+        color: var(--error);
+      }
+
+      .msg.ok {
+        color: var(--ok);
+      }
+
+      .table-wrap {
+        margin-top: 0.85rem;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--bg-2);
+      }
+
+      table {
+        width: 100%;
+        min-width: 940px;
+        border-collapse: collapse;
+        font-size: 0.84rem;
+      }
+
+      th,
+      td {
+        padding: 0.65rem 0.7rem;
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: #1c2128;
+        z-index: 1;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.76rem;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.24rem 0.55rem;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        background: rgba(45, 212, 191, 0.12);
+        color: var(--accent);
+      }
+
+      .nav-bar {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        padding: .55rem 1.1rem;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        font-size: .88rem;
+      }
+      .nav-bar a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: .35rem .7rem;
+        border-radius: 8px;
+        transition: background .15s, color .15s;
+      }
+      .nav-bar a:hover { background: rgba(255,255,255,.06); color: var(--ink); }
+      .nav-bar a.active { color: var(--accent); font-weight: 600; }
+      .nav-bar .spacer { flex: 1; }
+      .nav-bar button { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
+      .nav-bar button:hover { color: var(--error); border-color: var(--error); }
+
+      .empty-state {
+        padding: 1.2rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .inline-actions {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+      }
+
+      .hint {
+        margin-top: 0.6rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+
+      /* ── Responsive mobile (≤ 640px) ─────────────────────────── */
+      @media (max-width: 640px) {
+        .page {
+          width: 100%;
+          margin: 0.3rem auto 1.5rem;
+          padding: 0 0.5rem;
+        }
+        .nav-bar {
+          flex-wrap: wrap;
+          overflow-x: hidden;
+          gap: 0.2rem;
+          row-gap: 0.2rem;
+          padding: 0.4rem 0.5rem;
+        }
+        .nav-bar .spacer { display: block; flex-basis: 100%; height: 0; margin: 0; padding: 0; }
+        .nav-bar a { flex-shrink: 0; white-space: nowrap; font-size: 0.78rem; padding: 0.28rem 0.5rem; }
+        .nav-bar .session-tag { flex-shrink: 0; white-space: nowrap; font-size: 0.7rem; padding: 0.22rem 0.45rem; }
+        .nav-bar button { flex-shrink: 0; padding: 0.25rem 0.5rem; font-size: 0.73rem; }
+        .table-wrap { -webkit-overflow-scrolling: touch; }
+        .table-wrap table { min-width: 380px; }
+        .layout { grid-template-columns: 1fr !important; }
+        h1 { font-size: 1.05rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav-bar">
+      <a href="/">Dashboard</a>
+      <a href="/processos.html">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
+      <a href="/bot-config-menu.html">Config Bot</a>
+      <a href="/usuarios.html" class="active">Usuários</a>
+      <span class="spacer"></span>
+      <button id="logoutButton">Sair</button>
+    </nav>
+
+    <main class="page">
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <h1>Usuários do painel WhatsApp</h1>
+            <p class="subtitle">
+              Administre logins, altere senhas e remova acessos do painel web sem tocar
+              no processo principal do bot.
+            </p>
+            <div class="hero-actions">
+              <button id="reloadUsers">Atualizar agora</button>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card">
+              <small>Usuário logado</small>
+              <strong id="sessionUserText">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Total de usuários</small>
+              <strong id="totalUsersText">0</strong>
+            </div>
+            <div class="summary-card">
+              <small>Última atualização</small>
+              <strong id="updatedAtText">-</strong>
+            </div>
+            <div class="summary-card">
+              <small>Status</small>
+              <strong id="statusText">carregando</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Novo usuário</h2>
+              <div class="muted">Crie novos acessos ao painel com senha persistida no SQLite.</div>
+            </div>
+
+            <div class="status-line">
+              <span class="dot ok"></span>
+              <span id="sessionLineText">sessão ativa</span>
+            </div>
+          </div>
+
+          <div class="grid">
+            <label>
+              Usuário
+              <input id="newUsername" placeholder="novo-usuario" maxlength="32" />
+            </label>
+
+            <label>
+              Senha
+              <input id="newPassword" type="password" placeholder="Mínimo de 8 caracteres" />
+            </label>
+
+            <label>
+              Confirmar senha
+              <input id="confirmPassword" type="password" placeholder="Repita a senha" />
+            </label>
+
+            <button id="createUserButton">Criar usuário</button>
+          </div>
+
+          <div class="hint">
+            Formato do usuário: somente letras minúsculas, números, ponto, underscore ou hífen.
+          </div>
+          <div class="msg" id="message"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Usuários cadastrados</h2>
+              <div class="muted">Altere senhas individualmente ou remova acessos que não devem permanecer ativos.</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Usuário</th>
+                  <th>Criado em</th>
+                  <th>Atualizado em</th>
+                  <th>Último login</th>
+                  <th>Nova senha</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="usersRows">
+                <tr>
+                  <td colspan="6" class="empty-state">Carregando usuários...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const usersRowsEl = document.getElementById('usersRows');
+      const messageEl = document.getElementById('message');
+      const newUsernameEl = document.getElementById('newUsername');
+      const newPasswordEl = document.getElementById('newPassword');
+      const confirmPasswordEl = document.getElementById('confirmPassword');
+      const totalUsersTextEl = document.getElementById('totalUsersText');
+      const updatedAtTextEl = document.getElementById('updatedAtText');
+      const statusTextEl = document.getElementById('statusText');
+      const sessionUserTextEl = document.getElementById('sessionUserText');
+      const sessionLineTextEl = document.getElementById('sessionLineText');
+      const nativeFetch = window.fetch.bind(window);
+
+      const state = {
+        users: [],
+        currentUserId: 0,
+        updatedAt: ''
+      };
+
+      function redirectToLogin() {
+        const next = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+        window.location.replace(`/login.html?next=${next}`);
+      }
+
+      window.fetch = async (...args) => {
+        const response = await nativeFetch(...args);
+        if (response.status === 401) {
+          redirectToLogin();
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+        return response;
+      };
+
+      function setMessage(text, type = '') {
+        messageEl.textContent = text;
+        messageEl.className = `msg ${type}`.trim();
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function formatDateTime(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '-';
+        return date.toLocaleString('pt-BR');
+      }
+
+      async function loadCurrentSession() {
+        const res = await fetch('/api/panel-auth/me');
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'falha ao carregar sessão');
+        }
+
+        const username = String(data.user?.username || '').trim() || '-';
+        sessionUserTextEl.textContent = username;
+        sessionLineTextEl.textContent = `sessão: ${username}`;
+      }
+
+      function renderUsers() {
+        totalUsersTextEl.textContent = String(state.users.length || 0);
+        updatedAtTextEl.textContent = state.updatedAt ? formatDateTime(state.updatedAt) : '-';
+        statusTextEl.textContent = state.users.length ? 'sincronizado' : 'sem usuários';
+        document.title = `Usuários do Painel (${state.users.length || 0})`;
+
+        if (!Array.isArray(state.users) || !state.users.length) {
+          usersRowsEl.innerHTML = '<tr><td colspan="6" class="empty-state">Nenhum usuário cadastrado no momento.</td></tr>';
+          return;
+        }
+
+        const canDelete = state.users.length > 1;
+
+        usersRowsEl.innerHTML = state.users
+          .map((user) => {
+            const isCurrent = Number(user.id) === Number(state.currentUserId || 0);
+            const label = isCurrent
+              ? `${escapeHtml(user.username)} <span class="pill">você</span>`
+              : escapeHtml(user.username);
+
+            return `
+              <tr>
+                <td>${label}<br /><span class="mono">id ${Number(user.id || 0)}</span></td>
+                <td>${escapeHtml(formatDateTime(user.createdAt))}</td>
+                <td>${escapeHtml(formatDateTime(user.updatedAt))}</td>
+                <td>${escapeHtml(formatDateTime(user.lastLoginAt))}</td>
+                <td>
+                  <input
+                    id="pwd-${Number(user.id || 0)}"
+                    type="password"
+                    placeholder="Nova senha"
+                    autocomplete="new-password"
+                  />
+                </td>
+                <td>
+                  <div class="inline-actions">
+                    <button class="alt" onclick="changePasswordFor(${Number(user.id || 0)})">Alterar senha</button>
+                    <button class="warn" onclick="removeUserById(${Number(user.id || 0)})" ${canDelete ? '' : 'disabled'}>
+                      Remover
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      async function loadUsers() {
+        const res = await fetch('/api/panel-users');
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.message || 'falha ao carregar usuários');
+        }
+
+        state.users = Array.isArray(data.users) ? data.users : [];
+        state.currentUserId = Number(data.currentUserId || 0);
+        state.updatedAt = new Date().toISOString();
+        renderUsers();
+      }
+
+      async function createUser() {
+        const username = newUsernameEl.value.trim();
+        const password = newPasswordEl.value;
+        const confirmPassword = confirmPasswordEl.value;
+
+        if (!username || !password) {
+          setMessage('Preencha usuário e senha para criar o acesso.', 'error');
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          setMessage('A confirmação da senha não confere.', 'error');
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/panel-users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'falha ao criar usuário');
+          }
+
+          newUsernameEl.value = '';
+          newPasswordEl.value = '';
+          confirmPasswordEl.value = '';
+          setMessage(`Usuário criado: ${data.user?.username || username}`, 'ok');
+          await loadUsers();
+        } catch (error) {
+          setMessage(`Erro ao criar usuário: ${String(error)}`, 'error');
+        }
+      }
+
+      async function changePasswordFor(userId) {
+        const input = document.getElementById(`pwd-${Number(userId || 0)}`);
+        const password = String(input?.value || '');
+
+        if (!password) {
+          setMessage('Digite a nova senha antes de confirmar a alteração.', 'error');
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/panel-users/${encodeURIComponent(userId)}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'falha ao alterar senha');
+          }
+
+          input.value = '';
+          setMessage(`Senha atualizada para ${data.user?.username || `id ${userId}`}.`, 'ok');
+          await loadUsers();
+        } catch (error) {
+          setMessage(`Erro ao alterar senha: ${String(error)}`, 'error');
+        }
+      }
+
+      async function removeUserById(userId) {
+        const user = state.users.find((item) => Number(item.id) === Number(userId));
+        const username = user?.username || `id ${userId}`;
+
+        if (!window.confirm(`Remover o usuário ${username}?`)) {
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/panel-users/${encodeURIComponent(userId)}`, {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || 'falha ao remover usuário');
+          }
+
+          setMessage(`Usuário removido: ${username}`, 'ok');
+
+          if (data.deletedSelf) {
+            redirectToLogin();
+            return;
+          }
+
+          await loadUsers();
+        } catch (error) {
+          setMessage(`Erro ao remover usuário: ${String(error)}`, 'error');
+        }
+      }
+
+      async function logoutFromPanel() {
+        try {
+          await fetch('/api/panel-auth/logout', { method: 'POST' });
+        } catch {}
+
+        redirectToLogin();
+      }
+
+      window.changePasswordFor = changePasswordFor;
+      window.removeUserById = removeUserById;
+
+      document.getElementById('createUserButton').addEventListener('click', createUser);
+      document.getElementById('reloadUsers').addEventListener('click', () => {
+        loadUsers()
+          .then(() => setMessage('Lista de usuários recarregada.', 'ok'))
+          .catch((error) => setMessage(`Erro ao recarregar: ${String(error)}`, 'error'));
+      });
+      document.getElementById('logoutButton').addEventListener('click', logoutFromPanel);
+
+      Promise.all([loadCurrentSession(), loadUsers()])
+        .then(() => {
+          setMessage('Usuários sincronizados.', 'ok');
+        })
+        .catch((error) => {
+          setMessage(`Erro ao carregar dados do painel: ${String(error)}`, 'error');
+        });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,11267 @@
+import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import net from 'node:net';
+import { config } from './config.js';
+import {
+  accessControl,
+  normalizeGroupId as normalizeAccessGroup,
+  normalizePhoneNumber as normalizeAccessPhone
+} from './accessControl.js';
+import {
+  clearConversationGroupHistory,
+  getConversationGroupDir,
+  listRecentConversationEntries
+} from './conversationStore.js';
+import { runWebSearch } from './searchService.js';
+import { generateImageFromPrompt } from './imageService.js';
+import { settingsStore } from './settingsStore.js';
+import { askAI } from './aiBridge.js';
+import { mediaStore } from './mediaStore.js';
+import { botDatabase } from './botDatabase.js';
+import { scheduledMessagesStore } from './scheduledMessagesStore.js';
+import { reminderStore } from './reminderStore.js';
+import { handleExpenseCommand, parseExpenseCommand } from './expenseService.js';
+import { relayChatStore } from './relayChatStore.js';
+import { createBackup, listBackups } from './backupService.js';
+import {
+  createFullAutoJob,
+  getFullAutoJobById,
+  getLatestFullAutoJob,
+  listFullAutoJobs,
+  updateFullAutoJob,
+  appendJobLog,
+  appendFileChanged
+} from './fullAutoJobStore.js';
+import { formatCopilotUsageReport } from './copilotUsageTracker.js';
+import { getBackendFeatureMapStats } from './backendFeatureMap.js';
+import { buildLocalPanelUrl, resolvePanelAccessInfo, resolvePanelUrl } from './panelUrl.js';
+
+function formatTwoDigits(value) {
+  return String(value).padStart(2, '0');
+}
+
+function nowLocalTime() {
+  const now = new Date();
+  const hh = formatTwoDigits(now.getHours());
+  const mm = formatTwoDigits(now.getMinutes());
+  return `${hh}:${mm}`;
+}
+
+function formatLocalDateTime(dateInput) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return '--/--/---- --:--';
+  const dd = formatTwoDigits(date.getDate());
+  const mm = formatTwoDigits(date.getMonth() + 1);
+  const yyyy = date.getFullYear();
+  const hh = formatTwoDigits(date.getHours());
+  const min = formatTwoDigits(date.getMinutes());
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+function shortUptime() {
+  const total = Math.floor(process.uptime());
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${h}h ${m}m ${s}s`;
+}
+
+function normalizeText(text) {
+  return String(text || '').trim();
+}
+
+function foldText(text) {
+  return normalizeText(text)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function compactSpaces(text) {
+  return normalizeText(text).replace(/\s+/g, ' ').trim();
+}
+
+const BRAZIL_TIME_LOCATION_ALIASES = Object.freeze({
+  acre: 'Acre, Brasil',
+  alagoas: 'Alagoas, Brasil',
+  amapa: 'Amapa, Brasil',
+  amazonas: 'Amazonas, Brasil',
+  bahia: 'Bahia, Brasil',
+  ceara: 'Ceara, Brasil',
+  'distrito federal': 'Distrito Federal, Brasil',
+  'espirito santo': 'Espirito Santo, Brasil',
+  goias: 'Goias, Brasil',
+  maranhao: 'Maranhao, Brasil',
+  'mato grosso': 'Mato Grosso, Brasil',
+  'mato grosso do sul': 'Mato Grosso do Sul, Brasil',
+  'minas gerais': 'Minas Gerais, Brasil',
+  para: 'Para, Brasil',
+  paraiba: 'Paraiba, Brasil',
+  parana: 'Parana, Brasil',
+  pernambuco: 'Pernambuco, Brasil',
+  piaui: 'Piaui, Brasil',
+  'rio de janeiro': 'Rio de Janeiro, Brasil',
+  'rio grande do norte': 'Rio Grande do Norte, Brasil',
+  'rio grande do sul': 'Rio Grande do Sul, Brasil',
+  rondonia: 'Rondonia, Brasil',
+  roraima: 'Roraima, Brasil',
+  'santa catarina': 'Santa Catarina, Brasil',
+  'sao paulo': 'Sao Paulo, Brasil',
+  sergipe: 'Sergipe, Brasil',
+  tocantins: 'Tocantins, Brasil'
+});
+
+const REMINDER_WEEKDAY_NAMES = Object.freeze({
+  0: 'domingo',
+  1: 'segunda',
+  2: 'terca',
+  3: 'quarta',
+  4: 'quinta',
+  5: 'sexta',
+  6: 'sabado'
+});
+
+const REMINDER_WEEKDAY_INDEX = Object.freeze({
+  domingo: 0,
+  segunda: 1,
+  terca: 2,
+  quarta: 3,
+  quinta: 4,
+  sexta: 5,
+  sabado: 6
+});
+
+const REMINDER_WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const REMINDER_ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+function extractClockFromDate(dateInput) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    hour: date.getHours(),
+    minute: date.getMinutes()
+  };
+}
+
+function joinWithAnd(items) {
+  const values = items.filter(Boolean);
+  if (!values.length) return '';
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return `${values[0]} e ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')} e ${values[values.length - 1]}`;
+}
+
+function sortReminderWeekdaysForDisplay(weekdays = []) {
+  const order = new Map(REMINDER_WEEKDAY_DISPLAY_ORDER.map((day, index) => [day, index]));
+  return Array.from(
+    new Set(
+      weekdays
+        .map((day) => Number.parseInt(String(day), 10))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    )
+  ).sort((left, right) => (order.get(left) ?? 99) - (order.get(right) ?? 99));
+}
+
+function normalizeReminderMessageText(text) {
+  return compactSpaces(
+    String(text || '').replace(
+      /^(?:(?:as|às)\s*)?(?:(?:[01]?\d|2[0-3])\s*[:h]\s*[0-5]\d|(?:[01]?\d|2[0-3])\s*(?:h|hr|hrs|hora|horas))\b[\s,:-]*/i,
+      ''
+    )
+  );
+}
+
+function buildReminderWeekdayRange(startName, endName) {
+  const start = REMINDER_WEEKDAY_INDEX[startName];
+  const end = REMINDER_WEEKDAY_INDEX[endName];
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return [];
+
+  const days = [];
+  let current = start;
+  for (let safety = 0; safety < 7; safety += 1) {
+    days.push(current);
+    if (current === end) break;
+    current = (current + 1) % 7;
+  }
+  return days;
+}
+
+function parseReminderRecurrence(text) {
+  const folded = foldText(text);
+  if (!folded) return null;
+
+  const hasDailyMarker = /(todo dia|todos os dias|diariamente|cada dia)/.test(folded);
+  const rangeMatch = folded.match(
+    /\b(?:de\s+)?(domingo|segunda|terca|quarta|quinta|sexta|sabado)\s+a\s+(domingo|segunda|terca|quarta|quinta|sexta|sabado)\b/
+  );
+  const dayMatches = Array.from(
+    folded.matchAll(/\b(domingo|segunda|terca|quarta|quinta|sexta|sabado)\b/g)
+  )
+    .map((match) => REMINDER_WEEKDAY_INDEX[match[1]])
+    .filter((day) => Number.isInteger(day));
+  const uniqueDays = Array.from(new Set(dayMatches)).sort((left, right) => left - right);
+  const rangeDays = rangeMatch ? buildReminderWeekdayRange(rangeMatch[1], rangeMatch[2]) : [];
+
+  if (hasDailyMarker) {
+    return {
+      type: 'daily',
+      weekdays: rangeDays.length ? rangeDays : uniqueDays.length >= 2 ? uniqueDays : REMINDER_ALL_WEEKDAYS
+    };
+  }
+
+  if (rangeDays.length) {
+    return {
+      type: 'daily',
+      weekdays: rangeDays
+    };
+  }
+
+  if (uniqueDays.length >= 2) {
+    return {
+      type: 'daily',
+      weekdays: uniqueDays
+    };
+  }
+
+  return null;
+}
+
+function reminderMatchesRecurrence(dateInput, recurrence) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const weekdays = sortReminderWeekdaysForDisplay(recurrence?.weekdays || []);
+  if (Number.isNaN(date.getTime()) || !weekdays.length) return false;
+  return weekdays.includes(date.getDay());
+}
+
+function computeNextRecurringReminderDueAt({ clock, recurrence, explicitBaseDate = null, now = new Date() }) {
+  if (!clock || !recurrence) return null;
+
+  const startBase = explicitBaseDate instanceof Date && !Number.isNaN(explicitBaseDate.getTime()) ? explicitBaseDate : now;
+  const start = new Date(
+    startBase.getFullYear(),
+    startBase.getMonth(),
+    startBase.getDate(),
+    clock.hour,
+    clock.minute,
+    0,
+    0
+  );
+
+  for (let offset = 0; offset <= 14; offset += 1) {
+    const candidate = new Date(
+      start.getFullYear(),
+      start.getMonth(),
+      start.getDate() + offset,
+      start.getHours(),
+      start.getMinutes(),
+      0,
+      0
+    );
+    if (!reminderMatchesRecurrence(candidate, recurrence)) continue;
+    if (candidate.getTime() <= now.getTime()) continue;
+    return candidate;
+  }
+
+  return null;
+}
+
+function buildReminderSchedule({ clock, recurrence = null, explicitBaseDate = null, now = new Date() }) {
+  if (!clock) return { ok: false, code: 'missing_time' };
+
+  if (recurrence) {
+    const dueAt = computeNextRecurringReminderDueAt({ clock, recurrence, explicitBaseDate, now });
+    if (!dueAt) return { ok: false, code: 'invalid_recurrence' };
+    return {
+      ok: true,
+      dueAtIso: dueAt.toISOString(),
+      dueAtLabel: formatLocalDateTime(dueAt),
+      recurrence
+    };
+  }
+
+  const dateBase = explicitBaseDate || now;
+  const dueAt = new Date(
+    dateBase.getFullYear(),
+    dateBase.getMonth(),
+    dateBase.getDate(),
+    clock.hour,
+    clock.minute,
+    0,
+    0
+  );
+
+  if (explicitBaseDate && dueAt.getTime() <= now.getTime()) {
+    return {
+      ok: false,
+      code: 'past_time',
+      dueAtLabel: formatLocalDateTime(dueAt)
+    };
+  }
+
+  if (!explicitBaseDate && dueAt.getTime() <= now.getTime()) {
+    dueAt.setDate(dueAt.getDate() + 1);
+  }
+
+  return {
+    ok: true,
+    dueAtIso: dueAt.toISOString(),
+    dueAtLabel: formatLocalDateTime(dueAt),
+    recurrence: null
+  };
+}
+
+function formatReminderRecurrenceLabel(recurrence) {
+  const weekdays = sortReminderWeekdaysForDisplay(recurrence?.weekdays || []);
+  if (!weekdays.length || weekdays.length === 7) return 'todos os dias';
+
+  const mondayToSaturday = [1, 2, 3, 4, 5, 6];
+  const mondayToFriday = [1, 2, 3, 4, 5];
+  const isExactMatch = (expected) =>
+    expected.length === weekdays.length && expected.every((day, index) => weekdays[index] === day);
+
+  if (isExactMatch(mondayToSaturday)) return 'de segunda a sabado';
+  if (isExactMatch(mondayToFriday)) return 'de segunda a sexta';
+
+  const dayNames = weekdays.map((day) => REMINDER_WEEKDAY_NAMES[day]).filter(Boolean);
+  if (dayNames.length === 1) return `toda ${dayNames[0]}`;
+  return joinWithAnd(dayNames);
+}
+
+function formatReminderScheduleLabel(reminder) {
+  if (!reminder?.recurrence) return formatLocalDateTime(reminder?.dueAt);
+  const clock = extractClockFromDate(reminder.dueAt);
+  const recurrenceLabel = formatReminderRecurrenceLabel(reminder.recurrence);
+  if (!clock) return recurrenceLabel;
+  return `${recurrenceLabel} as ${formatTwoDigits(clock.hour)}:${formatTwoDigits(clock.minute)}`;
+}
+
+function formatReminderListLine(item) {
+  const base = `${item.index}. ${formatLocalDateTime(item.dueAt)} - ${item.text}`;
+  if (!item.recurrence) return base;
+  return `${base} (recorrente: ${formatReminderScheduleLabel(item)})`;
+}
+
+function referencesPreviousReminder(foldedText) {
+  return /\b(isso|disso|mesma coisa|igual|desse lembrete|deste lembrete)\b/.test(foldedText);
+}
+
+const DEFAULT_NAMED_AGENDAS = [];
+const AGENDA_SELECTION_STATE_PREFIX = 'agenda_selection_v1';
+const AGENDA_SELECTION_TTL_MS = 30 * 60 * 1000;
+const AGENDA_ITEM_V2_PREFIX = '__AGENDA_V2__:';
+
+function buildEmptyAgendaResponse(agendaName = '') {
+  const label = compactSpaces(agendaName);
+  return (
+    (label ? `A agenda ${label} esta vazia no momento.\n` : 'Sua agenda esta vazia no momento.\n') +
+    `Para adicionar um compromisso, envie por exemplo: ${label ? `agenda ${label}:` : 'agenda:'} dentista amanha 13h em Campo Grande`
+  );
+}
+
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeNamedAgendaLabel(name) {
+  return compactSpaces(String(name || '').replace(/^["'`]+|["'`]+$/g, '').replace(/[.,;:!?]+$/g, ''));
+}
+
+function isLikelyNamedAgendaLabel(name) {
+  const normalized = normalizeNamedAgendaLabel(name);
+  if (!normalized) return false;
+  if (normalized.length > 48) return false;
+
+  const folded = foldText(normalized);
+  if (!/[\p{L}\p{N}]/u.test(normalized)) return false;
+  if (/^(agenda|agendas|compromisso|compromissos|minha agenda)$/i.test(normalized)) return false;
+  if (
+    /(amanha|amanhã|hoje|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado|domingo|\b\d{1,2}h\b|\b\d{1,2}:\d{2}\b|\bdia\b|\bsemana\b|\bmes\b|\bm[eê]s\b)/.test(
+      folded
+    )
+  ) {
+    return false;
+  }
+
+  const tokenCount = normalized.split(/\s+/).filter(Boolean).length;
+  return tokenCount >= 1 && tokenCount <= 4;
+}
+
+function buildAgendaSelectionStateKey(context = {}) {
+  const groupId = String(context.groupId || 'sem-grupo').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const senderId = String(normalizeAccessPhone(context.senderNumber || '') || context.senderJid || 'sem-remetente').replace(
+    /[^a-zA-Z0-9._-]/g,
+    '_'
+  );
+  return `${AGENDA_SELECTION_STATE_PREFIX}:${groupId}:${senderId}`;
+}
+
+async function readAgendaSelectionState(context = {}) {
+  const dbOptions = buildDbOptionsFromContext(context);
+  await botDatabase.ensureReady(dbOptions.groupId);
+
+  const raw = botDatabase.getMeta(buildAgendaSelectionStateKey(context), dbOptions);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const createdAtMs = Date.parse(parsed.createdAt || '');
+    if (!Number.isFinite(createdAtMs) || Date.now() - createdAtMs > AGENDA_SELECTION_TTL_MS) {
+      botDatabase.setMeta(buildAgendaSelectionStateKey(context), '', dbOptions);
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    botDatabase.setMeta(buildAgendaSelectionStateKey(context), '', dbOptions);
+    return null;
+  }
+}
+
+async function writeAgendaSelectionState(context = {}, command = null) {
+  const dbOptions = buildDbOptionsFromContext(context);
+  await botDatabase.ensureReady(dbOptions.groupId);
+
+  if (!command || typeof command !== 'object') {
+    botDatabase.setMeta(buildAgendaSelectionStateKey(context), '', dbOptions);
+    return;
+  }
+
+  botDatabase.setMeta(
+    buildAgendaSelectionStateKey(context),
+    JSON.stringify({
+      command,
+      createdAt: new Date().toISOString()
+    }),
+    dbOptions
+  );
+}
+
+async function clearAgendaSelectionState(context = {}) {
+  const dbOptions = buildDbOptionsFromContext(context);
+  await botDatabase.ensureReady(dbOptions.groupId);
+  botDatabase.setMeta(buildAgendaSelectionStateKey(context), '', dbOptions);
+}
+
+async function ensureNamedAgendasBootstrap(context = {}) {
+  const dbOptions = buildDbOptionsFromContext(context);
+  await botDatabase.migrateNamedAgendasToSingleAgenda(dbOptions);
+  const namedAgendas = await botDatabase.listNamedAgendas(dbOptions);
+  for (const agenda of namedAgendas) {
+    await botDatabase.deleteNamedAgenda(agenda, dbOptions);
+  }
+  await botDatabase.ensureNamedAgendas(DEFAULT_NAMED_AGENDAS, dbOptions);
+}
+
+async function listNamedAgendaEntries(context = {}) {
+  const dbOptions = buildDbOptionsFromContext(context);
+  await ensureNamedAgendasBootstrap(context);
+  const items = await botDatabase.listNamedAgendas(dbOptions);
+  return items.sort((left, right) => String(left?.name || '').localeCompare(String(right?.name || ''), 'pt-BR'));
+}
+
+function findNamedAgendaByLabel(agendas, label) {
+  const normalized = normalizeNamedAgendaLabel(label);
+  const foldedLabel = foldText(normalized);
+  if (!foldedLabel) return null;
+
+  return agendas.find((agenda) => foldText(agenda?.name || '') === foldedLabel || foldText(agenda?.key || '') === foldedLabel) || null;
+}
+
+function buildNamedAgendaCollection(agendaEntry) {
+  if (agendaEntry?.singleAgenda) return 'agenda';
+  return botDatabase.buildNamedAgendaCollection(agendaEntry);
+}
+
+function formatNamedAgendaNames(agendas) {
+  return agendas.length ? agendas.map((agenda) => agenda.name).join(', ') : 'nenhuma';
+}
+
+function buildSingleAgendaModeMessage() {
+  return 'Este bot opera em agenda unica por grupo. Use "agenda", "agenda: ...", "apagar agenda 2" e "editar agenda 1: ...".';
+}
+
+function buildAgendaSelectionPrompt(agendas, command = {}) {
+  if (!agendas.length) {
+    if (command.action === 'delete_named_agenda') {
+      return 'Nao ha agendas cadastradas para remover.\nPara criar uma, diga: criar agenda NOME';
+    }
+    return 'Nao ha agendas cadastradas ainda.\nPara criar uma, diga: criar agenda NOME';
+  }
+
+  const lines = [`Agendas existentes: ${formatNamedAgendaNames(agendas)}`];
+
+  switch (command.action) {
+    case 'add':
+      lines.push('Qual agenda recebe esse item?');
+      break;
+    case 'list_indexed':
+      lines.push('Qual agenda voce quer listar com numeros?');
+      break;
+    case 'clear':
+      lines.push('Qual agenda voce quer limpar?');
+      break;
+    case 'remove':
+    case 'remove_by_text':
+      lines.push('Qual agenda voce quer usar para essa remocao?');
+      break;
+    case 'delete_named_agenda':
+      lines.push('Qual agenda voce quer remover?');
+      break;
+    case 'edit':
+      lines.push('Qual agenda voce quer editar?');
+      break;
+    default:
+      lines.push('Qual agenda voce quer ver?');
+      break;
+  }
+
+  if (command.action === 'add' && command.text) {
+    lines.push(`Item pendente: ${command.text}`);
+  }
+
+  if (command.action === 'remove_by_text' && command.text) {
+    lines.push(`Remocao pendente: ${command.text}`);
+  }
+
+  if (command.action === 'edit' && command.index && command.text) {
+    lines.push(`Edicao pendente: item ${command.index} -> ${command.text}`);
+  }
+
+  lines.push('Se quiser criar outra, diga: criar agenda NOME');
+  return lines.join('\n');
+}
+
+function parseNamedAgendaManagementCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+
+  if (
+    /^(agendas|lista agendas|listar agendas|mostrar agendas|mostra agendas|ver agendas)$/.test(folded) ||
+    /(quais|qual|mostrar|mostra|listar|lista|ver).*(agendas).*(existem|tem|ha|há|disponiveis|disponíveis)/.test(folded)
+  ) {
+    return { action: 'list_names' };
+  }
+
+  const createMatch = normalized.match(/^(?:criar|cria|nova|novo)\s+(?:uma\s+)?agenda\s+(.+)$/i);
+  if (createMatch) {
+    const name = normalizeNamedAgendaLabel(createMatch[1]);
+    if (!name) return { action: 'create_missing_name' };
+    if (!isLikelyNamedAgendaLabel(name)) {
+      const foldedName = foldText(name);
+      if (!/(amanha|amanhã|hoje|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado|domingo|\b\d{1,2}h\b|\b\d{1,2}:\d{2}\b|dentista|medico|m[eé]dico|consulta|reuniao|reunião|exame)/.test(foldedName)) {
+        return { action: 'create_invalid_name', name };
+      }
+      return null;
+    }
+    return { action: 'create', name };
+  }
+
+  return null;
+}
+
+function parseNamedAgendaDeletionCommand(text, agendas) {
+  if (!Array.isArray(agendas) || !agendas.length) return null;
+
+  const normalized = compactSpaces(text);
+  const deleteMatch = normalized.match(
+    /^(?:apagar|apaga|remover|remove|deletar|deleta|excluir|exclui)\s+agenda(?:\s+(?:do|da|de))?(?:\s+(.+))?$/i
+  );
+  if (!deleteMatch) return null;
+
+  const candidate = normalizeNamedAgendaLabel(deleteMatch[1] || '');
+  if (!candidate) {
+    return { action: 'delete_missing_name' };
+  }
+
+  const agenda = findNamedAgendaByLabel(agendas, candidate);
+  if (agenda) {
+    return { action: 'delete', agenda };
+  }
+
+  if (isLikelyNamedAgendaLabel(candidate) && !/\d/.test(candidate) && !/[:,-]/.test(candidate)) {
+    return { action: 'delete_unknown_name', name: candidate };
+  }
+
+  return null;
+}
+
+function detectAgendaEntryReferenced(text, agendas) {
+  const normalized = compactSpaces(text);
+  if (!normalized) return null;
+
+  const sorted = [...agendas].sort((left, right) => String(right?.name || '').length - String(left?.name || '').length);
+
+  for (const agenda of sorted) {
+    const namePattern = escapeRegExp(agenda.name);
+    const patterns = [
+      new RegExp(`\\bagenda\\s+(?:do|da|de)\\s+${namePattern}\\b`, 'i'),
+      new RegExp(`\\bagenda\\s+${namePattern}\\b`, 'i'),
+      new RegExp(`\\bna\\s+agenda\\s+(?:do|da|de)\\s+${namePattern}\\b`, 'i'),
+      new RegExp(`\\bna\\s+agenda\\s+${namePattern}\\b`, 'i')
+    ];
+
+    if (patterns.some((pattern) => pattern.test(normalized))) {
+      return agenda;
+    }
+  }
+
+  return null;
+}
+
+function stripLeadingAgendaReference(text, agenda) {
+  const normalized = compactSpaces(text);
+  if (!normalized || !agenda?.name) return normalized;
+
+  const namePattern = escapeRegExp(agenda.name);
+  const patterns = [
+    new RegExp(`^(?:(?:na|no|a|o)\\s+)?agenda\\s+(?:do|da|de)\\s+${namePattern}\\b[\\s:,-]*(.*)$`, 'i'),
+    new RegExp(`^(?:(?:na|no|a|o)\\s+)?agenda\\s+${namePattern}\\b[\\s:,-]*(.*)$`, 'i'),
+    new RegExp(`^(?:do|da|de)\\s+${namePattern}\\b[\\s:,-]*(.*)$`, 'i'),
+    new RegExp(`^${namePattern}\\b[\\s:,-]*(.*)$`, 'i')
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(normalized);
+    if (match) {
+      return compactSpaces(match[1] || '');
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeAgendaSelectionCandidate(text) {
+  let candidate = compactSpaces(text);
+  if (!candidate) return '';
+
+  candidate = candidate
+    .replace(/^(?:quero|usar|use|na|no|a|o)\s+/i, '')
+    .replace(/^agenda\s+/i, '')
+    .replace(/^(?:do|da|de)\s+/i, '')
+    .replace(/^agenda\s+(?:do|da|de)\s+/i, '')
+    .replace(/^(?:a|o)\s+/i, '');
+
+  return normalizeNamedAgendaLabel(candidate);
+}
+
+function parseAgendaSelectionReply(text, agendas) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+
+  if (/^(cancelar|cancela|esquecer|esquece|deixa|ignora)$/i.test(folded)) {
+    return { action: 'cancel' };
+  }
+
+  const managementCommand = parseNamedAgendaManagementCommand(normalized);
+  if (managementCommand?.action === 'create') {
+    return { action: 'create', name: managementCommand.name };
+  }
+
+  const existingReference = detectAgendaEntryReferenced(normalized, agendas);
+  if (existingReference) {
+    return { action: 'select', agenda: existingReference };
+  }
+
+  const candidate = normalizeAgendaSelectionCandidate(normalized);
+  const existingAgenda = findNamedAgendaByLabel(agendas, candidate);
+  if (existingAgenda) {
+    return { action: 'select', agenda: existingAgenda };
+  }
+
+  if (!isLikelyNamedAgendaLabel(candidate)) {
+    return null;
+  }
+
+  return { action: 'create_or_select', name: candidate };
+}
+
+function removeMentions(text) {
+  return compactSpaces(
+    String(text || '')
+      .replace(/@\S+/g, ' ')
+      .replace(/^@\s+/, ' ')
+  );
+}
+
+function normalizeAddressedCommandText(text) {
+  const normalized = compactSpaces(text);
+  if (!normalized) return '';
+
+  const withoutStandaloneMention = normalized.replace(/^@+\s*/, '').trim();
+  const withoutBotPrefix = withoutStandaloneMention
+    .replace(/^bot(\s+avisos)?\b[-:,\s]*/i, '')
+    .trim();
+
+  return withoutBotPrefix || withoutStandaloneMention || normalized;
+}
+
+function extractTimeQuestionDetails(text) {
+  const normalized = compactSpaces(removeMentions(text));
+  const folded = foldText(normalized);
+  if (!normalized || !/\b(que horas|hora agora|qual e o horario|qual o horario|horario agora|sao que horas)\b/.test(folded)) {
+    return null;
+  }
+
+  const locationMatch =
+    normalized.match(/\b(em|no|na)\s+([^?.!]+)[?.!]*$/i) ||
+    normalized.match(/\b(de|do|da)\s+([^?.!]+)[?.!]*$/i);
+
+  const rawLocation = compactSpaces(
+    String(locationMatch?.[2] || '')
+      .replace(/\b(?:agora|nesse momento|neste momento|por favor|pra mim|para mim)\b/gi, ' ')
+      .replace(/[?!.]+$/g, ' ')
+  );
+
+  return {
+    locationPreposition: foldText(locationMatch?.[1] || ''),
+    locationLabel: rawLocation,
+    locationQuery: BRAZIL_TIME_LOCATION_ALIASES[foldText(rawLocation)] || rawLocation
+  };
+}
+
+function formatTimeLocationLabel(value) {
+  const normalized = compactSpaces(value);
+  if (!normalized) return '';
+  if (/[A-Z]/.test(normalized)) return normalized;
+
+  const lowercaseJoiners = new Set(['da', 'das', 'de', 'do', 'dos', 'e', 'em', 'na', 'nas', 'no', 'nos']);
+  return normalized
+    .split(/\s+/)
+    .map((token, index) => {
+      const folded = foldText(token);
+      if (index > 0 && lowercaseJoiners.has(folded)) return folded;
+      return token.charAt(0).toUpperCase() + token.slice(1);
+    })
+    .join(' ');
+}
+
+async function fetchJsonWithTimeout(url, { headers = {}, timeoutMs = 10000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function buildTimeQuestionResponse(text) {
+  const details = extractTimeQuestionDetails(text);
+  if (!details) return '';
+
+  if (!details.locationQuery) {
+    return `Agora sao ${nowLocalTime()}.`;
+  }
+
+  const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(details.locationQuery)}`;
+  const geocodeResults = await fetchJsonWithTimeout(geocodeUrl, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'whatsapp-codex-bridge/1.0'
+    }
+  });
+  const firstPlace = Array.isArray(geocodeResults) ? geocodeResults[0] : null;
+  const latitude = Number.parseFloat(String(firstPlace?.lat || ''));
+  const longitude = Number.parseFloat(String(firstPlace?.lon || ''));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return '';
+  }
+
+  const timeUrl = `https://timeapi.io/api/Time/current/coordinate?latitude=${latitude}&longitude=${longitude}`;
+  const timeData = await fetchJsonWithTimeout(timeUrl, {
+    headers: { Accept: 'application/json' }
+  });
+  const timeLabel = compactSpaces(timeData?.time || '');
+  if (!/^\d{2}:\d{2}$/.test(timeLabel)) {
+    return '';
+  }
+
+  const locationLabel = formatTimeLocationLabel(details.locationLabel || firstPlace?.name || '');
+  if (!locationLabel) return `Agora sao ${timeLabel}.`;
+
+  const preposition = ['em', 'no', 'na'].includes(details.locationPreposition) ? details.locationPreposition : 'em';
+  return `Agora, ${preposition} ${locationLabel}, sao ${timeLabel}.`;
+}
+
+function isStatusQuestion(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  if (!folded) return false;
+
+  const tokenCount = folded.split(/\s+/).filter(Boolean).length;
+  if (tokenCount > 14) return false;
+  if (/\bagenda\b/.test(folded)) return false;
+
+  const hasStatusKeyword = /\b(status|servico|processo|servidor|linux|uptime|painel)\b/.test(folded);
+  if (!hasStatusKeyword) return false;
+
+  const asksStatus =
+    /\?$/.test(normalized) ||
+    /^(status|tudo ok|ta tudo ok|esta tudo ok|como esta|como est[aá]|servico|processo|servidor)\b/.test(folded) ||
+    /\b(status|servico|processo|servidor)\b.*\b(online|ativo|ok|rodando|funcionando)\b/.test(folded);
+
+  return asksStatus;
+}
+
+function isSimpleCheckin(text) {
+  const folded = foldText(text);
+  if (!folded) return false;
+
+  const withoutLeadingSymbols = folded.replace(/^[^a-z0-9]+/, '').trim();
+  const withoutBotPrefix = withoutLeadingSymbols
+    .replace(/^bot(\s+avisos)?\b[^a-z0-9]*/i, '')
+    .trim();
+
+  return /^(tudo ok+|ta tudo ok+|esta tudo ok+|tudo bem+|como voce esta+|como vc esta+)\??$/.test(withoutBotPrefix);
+}
+
+function isGreetingOnly(text) {
+  const folded = foldText(text);
+  if (!folded) return false;
+
+  const withoutLeadingSymbols = folded.replace(/^[^a-z0-9]+/, '').trim();
+  const withoutBotPrefix = withoutLeadingSymbols
+    .replace(/^bot(\s+avisos)?\b[^a-z0-9]*/i, '')
+    .trim();
+
+  // Saudações curtas para evitar cair no fluxo tecnico da IA.
+  return /^(oi+|ola+|opa+|e ai+|ei+|hey+|bom dia+|boa tarde+|boa noite+)(\s+tudo bem+)?\b[!?.\s]*$/.test(
+    withoutBotPrefix
+  );
+}
+
+function isAdminSender(senderNumber) {
+  const normalizedSender = normalizeAccessPhone(senderNumber);
+  if (!normalizedSender) return false;
+  return accessControl.isAdmin(normalizedSender);
+}
+
+function isFullSender(senderNumber) {
+  const normalizedSender = normalizeAccessPhone(senderNumber);
+  if (!normalizedSender) return false;
+  return accessControl.isFull(normalizedSender);
+}
+
+function clampText(text, maxChars) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, maxChars)}...`;
+}
+
+function formatFullAutoStatusInterval(ms) {
+  const totalSeconds = Math.max(10, Math.floor(Number(ms || 0) / 1000));
+  if (totalSeconds % 60 === 0) {
+    const minutes = totalSeconds / 60;
+    return minutes === 1 ? '1 minuto' : `${minutes} minutos`;
+  }
+  return `${totalSeconds}s`;
+}
+
+function buildFullAutoMessage({ jobId, status, request = '', senderNumber = '', lines = [] }) {
+  const messageLines = [
+    `FULL #${jobId} | ${status}`,
+    senderNumber ? `Solicitante: ${senderNumber}` : '',
+    request ? `Pedido: ${clampText(compactSpaces(request), 220)}` : '',
+    ...lines
+  ]
+    .map((line) => String(line || '').trim())
+    .filter(Boolean);
+
+  return messageLines.join('\n');
+}
+
+function buildFullAutoSimpleSuccessMessage() {
+  return 'Solicitacao concluida e validada com sucesso.';
+}
+
+function buildFullAutoSimpleFailureMessage() {
+  return 'Solicitacao nao foi concluida. Por favor, tente novamente.';
+}
+
+/**
+ * Envia o resultado completo do job como arquivo .txt a cada conclusão.
+ * Sempre mantém a mensagem curta de sucesso (enviada antes desta função).
+ * Sem threshold — TXT sempre gerado e enviado ao grupo de notificações.
+ */
+// ── Idempotência para envio do .txt ────────────────────────────────────────
+// Garante que o mesmo relatório não seja enviado mais de uma vez em 10 minutos
+// mesmo se o job for reprocessado, reconectado ou o processo reiniciado.
+const _txtSentRegistry = new Map(); // key → timestamp
+const _TXT_REGISTRY_FILE = join(process.cwd(), 'logs', 'txt-sent-registry.json');
+const _TXT_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
+// Carrega estado persistido do disco na inicialização (best-effort)
+;(async () => {
+  try {
+    const raw = JSON.parse(await readFile(_TXT_REGISTRY_FILE, 'utf8'));
+    const cutoff = Date.now() - _TXT_TTL_MS;
+    for (const [k, ts] of Object.entries(raw)) {
+      if (ts > cutoff) _txtSentRegistry.set(k, ts);
+    }
+  } catch { /* arquivo inexistente ou corrompido — inicia limpo */ }
+})();
+
+async function _persistTxtRegistry() {
+  try {
+    const obj = {};
+    const cutoff = Date.now() - _TXT_TTL_MS;
+    for (const [k, ts] of _txtSentRegistry) { if (ts > cutoff) obj[k] = ts; }
+    await writeFile(_TXT_REGISTRY_FILE, JSON.stringify(obj), 'utf8');
+  } catch { /* best-effort */ }
+}
+
+function _isTxtAlreadySent(jobId, status, summarySnippet) {
+  const key = `${jobId}:${status}:${createHash('md5').update(String(summarySnippet || '').slice(0, 100)).digest('hex')}`;
+  const sent = _txtSentRegistry.get(key);
+  if (sent && (Date.now() - sent) < _TXT_TTL_MS) {
+    console.info(JSON.stringify({ event: 'full_txt_skipped_idempotent', jobId, status, key }));
+    return true;
+  }
+  _txtSentRegistry.set(key, Date.now());
+  // limpa entradas antigas quando mapa cresce demais, depois persiste
+  if (_txtSentRegistry.size > 200) {
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    for (const [k, ts] of _txtSentRegistry) { if (ts < cutoff) _txtSentRegistry.delete(k); }
+  }
+  _persistTxtRegistry(); // fire-and-forget
+  return false;
+}
+
+async function sendFullJobResultAsTxtIfLarge(client, groupId, { jobId, request, summary, validationOutput, status = 'completed' }, notificationGroupId = null) {
+  if (!client) return;
+
+  // Idempotência: não envia o mesmo relatório duas vezes
+  if (_isTxtAlreadySent(jobId, status, summary)) return;
+
+  const reportLines = [
+    `FULL #${jobId} — Relatorio completo`,
+    `Data: ${new Date().toLocaleString('pt-BR')}`,
+    `Status: ${status}`,
+    '',
+    '=== SOLICITACAO ===',
+    String(request || '').trim(),
+    '',
+    '=== RESULTADO ===',
+    String(summary || '').trim()
+  ];
+  if (validationOutput && String(validationOutput).trim()) {
+    reportLines.push('', '=== VALIDACAO ===', String(validationOutput).trim());
+  }
+
+  const txt = reportLines.join('\n');
+  const tmpPath = join(tmpdir(), `resultado-full-${jobId}.txt`);
+  try {
+    await writeFile(tmpPath, txt, 'utf8');
+    // whatsapp-web.js é um módulo CJS — MessageMedia está em .default
+    const wwjs = await import('whatsapp-web.js');
+    const MessageMedia = wwjs.MessageMedia ?? wwjs.default?.MessageMedia;
+    if (!MessageMedia) throw new Error('MessageMedia nao encontrado no modulo whatsapp-web.js');
+    // Envia ao grupo de origem somente quando NÃO há grupo de notificação separado
+    if (groupId && (!notificationGroupId || notificationGroupId === groupId)) {
+      try {
+        const media = MessageMedia.fromFilePath(tmpPath);
+        await client.sendMessage(groupId, media, { caption: `📄 Relatorio completo — FULL #${jobId}` });
+        console.info(JSON.stringify({ event: 'full_txt_sent_success', jobId, status, target: 'origin', groupId }));
+      } catch (err) {
+        console.warn(JSON.stringify({ event: 'full_txt_sent_failure', jobId, status, target: 'origin', err: String(err?.message || err).slice(0, 120) }));
+      }
+    }
+    if (notificationGroupId && notificationGroupId !== groupId) {
+      try {
+        const media2 = MessageMedia.fromFilePath(tmpPath);
+        await client.sendMessage(notificationGroupId, media2, { caption: `📄 Relatorio completo — FULL #${jobId}` });
+        console.info(JSON.stringify({ event: 'full_txt_sent_success', jobId, status, target: 'notification', groupId: notificationGroupId }));
+      } catch (err) {
+        console.warn(JSON.stringify({ event: 'full_txt_sent_failure', jobId, status, target: 'notification', err: String(err?.message || err).slice(0, 120) }));
+      }
+    }
+  } catch (err) {
+    console.warn(JSON.stringify({ event: 'full_txt_sent_failure', jobId, status, target: 'write', err: String(err?.message || err).slice(0, 120) }));
+    // best-effort: falha silenciosa, a mensagem curta ja foi enviada
+  } finally {
+    try { await rm(tmpPath); } catch { /**/ }
+  }
+}
+
+function isFullAutoRestartEnabled() {
+  return config.enableSelfRestart;
+}
+
+function buildFullAutoStartDetail() {
+  if (isFullAutoRestartEnabled()) {
+    return 'Etapas: editar, validar e reiniciar ao concluir.';
+  }
+
+  return 'Etapas: editar e validar. Reinicio automatico desativado (ENABLE_SELF_RESTART=false).';
+}
+
+function buildFullAutoStartLines() {
+  return [
+    buildFullAutoStartDetail(),
+    `Atualizacao automatica: a cada ${formatFullAutoStatusInterval(config.fullAutoDevStatusEveryMs || 60_000)} ate concluir.`,
+    'Acompanhar manual: status da minha solicitacao.'
+  ];
+}
+
+function resolveNotificationGroupId(context = {}) {
+  const explicit = String(context.notificationGroupId || '').trim();
+  if (explicit) return explicit;
+
+  if (typeof context.getNotificationGroupId === 'function') {
+    const resolved = String(context.getNotificationGroupId() || '').trim();
+    if (resolved) return resolved;
+  }
+
+  return String(context.groupId || '').trim();
+}
+
+function buildDbOptionsFromContext(context = {}) {
+  const groupId = String(context.groupId || context.authorizedGroupId || '').trim();
+  return groupId ? { groupId } : {};
+}
+
+function startFullAutoProgressUpdates({ jobId, client, groupId }) {
+  const everyMs = Math.max(10_000, Number(config.fullAutoDevStatusEveryMs || 60_000));
+  if (!jobId || !client || !groupId) {
+    return () => {};
+  }
+
+  let stopped = false;
+  let sending = false;
+  const timer = setInterval(async () => {
+    const job = getFullAutoJobById(jobId);
+    if (stopped || !job || job.status !== 'running' || sending) return;
+    sending = true;
+    try {
+      const stageLabel = String(job.statusLabel || 'em andamento').trim() || 'em andamento';
+      updateFullAutoJob(jobId, {
+        status: 'running',
+        statusLabel: stageLabel,
+        updatedAt: Date.now()
+      });
+
+      await client.sendMessage(
+        groupId,
+        buildFullAutoMessage({
+          jobId: job.id,
+          status: `${stageLabel} (${formatElapsed(Date.now() - job.startedAt)})`,
+          request: job.request,
+          senderNumber: job.senderNumber,
+          lines: [job.detail || 'Status: processando no servidor.']
+        })
+      );
+    } catch {
+      // ignora falha de envio de heartbeat e tenta novamente no proximo ciclo.
+    } finally {
+      sending = false;
+    }
+  }, everyMs);
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+function quoteForShell(value) {
+  return `'${String(value || '').replace(/'/g, `'\\''`)}'`;
+}
+
+function parseTerminalCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+
+  const directPrefix = normalized.match(/^(cmd|terminal|bash|sh)\s*[:\-]\s*(.+)$/i);
+  if (directPrefix) {
+    const command = compactSpaces(directPrefix[2] || '');
+    return command ? { action: 'run', command } : { action: 'missing' };
+  }
+
+  // Prefixo "sudo <comando>" — executa diretamente como comando Linux
+  const sudoMatch = normalized.match(/^sudo\s+(.+)$/i);
+  if (sudoMatch) {
+    const command = compactSpaces(sudoMatch[1] || '');
+    return command ? { action: 'run', command } : { action: 'missing' };
+  }
+
+  const explicitMatch = normalized.match(
+    /(executar comando|executa comando|execute comando|rodar comando|roda comando|comando linux)\s*[:\-]\s*(.+)$/i
+  );
+  if (explicitMatch) {
+    const command = compactSpaces(explicitMatch[2] || '');
+    return command ? { action: 'run', command } : { action: 'missing' };
+  }
+
+  const directMatch = normalized.match(/^(executar?|executa|execute|rodar?|roda|run)\s+(.+)$/i);
+  if (directMatch) {
+    const command = compactSpaces(directMatch[2] || '');
+    return command ? { action: 'run', command } : { action: 'missing' };
+  }
+
+  return null;
+}
+
+function parseFullAutoDevCommand(text) {
+  const normalized = compactSpaces(text);
+  if (!normalized) return null;
+  const maxChars = Math.max(1400, Number(config.fullAutoDevMaxChars || 30000));
+
+  const sanitizeRequest = (rawValue) => {
+    const raw = String(rawValue || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n');
+
+    if (!raw.trim()) return '';
+
+    const inlineMarker = raw.search(/\[\d{1,2}\/\d{1,2}(?:\/\d{2,4})?,\s*\d{1,2}:\d{2}\]/i);
+    const preInline = inlineMarker >= 0 ? raw.slice(0, inlineMarker) : raw;
+    const kept = [];
+
+    for (const line of preInline.split('\n')) {
+      const cleanLine = compactSpaces(line);
+      if (!cleanLine) continue;
+
+      const foldedLine = foldText(cleanLine);
+      const looksTranscriptLine =
+        /^\[\d{1,2}\/\d{1,2}(?:\/\d{2,4})?,?\s*\d{1,2}:\d{2}\]/i.test(cleanLine) ||
+        /^\[\d{1,2}:\d{2}\]/.test(cleanLine) ||
+        /^#\s*bot\b/.test(foldedLine) ||
+        /^🚧/.test(cleanLine) ||
+        /^_?🤖/.test(cleanLine) ||
+        /^>\s*\*?🚧/.test(cleanLine);
+
+      if (looksTranscriptLine) break;
+      kept.push(cleanLine);
+    }
+
+    const joined = compactSpaces(kept.join(' '));
+    return joined || compactSpaces(preInline);
+  };
+
+  // Extract the request portion from the ORIGINAL text (newlines preserved) so that
+  // sanitizeRequest can properly strip bot-signature lines that follow the actual request.
+  const extractOriginalRequest = (keywordPattern) => {
+    const m = String(text || '').match(keywordPattern);
+    return m ? m[1] : null;
+  };
+
+  const withoutBotPrefix = normalized.replace(/^bot(\s+avisos)?\b[-:,\s]*/i, '').trim();
+  const withoutLeadingMention = withoutBotPrefix.replace(/^@(?!\s*valida(?:r)?\b)\S+\s+/, '').trim();
+  const keywordValida = withoutLeadingMention.match(/^@?\s*valida(?:r)?\b\s*[:\-]?\s*([\s\S]*)$/i);
+  if (keywordValida) {
+    // Prefer original text (preserves newlines) so sanitizeRequest can stop at bot-signature lines
+    const rawRequest =
+      extractOriginalRequest(/^[^\n]*?@?\s*valida(?:r)?\b\s*[:\-]?\s*([\s\S]*)$/i) ??
+      keywordValida[1] ??
+      '';
+    const request = sanitizeRequest(rawRequest);
+    if (!request) return { action: 'missing' };
+    if (request.length > maxChars) {
+      return {
+        action: 'run',
+        request: request.slice(0, maxChars),
+        truncated: true,
+        maxChars,
+        originalChars: request.length
+      };
+    }
+    return { action: 'run', request };
+  }
+
+  const explicitPrefix = withoutLeadingMention.match(/^(dev|full)\s*[:\-]\s*(.+)$/i);
+  if (explicitPrefix) {
+    const rawRequest =
+      extractOriginalRequest(/^[^\n]*?(?:dev|full)\s*[:\-]\s*([\s\S]*)$/i) ??
+      explicitPrefix[2] ??
+      '';
+    const request = sanitizeRequest(rawRequest);
+    if (request.length > maxChars) {
+      return {
+        action: 'run',
+        request: request.slice(0, maxChars),
+        truncated: true,
+        maxChars,
+        originalChars: request.length
+      };
+    }
+    return request ? { action: 'run', request } : { action: 'missing' };
+  }
+
+  return null;
+}
+
+function parseFullAutoStatusCommand(text) {
+  const folded = foldText(text);
+  if (!folded) return null;
+
+  const explicitStatusIntent =
+    /(status|andamento|progresso)\s+(da|minha|do)\s+(minha\s+)?(solicitacao|solicitação|pedido|tarefa)/.test(folded) ||
+    /^(status|andamento|progresso)\s*(\?|!)?$/.test(folded) ||
+    /^status\s+da\s+solicitacao\s+full\b/.test(folded) ||
+    /^(como esta|como esta a|como esta minha|como esta a minha)\s+(solicitacao|solicitação|pedido|tarefa)\b/.test(
+      folded
+    );
+
+  if (explicitStatusIntent) {
+    return { action: 'status' };
+  }
+
+  return null;
+}
+
+function commandLooksDangerous(command) {
+  const normalized = foldText(command);
+  if (!normalized) return true;
+
+  const blockedPatterns = [
+    /\brm\s+-rf\s+\/(\s|$)/,
+    /\bmkfs\b/,
+    /\bdd\s+if=/,
+    /\bshutdown\b/,
+    /\breboot\b/,
+    /\bhalt\b/,
+    /\bpoweroff\b/,
+    /\binit\s+0\b/,
+    /\binit\s+6\b/,
+    /:\(\)\s*\{\s*:\|:\s*&\s*\};:/,
+    /\bkillall\s+node\b/,
+    /\bpkill\b/,
+    /\bkill\s+-9\s+1\b/,
+    /\bchown\b.*\s+\/$/,
+    /\bchmod\b.*\s+\/$/,
+    />\s*\/etc\//,
+    />\s*\/boot\//,
+    />\s*\/dev\//
+  ];
+
+  return blockedPatterns.some((pattern) => pattern.test(normalized));
+}
+
+function commandStartsWithAllowedPrefix(command, allowlist) {
+  const normalized = compactSpaces(String(command || '')).toLowerCase();
+  if (!normalized) return false;
+
+  const candidates = Array.isArray(allowlist) ? allowlist : [];
+  return candidates.some((item) => {
+    const prefix = compactSpaces(String(item || '')).toLowerCase();
+    if (!prefix) return false;
+    return normalized === prefix || normalized.startsWith(`${prefix} `);
+  });
+}
+
+function parseRuntimeSettingValue(raw) {
+  const input = String(raw || '').trim();
+  if (!input) return '';
+
+  const normalized = foldText(input);
+  if (['true', '1', 'sim', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'nao', 'não', 'no', 'off'].includes(normalized)) return false;
+
+  if (/^\d+$/.test(input)) {
+    const parsed = Number.parseInt(input, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  if (input.includes(',')) {
+    return input
+      .split(',')
+      .map((item) => compactSpaces(item))
+      .filter(Boolean);
+  }
+
+  return input;
+}
+
+const BOT_CONFIG_MODEL_TEST_TIMEOUT_MS = 30000;
+const BOT_CONFIG_MODEL_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+const BOT_CONFIG_MODEL_MATRIX = Object.freeze({
+  copilot: ['gpt-5-mini', 'gpt-4.1', 'gpt-5', 'claude-sonnet-4.6', 'claude-3.7-sonnet'],
+  codex: ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5-mini', 'gpt-5']
+});
+
+let botConfigModelAvailabilityCache = null;
+
+function trimOneLine(text, max = 180) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, max - 3)}...`;
+}
+
+function runBotConfigModelProbe(providerId, model, timeoutMs = BOT_CONFIG_MODEL_TEST_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    const prompt = 'Responda apenas: teste ok';
+    const isCopilot = providerId === 'copilot';
+    const bin = isCopilot ? config.copilotBin : config.codexBin;
+    const args = isCopilot
+      ? ['-p', prompt, '-s', '--no-color', '--no-ask-user', '--model', model]
+      : ['exec', '-', '--skip-git-repo-check', '--color', 'never', '-m', model, ...(config.codexEphemeral ? ['--ephemeral'] : [])];
+
+    const startedAt = Date.now();
+    let finished = false;
+
+    const finalize = (result) => {
+      if (finished) return;
+      finished = true;
+      resolve({
+        providerId,
+        model,
+        elapsedMs: Date.now() - startedAt,
+        exitCode: result.exitCode ?? null,
+        stdout: trimOneLine(result.stdout || ''),
+        stderr: trimOneLine(result.stderr || ''),
+        timedOut: Boolean(result.timedOut),
+        spawnError: trimOneLine(result.spawnError || '')
+      });
+    };
+
+    if (!bin) {
+      finalize({
+        spawnError: 'binario nao configurado'
+      });
+      return;
+    }
+
+    const child = spawn(bin, args, {
+      cwd: config.codexWorkdir,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      finalize({
+        spawnError: err instanceof Error ? err.message : String(err),
+        stdout,
+        stderr
+      });
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      finalize({
+        exitCode: code,
+        stdout,
+        stderr,
+        timedOut
+      });
+    });
+
+    if (!isCopilot) {
+      child.stdin.write(prompt);
+    }
+    child.stdin.end();
+  });
+}
+
+function classifyBotConfigModelProbe(providerId, model, probe) {
+  if (probe.timedOut) {
+    return {
+      available: false,
+      line: `${model} ❌ indisponivel (timeout ${BOT_CONFIG_MODEL_TEST_TIMEOUT_MS}ms)`
+    };
+  }
+
+  if (probe.spawnError) {
+    return {
+      available: false,
+      line: `${model} ❌ indisponivel (${trimOneLine(probe.spawnError, 60)})`
+    };
+  }
+
+  const stderrLc = String(probe.stderr || '').toLowerCase();
+
+  if (providerId === 'copilot') {
+    if (stderrLc.includes('402') || stderrLc.includes('no quota')) {
+      return { available: false, line: `${model} ❌ sem quota (402)` };
+    }
+    if (stderrLc.includes('not available')) {
+      return { available: false, line: `${model} ❌ indisponivel (model not available)` };
+    }
+    if (
+      stderrLc.includes('usage:') ||
+      stderrLc.includes('error:')
+    ) {
+      return { available: false, line: `${model} ❌ indisponivel (${trimOneLine(probe.stderr, 60)})` };
+    }
+    if (probe.exitCode === 0 && (probe.stdout || probe.stderr)) {
+      return { available: true, line: `${model} ✅ disponivel` };
+    }
+    return { available: false, line: `${model} ❌ indisponivel (exit ${probe.exitCode ?? '-'})` };
+  }
+
+  if (probe.exitCode === 0 && probe.stdout) {
+    return { available: true, line: `${model} ✅ disponivel` };
+  }
+
+  return { available: false, line: `${model} ❌ indisponivel no seu Codex CLI atual` };
+}
+
+async function getBotConfigModelAvailability({ forceRefresh = false, refreshWhenStale = true, allowProbe = true } = {}) {
+  const now = Date.now();
+  const cacheAgeMs = botConfigModelAvailabilityCache ? now - botConfigModelAvailabilityCache.generatedAt : Number.POSITIVE_INFINITY;
+  const hasFreshCache = Boolean(botConfigModelAvailabilityCache) && cacheAgeMs <= BOT_CONFIG_MODEL_CACHE_MAX_AGE_MS;
+
+  if (!forceRefresh && hasFreshCache) {
+    return botConfigModelAvailabilityCache;
+  }
+
+  if (!forceRefresh && botConfigModelAvailabilityCache && !refreshWhenStale) {
+    return botConfigModelAvailabilityCache;
+  }
+
+  if (!allowProbe) {
+    return botConfigModelAvailabilityCache || null;
+  }
+
+  const startedAt = Date.now();
+  const probeMap = new Map();
+  for (const providerId of ['copilot', 'codex']) {
+    const models = BOT_CONFIG_MODEL_MATRIX[providerId] || [];
+    for (const model of models) {
+      const probe = await runBotConfigModelProbe(providerId, model);
+      probeMap.set(`${providerId}:${model}`, probe);
+    }
+  }
+
+  const linesByProvider = {
+    copilot: [],
+    codex: []
+  };
+
+  for (const providerId of ['copilot', 'codex']) {
+    const models = BOT_CONFIG_MODEL_MATRIX[providerId] || [];
+    for (const model of models) {
+      const probe = probeMap.get(`${providerId}:${model}`) || {
+        providerId,
+        model,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        timedOut: false,
+        spawnError: 'sem resultado'
+      };
+      const classified = classifyBotConfigModelProbe(providerId, model, probe);
+      linesByProvider[providerId].push(classified.line);
+    }
+  }
+
+  botConfigModelAvailabilityCache = {
+    generatedAt: now,
+    elapsedMs: Date.now() - startedAt,
+    linesByProvider
+  };
+
+  return botConfigModelAvailabilityCache;
+}
+
+const BOT_SETTINGS_ALLOWED_KEYS = new Set([
+  'systemPrompt',
+  'requireMention',
+  'fallbackMessage',
+  'showThinkingMessage',
+  'thinkingMessageText',
+  'maxInputChars',
+  'maxOutputChars',
+  'aiProvider',
+  'codexModel',
+  'codexReasoningEffort',
+  'codexTimeoutMs',
+  'codexFallbackModel',
+  'codexFallbackTimeoutMs',
+  'codexFallbackOnTimeout',
+  'copilotModel',
+  'copilotReasoningEffort',
+  'copilotTimeoutMs',
+  'copilotFallbackModel',
+  'copilotFallbackTimeoutMs',
+  'copilotFallbackOnTimeout',
+  'copilotFullModel',
+  'relaySenderName',
+  'copilotFullTimeoutMs',
+  'enableTerminalExec',
+  'terminalAllowlist',
+  'mediaIngestEnabled',
+  'mediaRootDir',
+  'mediaMaxBytes',
+  'mediaRetentionDays',
+  'mediaAllowedMimePrefixes',
+  'silentMode'
+]);
+
+const BOT_SETTINGS_KEY_ALIASES = new Map(
+  [
+    ['prompt do sistema', 'systemPrompt'],
+    ['prompt sistema', 'systemPrompt'],
+    ['system prompt', 'systemPrompt'],
+    ['mencao obrigatoria', 'requireMention'],
+    ['menção obrigatória', 'requireMention'],
+    ['responder so com mencao', 'requireMention'],
+    ['responder só com menção', 'requireMention'],
+    ['mensagem de fallback', 'fallbackMessage'],
+    ['mostrar pesquisando', 'showThinkingMessage'],
+    ['mensagem pesquisando', 'thinkingMessageText'],
+    ['limite entrada', 'maxInputChars'],
+    ['limite resposta', 'maxOutputChars'],
+    ['modelo ia', 'codexModel'],
+    ['modelo codex', 'codexModel'],
+    ['raciocinio ia', 'codexReasoningEffort'],
+    ['raciocínio ia', 'codexReasoningEffort'],
+    ['timeout ia', 'codexTimeoutMs'],
+    ['timeout codex', 'codexTimeoutMs'],
+    ['modelo fallback', 'codexFallbackModel'],
+    ['timeout fallback', 'codexFallbackTimeoutMs'],
+    ['fallback em timeout', 'codexFallbackOnTimeout'],
+    ['permitir comandos linux', 'enableTerminalExec'],
+    ['execucao terminal', 'enableTerminalExec'],
+    ['execução terminal', 'enableTerminalExec'],
+    ['allowlist terminal', 'terminalAllowlist'],
+    ['comandos permitidos terminal', 'terminalAllowlist'],
+    ['salvar midia automatica', 'mediaIngestEnabled'],
+    ['salvar mídia automática', 'mediaIngestEnabled'],
+    ['pasta de midia', 'mediaRootDir'],
+    ['pasta de mídia', 'mediaRootDir'],
+    ['limite tamanho midia', 'mediaMaxBytes'],
+    ['limite tamanho mídia', 'mediaMaxBytes'],
+    ['retencao de midia', 'mediaRetentionDays'],
+    ['retenção de mídia', 'mediaRetentionDays'],
+    ['mime permitido midia', 'mediaAllowedMimePrefixes'],
+    ['mimes permitidos de midia', 'mediaAllowedMimePrefixes'],
+    ['provedor ia', 'aiProvider'],
+    ['provedor de ia', 'aiProvider'],
+    ['ai provider', 'aiProvider'],
+    ['modelo copilot', 'copilotModel'],
+    ['modelo do copilot', 'copilotModel'],
+    ['raciocinio copilot', 'copilotReasoningEffort'],
+    ['raciocínio copilot', 'copilotReasoningEffort'],
+    ['timeout copilot', 'copilotTimeoutMs'],
+    ['timeout full copilot', 'copilotFullTimeoutMs'],
+    ['timeout modo full', 'copilotFullTimeoutMs'],
+    ['modelo fallback copilot', 'copilotFallbackModel'],
+    ['timeout fallback copilot', 'copilotFallbackTimeoutMs'],
+    ['fallback em timeout copilot', 'copilotFallbackOnTimeout'],
+    ['modelo agente copilot', 'copilotFullModel'],
+    ['modelo full copilot', 'copilotFullModel'],
+    ['modelo modo full', 'copilotFullModel'],
+    ['modelo modo agente', 'copilotFullModel']
+  ].map(([alias, key]) => [foldText(alias).replace(/[^a-z0-9]/g, ''), key])
+);
+
+function normalizeRuntimeSettingKey(rawKey) {
+  const raw = compactSpaces(String(rawKey || ''));
+  if (!raw) return '';
+  if (BOT_SETTINGS_ALLOWED_KEYS.has(raw)) return raw;
+
+  const foldedRaw = foldText(raw);
+  for (const key of BOT_SETTINGS_ALLOWED_KEYS) {
+    if (foldedRaw === foldText(key)) return key;
+  }
+
+  const normalizedAlias = foldedRaw.replace(/[^a-z0-9]/g, '');
+  if (BOT_SETTINGS_KEY_ALIASES.has(normalizedAlias)) {
+    return BOT_SETTINGS_KEY_ALIASES.get(normalizedAlias) || '';
+  }
+
+  return '';
+}
+
+function formatRuntimeSettingValue(value) {
+  if (typeof value === 'boolean') return value ? 'ativo' : 'inativo';
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '(vazio)';
+  if (typeof value === 'number') return String(value);
+  const normalized = String(value || '').trim();
+  if (!normalized) return '(vazio)';
+  return clampText(normalized.replace(/\s+/g, ' '), 220);
+}
+
+function buildRuntimeSettingsSummary(currentSettings = {}, options = {}) {
+  const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
+  const terminalCommands = Array.isArray(current.terminalAllowlist) ? current.terminalAllowlist.length : 0;
+  const mediaMimes = Array.isArray(current.mediaAllowedMimePrefixes) ? current.mediaAllowedMimePrefixes.length : 0;
+  const availability = options && typeof options === 'object' ? options.modelAvailability : null;
+  const generatedAtText = availability?.generatedAt
+    ? new Date(availability.generatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : '';
+
+  const lines = [
+    'Configuracao dinamica atual:',
+    `- Provedor IA ativo: ${current.aiProvider || 'codex'}`,
+    `- Modelo Copilot principal: ${current.copilotModel || '(vazio)'}`,
+    `- Modelo Copilot FULL: ${current.copilotFullModel || current.copilotModel || '(vazio)'}`,
+    `- Modelo Copilot fallback: ${current.copilotFallbackModel || '(vazio)'}`,
+    `- Modelo Codex principal: ${current.codexModel || '(vazio)'}`,
+    `- Modelo Codex fallback: ${current.codexFallbackModel || '(vazio)'}`,
+    `- Responde so com mencao: ${current.requireMention ? 'sim' : 'nao'}`,
+    `- Timeout da IA: ${current.codexTimeoutMs || 0} ms`,
+    `- Limite de resposta: ${current.maxOutputChars || 0} caracteres`,
+    `- Execucao de comandos Linux: ${current.enableTerminalExec ? 'ativa' : 'desativada'}`,
+    `- Comandos permitidos no terminal: ${terminalCommands}`,
+    `- Salvamento de midia: ${current.mediaIngestEnabled ? 'ativo' : 'inativo'}`,
+    `- Retencao de midia: ${current.mediaRetentionDays || 0} dia(s)`,
+    `- MIMEs permitidos para midia: ${mediaMimes}`,
+    '',
+    'Modelos conhecidos (nao precisa decorar):',
+    '- Copilot: gpt-5-mini, gpt-4.1, gpt-5, claude-sonnet-4.6, claude-3.7-sonnet',
+    '- Codex: gpt-5.4-mini, gpt-5.4, gpt-5-mini, gpt-5'
+  ];
+
+  if (availability?.linesByProvider) {
+    lines.push(
+      '',
+      `Disponibilidade de modelos (teste real${generatedAtText ? ` em ${generatedAtText}` : ''}):`,
+      'Copilot:'
+    );
+    for (const line of availability.linesByProvider.copilot || []) {
+      lines.push(`- ${line}`);
+    }
+    lines.push('Codex:');
+    for (const line of availability.linesByProvider.codex || []) {
+      lines.push(`- ${line}`);
+    }
+  } else {
+    lines.push('', 'Disponibilidade: use `configurar bot: testar modelos` para testar agora.');
+  }
+
+  lines.push(
+    '',
+    'Comandos uteis:',
+    '- mostrar configuracao bot',
+    '- ajuda configuracao bot',
+    '- configurar bot: modelo copilot=gpt-5-mini',
+    '- configurar bot: modelo full copilot=gpt-5-mini',
+    '- configurar bot: modelo fallback copilot=gpt-4.1',
+    '- configurar bot: modelo codex=gpt-5.4-mini',
+    '- configurar bot: modelo fallback=gpt-5.4',
+    '- configurar bot: timeout ia=20000',
+    '- configurar bot: mencao obrigatoria=true',
+    '- configurar bot: testar modelos'
+  );
+
+  return lines.join('\n');
+}
+
+function buildRuntimeSettingsHelpMessage() {
+  return [
+    'Ajuda de configuracao dinamica (admin):',
+    '1. configurar bot (menu interativo)',
+    '2. configurar bot menu <numero>',
+    '3. mostrar configuracao bot',
+    '4. configurar bot: testar modelos',
+    '5. listar modelos do bot',
+    '6. listar auditoria configuracao bot',
+    '7. rollback configuracao <audit-id>',
+    '8. configurar bot: <chave>=<valor>',
+    '',
+    'Exemplos rapidos:',
+    '- bot configuracao',
+    '- configurar bot menu 1',
+    '- configurar bot menu status',
+    '- configurar bot: mencao obrigatoria=true',
+    '- configurar bot: timeout ia=25000',
+    '- configurar bot: limite resposta=2200',
+    '- configurar bot: salvar midia automatica=true',
+    '- configurar bot: modelo copilot=gpt-5-mini',
+    '- configurar bot: modelo full copilot=gpt-5-mini',
+    '- configurar bot: modelo fallback copilot=gpt-4.1',
+    '- configurar bot: modelo codex=gpt-5.4-mini',
+    '- configurar bot: testar modelos',
+    '- configurar bot: prompt do sistema=Voce e um assistente objetivo...',
+    '',
+    'Navegacao rapida:',
+    '- depois de abrir o menu, voce pode responder so com o numero',
+    '- para voltar ao inicio, responda: menu principal',
+    '',
+    'Modelos conhecidos:',
+    '- Copilot: gpt-5-mini, gpt-4.1, gpt-5, claude-sonnet-4.6, claude-3.7-sonnet',
+    '- Codex: gpt-5.4-mini, gpt-5.4, gpt-5-mini, gpt-5',
+    '',
+    'Obs: aliases em portugues sao aceitos para as chaves principais.'
+  ].join('\n');
+}
+
+function normalizeBotConfigMenuSectionToken(rawToken) {
+  const token = foldText(String(rawToken || '').trim())
+    .replace(/[^a-z0-9]/g, '');
+  if (!token) return '';
+
+  const map = new Map([
+    ['1', 'ia'],
+    ['ia', 'ia'],
+    ['inteligenciaartificial', 'ia'],
+    ['2', 'respostas'],
+    ['resposta', 'respostas'],
+    ['respostas', 'respostas'],
+    ['comportamento', 'respostas'],
+    ['3', 'terminal'],
+    ['terminal', 'terminal'],
+    ['linux', 'terminal'],
+    ['4', 'midia'],
+    ['midia', 'midia'],
+    ['media', 'midia'],
+    ['5', 'relay'],
+    ['relay', 'relay'],
+    ['mensagensprivadas', 'relay'],
+    ['6', 'silencioso'],
+    ['silencioso', 'silencioso'],
+    ['modosilencioso', 'silencioso'],
+    ['7', 'auditoria'],
+    ['auditoria', 'auditoria'],
+    ['rollback', 'auditoria'],
+    ['8', 'status'],
+    ['status', 'status'],
+    ['resumo', 'status'],
+    ['9', 'permissoes'],
+    ['permissoes', 'permissoes'],
+    ['permissoesinteracao', 'permissoes'],
+    ['multigrupo', 'permissoes'],
+    ['multigrupos', 'permissoes'],
+    ['10', 'recursos'],
+    ['recursos', 'recursos'],
+    ['funcoes', 'recursos'],
+    ['funcionalidades', 'recursos'],
+    ['mapa', 'recursos']
+  ]);
+
+  return map.get(token) || '';
+}
+
+function toOnOff(value) {
+  return value ? 'ON' : 'OFF';
+}
+
+function formatMsAsSeconds(ms) {
+  const safe = Number(ms || 0);
+  if (!Number.isFinite(safe) || safe <= 0) return '0 s';
+  return `${Math.round(safe / 1000)} s`;
+}
+
+function formatBytesAsMb(bytes) {
+  const safe = Number(bytes || 0);
+  if (!Number.isFinite(safe) || safe <= 0) return '0 MB';
+  return `${(safe / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const BOT_CONFIG_MENU_STATE_TTL_MS = 15 * 60 * 1000;
+const botConfigMenuState = new Map();
+
+const BOT_CONFIG_MENU_SECTION_META = Object.freeze({
+  ia: { number: 1, icon: '🤖', title: 'Inteligencia Artificial' },
+  respostas: { number: 2, icon: '💬', title: 'Comportamento de respostas' },
+  terminal: { number: 3, icon: '🖥️', title: 'Terminal Linux' },
+  midia: { number: 4, icon: '🖼️', title: 'Midia' },
+  relay: { number: 5, icon: '📡', title: 'Relay (mensagens privadas)' },
+  silencioso: { number: 6, icon: '🔇', title: 'Modo silencioso' },
+  auditoria: { number: 7, icon: '🧾', title: 'Auditoria e rollback' },
+  status: { number: 8, icon: '📊', title: 'Status geral da configuracao' },
+  permissoes: { number: 9, icon: '🔐', title: 'Permissoes e multi-grupo' },
+  recursos: { number: 10, icon: '🗺️', title: 'Mapa de recursos do projeto' }
+});
+
+function buildBotConfigMenuStateKey(groupId, senderNumber) {
+  const safeGroupId = String(groupId || '').trim();
+  const safeSender = normalizeDigits(senderNumber);
+  if (!safeGroupId || !safeSender) return '';
+  return `${safeGroupId}::${safeSender}`;
+}
+
+function setBotConfigMenuState(context = {}, state = {}) {
+  const key = buildBotConfigMenuStateKey(context.groupId, context.senderNumber);
+  if (!key) return;
+
+  botConfigMenuState.set(key, {
+    view: state.view || 'overview',
+    section: state.section || '',
+    expiresAt: Date.now() + BOT_CONFIG_MENU_STATE_TTL_MS
+  });
+}
+
+function getBotConfigMenuState(context = {}) {
+  const key = buildBotConfigMenuStateKey(context.groupId, context.senderNumber);
+  if (!key) return null;
+
+  const state = botConfigMenuState.get(key);
+  if (!state) return null;
+  if (Date.now() > Number(state.expiresAt || 0)) {
+    botConfigMenuState.delete(key);
+    return null;
+  }
+
+  return {
+    view: state.view || 'overview',
+    section: state.section || ''
+  };
+}
+
+function buildBotConfigMenuOverview(currentSettings = {}, options = {}) {
+  const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
+  const menuUrl = options.menuUrl || buildLocalPanelUrl('/bot-config-menu.html');
+  const availability = options && typeof options === 'object' ? options.modelAvailability : null;
+  const testedAt = availability?.generatedAt
+    ? new Date(availability.generatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : '';
+
+  const lines = [
+    '🎛️ *BOT | MENU DE CONFIGURACAO*',
+    '',
+    'Responda apenas com o numero da secao:',
+    '1. 🤖 Inteligencia Artificial',
+    '2. 💬 Comportamento de respostas',
+    '3. 🖥️ Terminal Linux',
+    '4. 🖼️ Midia',
+    '5. 📡 Relay (mensagens privadas)',
+    '6. 🔇 Modo silencioso',
+    '7. 🧾 Auditoria e rollback',
+    '8. 📊 Status geral da configuracao',
+    '9. 🔐 Permissoes e multi-grupo',
+    '10. 🗺️ Mapa de recursos do projeto',
+    '',
+    'Como abrir de novo:',
+    '- configurar bot menu <numero>',
+    '- bot configuracao <numero>',
+    '- configurar bot menu status',
+    '',
+    'Status rapido:',
+    `- 🤖 Provedor IA: ${current.aiProvider || 'codex'}`,
+    `- 🤝 Modelo Copilot: ${current.copilotModel || '(vazio)'}`,
+    `- 🧠 Modelo Codex: ${current.codexModel || '(vazio)'}`,
+    `- @️⃣ Mencao obrigatoria: ${toOnOff(current.requireMention)}`,
+    `- 🖥️ Terminal Linux: ${toOnOff(current.enableTerminalExec)}`,
+    `- 🖼️ Ingestao de midia: ${toOnOff(current.mediaIngestEnabled)}`,
+    `- 🔇 Modo silencioso: ${toOnOff(current.silentMode)}`
+  ];
+
+  if (testedAt) {
+    lines.push(`- 🧪 Modelos testados em: ${testedAt}`);
+  } else {
+    lines.push('- 🧪 Disponibilidade de modelos: use "configurar bot: testar modelos"');
+  }
+
+  lines.push(
+    '',
+    `🌐 Painel web interativo: ${menuUrl}`,
+    'Atalhos: mostrar configuracao bot | listar modelos do bot | ajuda configuracao bot',
+    '💡 Depois de abrir uma secao, voce pode continuar respondendo so com o numero.'
+  );
+  return lines.join('\n');
+}
+
+function buildBotConfigMenuSectionMessage(section, currentSettings = {}, options = {}) {
+  const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
+  const menuUrl = options.menuUrl || buildLocalPanelUrl('/bot-config-menu.html');
+  const terminalCommands = Array.isArray(current.terminalAllowlist) ? current.terminalAllowlist.length : 0;
+  const mediaMimes = Array.isArray(current.mediaAllowedMimePrefixes) ? current.mediaAllowedMimePrefixes.join(', ') : '';
+
+  if (section === 'ia') {
+    return [
+      '🤖 *Inteligencia Artificial*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. 🔁 Como trocar o provedor',
+      '3. 🤝 Modelos do Copilot',
+      '4. 🧠 Modelos do Codex',
+      '5. @️⃣ Como exigir mencao ao bot',
+      '6. 🧪 Testar disponibilidade dos modelos',
+      '7. 📊 Ver status completo da configuracao',
+      '8. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Provedor ativo: ${current.aiProvider || 'codex'}`,
+      `- Copilot principal: ${current.copilotModel || '(vazio)'}`,
+      `- Copilot FULL: ${current.copilotFullModel || current.copilotModel || '(vazio)'}`,
+      `- Copilot fallback: ${current.copilotFallbackModel || '(vazio)'}`,
+      `- Codex principal: ${current.codexModel || '(vazio)'}`,
+      `- Codex fallback: ${current.codexFallbackModel || '(vazio)'}`,
+      `- Timeout Codex: ${formatMsAsSeconds(current.codexTimeoutMs)}`,
+      `- Timeout Copilot: ${formatMsAsSeconds(current.copilotTimeoutMs)}`,
+      `- Timeout FULL Copilot: ${formatMsAsSeconds(current.copilotFullTimeoutMs)}`,
+      '',
+      '💡 Dica: as opcoes que alteram valores mostram o comando exato para voce copiar.',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'respostas') {
+    return [
+      '💬 *Comportamento de respostas*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. @️⃣ Como configurar mencao obrigatoria',
+      '3. 🔎 Mensagem "Pesquisando..."',
+      '4. 📏 Limites de entrada e resposta',
+      '5. 🛟 Mensagem de fallback',
+      '6. 🧠 Prompt do sistema',
+      '7. 📊 Ver status completo da configuracao',
+      '8. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Mencao obrigatoria: ${toOnOff(current.requireMention)}`,
+      `- Mostrar "Pesquisando...": ${toOnOff(current.showThinkingMessage)}`,
+      `- Texto "Pesquisando...": ${current.thinkingMessageText || '(vazio)'}`,
+      `- Limite de entrada: ${current.maxInputChars || 0} chars`,
+      `- Limite de resposta: ${current.maxOutputChars || 0} chars`,
+      `- Mensagem fallback: ${clampText(current.fallbackMessage || '(vazio)', 120)}`,
+      '',
+      '💡 Dica: esta secao organiza o jeito que o bot responde, sem alterar provedor/modelo.',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'terminal') {
+    return [
+      '🖥️ *Terminal Linux*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. 🔁 Como ativar ou desativar o terminal',
+      '3. 📋 Ver preview da allowlist',
+      '4. ✍️ Como editar a allowlist',
+      '5. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Execucao de terminal: ${toOnOff(current.enableTerminalExec)}`,
+      `- Quantidade de comandos permitidos: ${terminalCommands}`,
+      `- Allowlist atual (previa): ${clampText((current.terminalAllowlist || []).join(', ') || '(vazio)', 160)}`,
+      '',
+      'Obs: comandos perigosos continuam bloqueados pelo motor de seguranca.',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'midia') {
+    return [
+      '🖼️ *Midia*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. 🔁 Como ativar ou desativar a ingestao',
+      '3. 📦 Limite de tamanho e retencao',
+      '4. 🗂️ Pasta raiz e MIMEs permitidos',
+      '5. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Ingestao automatica: ${toOnOff(current.mediaIngestEnabled)}`,
+      `- Tamanho maximo: ${formatBytesAsMb(current.mediaMaxBytes)}`,
+      `- Retencao: ${current.mediaRetentionDays || 0} dia(s)`,
+      `- Pasta raiz: ${current.mediaRootDir || '(vazio)'}`,
+      `- MIMEs aceitos: ${mediaMimes || '(vazio)'}`,
+      '',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'relay') {
+    return [
+      '📡 *Relay (mensagens privadas)*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. 🏷️ Como definir o nome do remetente',
+      '3. 💬 Ver comandos de relay',
+      '4. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Nome atual do remetente: ${current.relaySenderName || '(vazio)'}`,
+      '',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'silencioso') {
+    return [
+      '🔇 *Modo silencioso*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Atualizar resumo desta secao',
+      '2. 🔁 Como ativar ou desativar o modo silencioso',
+      '3. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Status atual: ${toOnOff(current.silentMode)}`,
+      '',
+      'Obs: quando ativo, comandos locais continuam funcionando.',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'auditoria') {
+    return [
+      '🧾 *Auditoria e rollback*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📜 Listar auditoria recente',
+      '2. ↩️ Como fazer rollback por ID',
+      '3. 📊 Ver configuracao atual',
+      '4. ↩️ Voltar ao menu principal',
+      '',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'status') {
+    return [
+      '📊 *Status geral da configuracao*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 📌 Ver status completo agora',
+      '2. ↩️ Voltar ao menu principal',
+      '',
+      'Resumo rapido:',
+      `- Provedor IA: ${current.aiProvider || 'codex'}`,
+      `- Mencao obrigatoria: ${toOnOff(current.requireMention)}`,
+      `- Terminal Linux: ${toOnOff(current.enableTerminalExec)}`,
+      `- Ingestao de midia: ${toOnOff(current.mediaIngestEnabled)}`,
+      `- Modo silencioso: ${toOnOff(current.silentMode)}`,
+      '',
+      `🌐 Controle avancado do grupo principal: ${menuUrl}`
+    ].join('\n');
+  }
+
+  if (section === 'permissoes') {
+    return [
+      '🔐 *Permissoes e Multi-Grupo*',
+      '',
+      'Responda apenas com o numero da opcao:',
+      '1. 👥 ACL basica (autorizar e bloquear)',
+      '2. 🛡️ Admins do bot',
+      '3. 🚀 Usuarios FULL',
+      '4. 💌 Privado liberado',
+      '5. 🌐 Grupos de resposta',
+      '6. ↩️ Voltar ao menu principal',
+      '',
+      `🌐 Painel interativo: ${menuUrl}`
+    ].join('\n');
+  }
+
+  const mapStats = getBackendFeatureMapStats();
+  return [
+    '🗺️ *Mapa de recursos do projeto*',
+    '',
+    'Responda apenas com o numero da opcao:',
+    '1. 📌 Ver resumo do mapeamento interno',
+    '2. ↩️ Voltar ao menu principal',
+    '',
+    `Status do mapeamento interno: versao ${mapStats.version} | categorias ${mapStats.categories} | entradas ${mapStats.entries}`,
+    'Regra obrigatoria: sempre que criar nova funcao/comando/endpoint, atualizar src/backendFeatureMap.js.',
+    '',
+    'Referencias:',
+    '- src/backendFeatureMap.js',
+    '- COMANDOS.md',
+    '- README.md',
+    '',
+    `🌐 Painel interativo: ${menuUrl}`
+  ].join('\n');
+}
+
+function buildBotConfigMenuInvalidOptionMessage(scope, optionNumber, currentSettings = {}, options = {}) {
+  const safeOption = Number.isFinite(Number(optionNumber)) ? Number(optionNumber) : optionNumber;
+  const fallback = String(safeOption || '').trim() || '?';
+
+  if (scope === 'overview') {
+    return `Opcao ${fallback} nao existe no menu principal.\n\n${buildBotConfigMenuOverview(currentSettings, options)}`;
+  }
+
+  return `Opcao ${fallback} nao existe nesta secao.\n\n${buildBotConfigMenuSectionMessage(scope, currentSettings, options)}`;
+}
+
+function resolveBotConfigMenuNumericSelection(text, context = {}) {
+  const match = compactSpaces(text).match(/^(?:@\s*)?(\d{1,2})\s*[.!?]*$/);
+  if (!match) return null;
+
+  const optionNumber = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(optionNumber) || optionNumber <= 0) return null;
+
+  const currentState = getBotConfigMenuState(context);
+  if (currentState?.view === 'section' && currentState.section) {
+    return {
+      action: 'menu_section_option',
+      section: currentState.section,
+      optionNumber
+    };
+  }
+
+  const directSection = normalizeBotConfigMenuSectionToken(match[1]);
+  if (currentState?.view === 'overview') {
+    if (directSection) {
+      return { action: 'menu_section', section: directSection };
+    }
+
+    return {
+      action: 'menu_invalid_option',
+      scope: 'overview',
+      optionNumber
+    };
+  }
+
+  if (directSection) {
+    return { action: 'menu_section', section: directSection };
+  }
+
+  return null;
+}
+
+async function executeBotConfigMenuSectionOption(section, optionNumber, currentSettings = {}, options = {}) {
+  const current = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
+  const baseOptions = {
+    menuUrl: options.menuUrl || buildLocalPanelUrl('/bot-config-menu.html'),
+    modelAvailability: options.modelAvailability || null
+  };
+
+  if (section === 'ia') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🔁 *Trocar provedor de IA*',
+          `Atual: ${current.aiProvider || 'codex'}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: provedor ia=codex',
+          '- configurar bot: provedor ia=copilot'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '🤝 *Modelos do Copilot*',
+          `Atual principal: ${current.copilotModel || '(vazio)'}`,
+          `Atual FULL: ${current.copilotFullModel || current.copilotModel || '(vazio)'}`,
+          `Atual fallback: ${current.copilotFallbackModel || '(vazio)'}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: modelo copilot=gpt-5-mini',
+          '- configurar bot: modelo full copilot=gpt-5-mini',
+          '- configurar bot: modelo fallback copilot=gpt-4.1'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: [
+          '🧠 *Modelos do Codex*',
+          `Atual principal: ${current.codexModel || '(vazio)'}`,
+          `Atual fallback: ${current.codexFallbackModel || '(vazio)'}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: modelo codex=gpt-5.4-mini',
+          '- configurar bot: modelo fallback=gpt-5.4'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 5) {
+      return {
+        response: [
+          '@️⃣ *Mencao obrigatoria ao bot*',
+          `Status atual: ${toOnOff(current.requireMention)}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: mencao obrigatoria=true',
+          '- configurar bot: mencao obrigatoria=false'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 6) {
+      const availability = await getBotConfigModelAvailability({
+        forceRefresh: true,
+        refreshWhenStale: true
+      });
+      return {
+        response: buildRuntimeSettingsSummary(current, { modelAvailability: availability }),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 7) {
+      return {
+        response: buildRuntimeSettingsSummary(current, { modelAvailability: baseOptions.modelAvailability }),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 8) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'respostas') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '@️⃣ *Mencao obrigatoria*',
+          `Status atual: ${toOnOff(current.requireMention)}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: mencao obrigatoria=true',
+          '- configurar bot: mencao obrigatoria=false'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '🔎 *Mensagem "Pesquisando..."*',
+          `Visibilidade atual: ${toOnOff(current.showThinkingMessage)}`,
+          `Texto atual: ${current.thinkingMessageText || '(vazio)'}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: mostrar pesquisando=true',
+          '- configurar bot: mostrar pesquisando=false',
+          '- configurar bot: thinkingMessageText=Pesquisando...'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: [
+          '📏 *Limites de entrada e resposta*',
+          `Entrada atual: ${current.maxInputChars || 0} chars`,
+          `Resposta atual: ${current.maxOutputChars || 0} chars`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: limite entrada=4000',
+          '- configurar bot: limite resposta=2200'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 5) {
+      return {
+        response: [
+          '🛟 *Mensagem de fallback*',
+          `Atual: ${clampText(current.fallbackMessage || '(vazio)', 220)}`,
+          '',
+          'Use este comando:',
+          '- configurar bot: mensagem fallback=Estou com lentidao...'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 6) {
+      return {
+        response: [
+          '🧠 *Prompt do sistema*',
+          'Use este comando para alterar:',
+          '- configurar bot: prompt do sistema=Voce e um assistente objetivo...'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 7) {
+      return {
+        response: buildRuntimeSettingsSummary(current, { modelAvailability: baseOptions.modelAvailability }),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 8) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'terminal') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🔁 *Ativar ou desativar o terminal*',
+          `Status atual: ${toOnOff(current.enableTerminalExec)}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: permitir comandos linux=true',
+          '- configurar bot: permitir comandos linux=false'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '📋 *Preview da allowlist atual*',
+          clampText((current.terminalAllowlist || []).join(', ') || '(vazio)', 900)
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: [
+          '✍️ *Editar a allowlist do terminal*',
+          'Use este comando:',
+          '- configurar bot: terminalAllowlist=ps,df,free,uptime'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 5) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'midia') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🔁 *Ativar ou desativar ingestao de midia*',
+          `Status atual: ${toOnOff(current.mediaIngestEnabled)}`,
+          '',
+          'Use um destes comandos:',
+          '- configurar bot: salvar midia automatica=true',
+          '- configurar bot: salvar midia automatica=false'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '📦 *Limite de tamanho e retencao*',
+          `Tamanho atual: ${formatBytesAsMb(current.mediaMaxBytes)}`,
+          `Retencao atual: ${current.mediaRetentionDays || 0} dia(s)`,
+          '',
+          'Use estes comandos:',
+          '- configurar bot: limite tamanho midia=20971520',
+          '- configurar bot: retencao de midia=30'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: [
+          '🗂️ *Pasta raiz e MIMEs permitidos*',
+          `Pasta atual: ${current.mediaRootDir || '(vazio)'}`,
+          `MIMEs atuais: ${Array.isArray(current.mediaAllowedMimePrefixes) && current.mediaAllowedMimePrefixes.length ? current.mediaAllowedMimePrefixes.join(', ') : '(vazio)'}`,
+          '',
+          'Use estes comandos:',
+          '- configurar bot: pasta de midia=data/midias',
+          '- configurar bot: mimes permitidos de midia=image/,video/,audio/,application/pdf'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 5) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'relay') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🏷️ *Nome do remetente do relay*',
+          `Atual: ${current.relaySenderName || '(vazio)'}`,
+          '',
+          'Use este comando:',
+          '- configurar bot: relaySenderName=Italo Teixeira'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '💬 *Comandos de relay*',
+          '- @ enviar mensagem',
+          '- !relay <numero> <mensagem>',
+          '- !resp <numero> <mensagem>',
+          '- !relays',
+          '- !relay-stop <numero>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'silencioso') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🔁 *Modo silencioso*',
+          `Status atual: ${toOnOff(current.silentMode)}`,
+          '',
+          'Use um destes comandos:',
+          '- modo silencioso',
+          '- modo normal',
+          '- status modo silencioso'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'auditoria') {
+    if (optionNumber === 1) {
+      const entries = await settingsStore.listAudit(10);
+      if (!entries.length) {
+        return {
+          response: 'Sem auditoria de configuracao registrada ainda.',
+          nextState: { view: 'section', section }
+        };
+      }
+
+      const lines = entries.map((item, index) => {
+        const keys = Array.isArray(item.changedKeys) ? item.changedKeys.join(', ') : '';
+        return `${index + 1}. ${item.id} | ${item.ts} | ${item.actor || 'desconhecido'} | ${keys || 'sem chaves'}`;
+      });
+      return {
+        response: `Auditoria de configuracao (ultimos ${entries.length}):\n${lines.join('\n')}`,
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '↩️ *Rollback por ID*',
+          'Use este comando com o ID da auditoria:',
+          '- rollback configuracao <audit-id>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: buildRuntimeSettingsSummary(current, { modelAvailability: baseOptions.modelAvailability }),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'status') {
+    if (optionNumber === 1) {
+      return {
+        response: buildRuntimeSettingsSummary(current, { modelAvailability: baseOptions.modelAvailability }),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'permissoes') {
+    if (optionNumber === 1) {
+      return {
+        response: [
+          '👥 *ACL basica*',
+          '- listar autorizados',
+          '- autoriza <numero>',
+          '- bloquear <numero>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: [
+          '🛡️ *Admins do bot*',
+          '- listar admins do bot',
+          '- adicionar admin do bot <numero>',
+          '- remover admin do bot <numero>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 3) {
+      return {
+        response: [
+          '🚀 *Usuarios FULL*',
+          '- listar full',
+          '- adicionar full <numero>',
+          '- remover full <numero>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 4) {
+      return {
+        response: [
+          '💌 *Privado liberado*',
+          '- listar privado',
+          '- autorizar privado <numero>',
+          '- remover privado <numero>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 5) {
+      return {
+        response: [
+          '🌐 *Grupos de resposta*',
+          '- listar grupos de resposta',
+          '- adicionar grupo de resposta <groupId>',
+          '- remover grupo de resposta <groupId>'
+        ].join('\n'),
+        nextState: { view: 'section', section }
+      };
+    }
+    if (optionNumber === 6) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  if (section === 'recursos') {
+    if (optionNumber === 1) {
+      return { response: buildBotConfigMenuSectionMessage(section, current, baseOptions), nextState: { view: 'section', section } };
+    }
+    if (optionNumber === 2) {
+      return {
+        response: buildBotConfigMenuOverview(current, baseOptions),
+        nextState: { view: 'overview' }
+      };
+    }
+  }
+
+  return {
+    response: buildBotConfigMenuInvalidOptionMessage(section, optionNumber, current, baseOptions),
+    nextState: { view: 'section', section }
+  };
+}
+
+function parseBotSettingsCommand(text, context = {}) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+
+  if (
+    /^(?:@\s*)?(configura|configurar|definir|setar|seta|ajustar|ajusta)\s+bot[.!?]*$/.test(folded) ||
+    /^(?:@\s*)?(bot\s+configuracao|bot\s+configuração|configuracao\s+bot|configuração\s+bot)[.!?]*$/.test(folded)
+  ) {
+    return { action: 'menu' };
+  }
+
+  const menuSectionMatch = normalized.match(
+    /^(?:@\s*)?(?:configura(?:r)?\s+bot|bot\s+configuracao|bot\s+configuração|configuracao\s+bot|configuração\s+bot)\s*(?:menu|opcao|opção|item|secao|seção)?\s*([a-z0-9çãáàâéêíóôõúü-]+)\s*[.!?]*$/i
+  );
+  if (menuSectionMatch) {
+    const section = normalizeBotConfigMenuSectionToken(menuSectionMatch[1]);
+    if (section) {
+      return { action: 'menu_section', section };
+    }
+  }
+
+  if (getBotConfigMenuState(context) && /^(?:@\s*)?(voltar|menu principal|menu inicial|inicio|início)[.!?]*$/.test(folded)) {
+    return { action: 'menu' };
+  }
+
+  const numericSelection = resolveBotConfigMenuNumericSelection(normalized, context);
+  if (numericSelection) {
+    return numericSelection;
+  }
+
+  if (/(ajuda|comandos|manual).*(configuracao|configuração).*(bot)/.test(folded)) {
+    return { action: 'help' };
+  }
+
+  if (/(listar|ver|mostrar).*(auditoria|historico).*(configuracao|configuracao).*(bot)/.test(folded)) {
+    return { action: 'audit' };
+  }
+
+  if (/(status|resumo).*(configuracao|configuração).*(bot)/.test(folded)) {
+    return { action: 'show' };
+  }
+
+  if (/(mostrar|listar|ver).*(configuracao|configuracao).*(bot)/.test(folded)) {
+    return { action: 'show' };
+  }
+
+  if (
+    /(testar|teste|validar|valida|verificar|verifica|checar|checa).*(modelo|modelos).*(bot|ia|copilot|codex)/.test(
+      folded
+    ) ||
+    /(modelo|modelos).*(disponibilidade|disponivel|disponíveis|status).*(bot|ia)/.test(folded)
+  ) {
+    return { action: 'models_test' };
+  }
+
+  if (/(listar|mostrar|ver|quais).*(modelo|modelos).*(bot|ia|copilot|codex)/.test(folded)) {
+    return { action: 'models' };
+  }
+
+  const rollback = normalized.match(/(?:rollback|desfazer)\s+(?:configuracao|configuração)?\s*([a-f0-9-]{16,})/i);
+  if (rollback) {
+    return {
+      action: 'rollback',
+      auditId: String(rollback[1] || '').trim()
+    };
+  }
+
+  if (
+    /(definir|configurar|configura|setar|seta|ajustar|ajusta).*(configuracao|configuração).*(bot)/.test(folded) ||
+    /^(definir|configurar|configura|setar|seta|ajustar|ajusta)\s+bot\b/.test(folded)
+  ) {
+    const byColon = normalized.includes(':') ? normalized.split(':').slice(1).join(':').trim() : '';
+    const byKeyword = normalized.replace(/.*((configuracao|configuração)\s+bot|bot)/i, '').trim();
+    const payload = byColon || byKeyword;
+    if (!payload) return { action: 'set_missing' };
+
+    const sepIndex = payload.includes('=') ? payload.indexOf('=') : payload.indexOf(':');
+    if (sepIndex <= 0) return { action: 'set_invalid' };
+
+    const key = compactSpaces(payload.slice(0, sepIndex));
+    const valueRaw = compactSpaces(payload.slice(sepIndex + 1));
+    if (!key || !valueRaw) return { action: 'set_invalid' };
+
+    return {
+      action: 'set',
+      key,
+      value: parseRuntimeSettingValue(valueRaw)
+    };
+  }
+
+  return null;
+}
+
+function parseServerOpsCommand(text) {
+  const folded = foldText(text);
+  const tokens = folded.split(/\s+/).filter(Boolean);
+  const tokenCount = tokens.length;
+
+  if (/(lista|listar|mostra|mostrar|exibe|exibir).*(processos|processo|servicos|serviços)/.test(folded)) {
+    return { action: 'process_list' };
+  }
+
+  if (/\bip\s+p[uú]blico\b|\bp[uú]blico\s+ip\b|\bexternal\s+ip\b|\bip\s+externo\b|\bmeu\s+ip\b|\bip\s+do\s+servidor\b/.test(folded)) {
+    return { action: 'public_ip' };
+  }
+
+  if (/(reinicia|reiniciar|restart|reboot).*(bot|processo|npm|servico)|\breinicia\b/.test(folded)) {
+    return { action: 'restart' };
+  }
+
+  if (/(npm start|inicia o bot|iniciar bot|subir bot|sobe o npm|iniciar servico)/.test(folded)) {
+    return { action: 'start_hint' };
+  }
+
+  const hasStatusVerb = /\b(status|localiza|localizar|mostrar|mostra|ver|verifica|verificar|qual|como|onde)\b/.test(
+    folded
+  );
+  const hasStatusTarget = /\b(pid|processo|bot|servico|servidor|linux)\b/.test(folded);
+  const hasDirectStatusPhrase =
+    /\b(esta|ta)\s+(rodando|ativo)\b/.test(folded) ||
+    /\bservico no servidor\b/.test(folded) ||
+    /\bvalida (o )?servidor\b/.test(folded) ||
+    /\bvalida ele\b/.test(folded);
+  const hasShortDirectStatus =
+    tokenCount > 0 && tokenCount <= 4 && /\b(pid|processo|servidor|linux|status)\b/.test(folded);
+
+  if ((hasStatusVerb && hasStatusTarget) || hasDirectStatusPhrase || hasShortDirectStatus) {
+    return { action: 'status' };
+  }
+
+  return null;
+}
+
+function parsePingCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  if (!/\bping\b/.test(folded)) return null;
+
+  const ipMatch = normalized.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+  if (ipMatch) {
+    return { action: 'ping', target: ipMatch[1] };
+  }
+
+  const hostMatch = normalized.match(/\b(?:ping(?:ar)?\s+)?(?:no servidor\s+)?(?:para\s+)?(?:o\s+)?(?:ip\s+)?([a-z0-9.-]+\.[a-z]{2,})\b/i);
+  if (hostMatch) {
+    return { action: 'ping', target: String(hostMatch[1] || '').trim() };
+  }
+
+  return { action: 'ping_missing_target' };
+}
+
+function extractSerializedWid(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if (typeof value._serialized === 'string') return value._serialized;
+    if (typeof value.user === 'string' && typeof value.server === 'string') return `${value.user}@${value.server}`;
+    if (value.id) return extractSerializedWid(value.id);
+  }
+  return '';
+}
+
+function normalizeDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function normalizePhoneForWhatsapp(value) {
+  let digits = normalizeDigits(value);
+  if (!digits) return '';
+
+  if (digits.startsWith('00') && digits.length > 2) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    return digits;
+  }
+
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+
+  return digits;
+}
+
+function extractPhoneCandidate(text) {
+  const matches = String(text || '').match(/\+?\d[\d\s().-]{7,}\d/g) || [];
+  for (const candidate of matches) {
+    const normalized = normalizePhoneForWhatsapp(candidate);
+    if (normalized.length >= 12 && normalized.length <= 15) {
+      return normalized;
+    }
+  }
+  return '';
+}
+
+function extractPhoneCandidates(text) {
+  const byPattern = (String(text || '').match(/\+?\d[\d\s().-]{7,}\d/g) || [])
+    .map((candidate) => normalizePhoneForWhatsapp(candidate))
+    .filter((candidate) => candidate.length >= 12 && candidate.length <= 15);
+  const byMention = extractAtNumberCandidates(text);
+  return Array.from(new Set([...byPattern, ...byMention]));
+}
+
+function extractAtNumberCandidates(text) {
+  const matches = Array.from(String(text || '').matchAll(/@(\d{6,20})/g));
+  const normalized = matches
+    .map((match) => normalizePhoneForWhatsapp(match[1] || ''))
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+function numbersAreEquivalent(a, b) {
+  const left = normalizeDigits(a);
+  const right = normalizeDigits(b);
+  if (!left || !right) return false;
+  return left === right || left.endsWith(right) || right.endsWith(left);
+}
+
+function pickMentionNumberFromRawText(rawText, context = {}) {
+  const normalized = compactSpaces(String(rawText || ''));
+  const commandSectionMatch = normalized.match(
+    /(?:remove|remover|tirar|expulsa|expulsar|coloca|torna|deixa|promove|promover)\b([\s\S]*)/i
+  );
+  const commandSection = commandSectionMatch ? commandSectionMatch[1] : normalized;
+
+  const candidates = extractAtNumberCandidates(commandSection);
+  if (!candidates.length) return '';
+
+  const botWid = extractSerializedWid(context.client?.info?.wid);
+  const botDigits = normalizeDigits(String(botWid || '').split('@')[0]);
+  const senderDigits = normalizeDigits(
+    String(context.senderJid || context.senderNumber || '')
+      .split('@')[0]
+      .trim()
+  );
+
+  for (const candidate of candidates) {
+    if (botDigits && numbersAreEquivalent(candidate, botDigits)) continue;
+    if (senderDigits && numbersAreEquivalent(candidate, senderDigits)) continue;
+    return candidate;
+  }
+
+  return '';
+}
+
+function normalizeAliasValue(value) {
+  const folded = foldText(String(value || '').replace(/^@+/, ' '));
+  return folded.replace(/[^a-z0-9\s_-]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function identityFilePath() {
+  return config.identitiesFile || 'data/identities.json';
+}
+
+function defaultIdentityState() {
+  return {
+    updatedAt: new Date().toISOString(),
+    groups: {}
+  };
+}
+
+async function loadIdentityState(filePath = identityFilePath()) {
+  try {
+    const content = await readFile(filePath, 'utf8');
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object') return defaultIdentityState();
+    const groups = parsed.groups && typeof parsed.groups === 'object' ? parsed.groups : {};
+    return {
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+      groups
+    };
+  } catch {
+    return defaultIdentityState();
+  }
+}
+
+async function saveIdentityState(state, filePath = identityFilePath()) {
+  await ensureParentDir(filePath);
+  const payload = {
+    ...defaultIdentityState(),
+    ...state,
+    updatedAt: new Date().toISOString()
+  };
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function getIdentityGroupBucket(state, groupId) {
+  const key = String(groupId || '').trim();
+  if (!key) return null;
+  if (!state.groups[key] || typeof state.groups[key] !== 'object') {
+    state.groups[key] = {
+      aliases: {}
+    };
+  }
+  if (!state.groups[key].aliases || typeof state.groups[key].aliases !== 'object') {
+    state.groups[key].aliases = {};
+  }
+  return state.groups[key];
+}
+
+async function rememberAliasForNumber({ groupId, phoneDigits, aliasRaw }) {
+  const alias = normalizeAliasValue(aliasRaw);
+  const phone = normalizePhoneForWhatsapp(phoneDigits);
+  if (!alias || !phone) {
+    return { saved: false, alias, phone };
+  }
+
+  const state = await loadIdentityState();
+  const bucket = getIdentityGroupBucket(state, groupId);
+  if (!bucket) {
+    return { saved: false, alias, phone };
+  }
+
+  const previous = bucket.aliases[alias] || '';
+  bucket.aliases[alias] = phone;
+  await saveIdentityState(state);
+
+  return {
+    saved: true,
+    alias,
+    phone,
+    previous
+  };
+}
+
+function bestAliasMatch(entries, query) {
+  let best = null;
+  for (const [alias, phone] of entries) {
+    if (!alias || !phone) continue;
+    let score = 0;
+
+    if (alias === query) {
+      score = 1000 + alias.length;
+    } else if (query.startsWith(alias) || alias.startsWith(query)) {
+      score = 700 + Math.min(alias.length, query.length);
+    } else if (query.includes(alias) || alias.includes(query)) {
+      score = 500 + Math.min(alias.length, query.length);
+    } else {
+      const queryToken = query.split(' ')[0] || '';
+      const aliasToken = alias.split(' ')[0] || '';
+      if (queryToken && aliasToken && queryToken === aliasToken) {
+        score = 300 + queryToken.length;
+      }
+    }
+
+    if (!score) continue;
+    if (!best || score > best.score) {
+      best = { alias, phone, score };
+    }
+  }
+  return best;
+}
+
+async function resolvePhoneByAlias({ groupId, aliasRaw }) {
+  const query = normalizeAliasValue(aliasRaw);
+  if (!query) return '';
+
+  const state = await loadIdentityState();
+  const bucket = getIdentityGroupBucket(state, groupId);
+  if (!bucket) return '';
+
+  if (bucket.aliases[query]) {
+    return normalizePhoneForWhatsapp(bucket.aliases[query]);
+  }
+
+  const entries = Object.entries(bucket.aliases || {});
+  const match = bestAliasMatch(entries, query);
+  return match ? normalizePhoneForWhatsapp(match.phone) : '';
+}
+
+async function listAliasNumbersForPhone({ groupId, phoneDigits }) {
+  const phone = normalizePhoneForWhatsapp(phoneDigits);
+  if (!phone) return [];
+
+  const state = await loadIdentityState();
+  const bucket = getIdentityGroupBucket(state, groupId);
+  if (!bucket) return [];
+
+  const result = [];
+  for (const [alias, mappedPhone] of Object.entries(bucket.aliases || {})) {
+    const aliasDigits = normalizeDigits(alias);
+    if (aliasDigits.length < 6) continue;
+    const normalizedMapped = normalizePhoneForWhatsapp(mappedPhone);
+    if (!normalizedMapped) continue;
+    if (numbersAreEquivalent(phone, normalizedMapped)) {
+      result.push(aliasDigits);
+    }
+  }
+
+  return Array.from(new Set(result));
+}
+
+function extractAliasAfterAt(rawText) {
+  const normalized = compactSpaces(String(rawText || ''));
+  const commandMatch = normalized.match(
+    /(?:remove|remover|tirar|expulsa|expulsar|coloca|torna|deixa|promove|promover)[^@]*@([^\n\r]+)/i
+  );
+  if (!commandMatch) return '';
+  const candidate = String(commandMatch[1] || '').trim();
+  if (!candidate) return '';
+
+  const digits = normalizeDigits(candidate);
+  if (digits.length >= 6) return '';
+
+  return normalizeAliasValue(candidate);
+}
+
+function extractLeadingMentionNumber(rawText) {
+  const normalized = compactSpaces(String(rawText || ''));
+  const match = normalized.match(/^@(\d{6,20})\b/);
+  if (!match) return '';
+  return normalizeDigits(match[1] || '');
+}
+
+function isBotLikeTarget(context = {}, candidateWid = '', rawText = '') {
+  const candidateDigits = normalizeDigits(String(candidateWid || '').split('@')[0]);
+  if (!candidateDigits) return false;
+
+  const botWid = extractSerializedWid(context.client?.info?.wid);
+  const botDigits = normalizeDigits(String(botWid || '').split('@')[0]);
+  if (botDigits && numbersAreEquivalent(candidateDigits, botDigits)) {
+    return true;
+  }
+
+  // Fallback: no grupo, o comando costuma vir como "@<bot> remover ...".
+  const leadingDigits = extractLeadingMentionNumber(rawText);
+  if (leadingDigits && numbersAreEquivalent(candidateDigits, leadingDigits)) {
+    return true;
+  }
+
+  return false;
+}
+
+function parseAliasLearningCommand(rawText) {
+  const normalized = compactSpaces(rawText);
+  const folded = foldText(normalized);
+
+  if (!/(numero|n[uú]mero)/.test(folded)) return null;
+  if (!/(^|[^a-z0-9])(e|eh)([^a-z0-9]|$)/.test(folded)) return null;
+  const hasPhoneHint = Boolean(extractPhoneCandidate(normalized)) || extractAtNumberCandidates(normalized).length > 0;
+  if (!hasPhoneHint) return null;
+
+  const parts = normalized.split(/\s+(?:é|eh|e)\s+/i);
+  if (parts.length < 2) return null;
+
+  const alias = normalizeAliasValue(parts.slice(1).join(' '));
+  if (!alias) {
+    return { action: 'learn_alias_missing' };
+  }
+
+  return {
+    action: 'learn_alias',
+    alias
+  };
+}
+
+function parseGroupParticipantCommand(text) {
+  const folded = foldText(text);
+  const directPhone = extractPhoneCandidate(text);
+  const looksLikeAuthorizationIntent =
+    /(permiss|autoriz|acesso|interagir|falar com o bot|admin do bot|full)/.test(folded) ||
+    (/\badmin\b/.test(folded) && !/\bgrupo\b/.test(folded));
+  const shortcutVerb = folded.match(
+    /\b(remove|remover|tirar|expulsa|expulsar|coloca|torna|deixa|promove|promover|adiciona|adicionar|inclui|incluir|bota)\b/
+  );
+  const shortcutBase =
+    shortcutVerb && Number.isInteger(shortcutVerb.index) && shortcutVerb.index <= 40
+      ? folded.slice(shortcutVerb.index)
+      : folded;
+
+  // Atalho: "remover 21 9...." sem precisar escrever "do grupo".
+  if (/^(remove|remover|tirar|expulsa|expulsar)\b/.test(shortcutBase) && directPhone && !looksLikeAuthorizationIntent) {
+    return { action: 'remove', phone: directPhone };
+  }
+
+  // Atalho: "promover 21... admin" sem precisar escrever "do grupo".
+  if (/^(coloca|torna|deixa|promove|promover)\b/.test(shortcutBase) && /admin/.test(folded) && directPhone) {
+    return { action: 'promote', phone: directPhone };
+  }
+
+  // Atalho: "adicionar 21..." sem precisar escrever "no grupo".
+  if (/^(adiciona|adicionar|inclui|incluir|coloca|bota)\b/.test(shortcutBase) && directPhone && !looksLikeAuthorizationIntent) {
+    return { action: 'add', phone: directPhone };
+  }
+
+  if (/(coloca|torna|deixa|promove|promover).*(como)?\s*admin.*(grupo)/.test(folded)) {
+    const phone = extractPhoneCandidate(text);
+    if (!phone) return { action: 'promote_missing_target' };
+    return { action: 'promote', phone };
+  }
+
+  if (
+    /(adiciona|adicionar|inclui|incluir|coloca|bota).*(numero|n[uú]mero|contato)?.*(grupo)/.test(folded) &&
+    !looksLikeAuthorizationIntent
+  ) {
+    const phone = extractPhoneCandidate(text);
+    if (!phone) return { action: 'add_missing_number' };
+    return { action: 'add', phone };
+  }
+
+  if (/(remove|remover|tirar|expulsa|expulsar).*(numero|n[uú]mero|contato|pessoa|mencao|men[cç][aã]o)?.*(grupo)/.test(folded)) {
+    const phone = extractPhoneCandidate(text);
+    if (!phone) return { action: 'remove_missing_number' };
+    return { action: 'remove', phone };
+  }
+
+  return null;
+}
+
+function parseGroupControlCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  if (!folded) return null;
+
+  const phones = extractPhoneCandidates(normalized);
+  const firstPhone = phones[0] || '';
+
+  const extractPayloadAfter = (...patterns) => {
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (!match) continue;
+      const payload = compactSpaces(match[1] || '');
+      if (payload) return payload;
+    }
+    return '';
+  };
+
+  const mentionsTemporaryMessages =
+    /(mensagen(?:s)?\s+temporar|temporari|desaparec|autoapaga|autodestr)/.test(folded);
+  if (mentionsTemporaryMessages) {
+    const durationSeconds = parseGroupEphemeralDurationSeconds(normalized);
+
+    if (/(status|mostrar|mostra|ver|listar|lista|como\s+esta|como\s+estao|como\s+t[aá])/.test(folded)) {
+      return { action: 'ephemeral_status' };
+    }
+
+    if (/(desativar|desativa|desligar|desliga|remover|remove|cancelar|cancela|parar|para|desabilitar|desabilita)/.test(folded)) {
+      return { action: 'ephemeral_off' };
+    }
+
+    if (
+      /(ativar|ativa|ligar|liga|habilitar|habilita|definir|define|setar|seta|colocar|coloca)/.test(folded) ||
+      durationSeconds !== null
+    ) {
+      if (durationSeconds === null) {
+        return { action: 'ephemeral_on_missing' };
+      }
+      return { action: 'ephemeral_on', durationSeconds };
+    }
+  }
+
+  if (
+    /^(status do grupo|status grupo|resumo do grupo|info do grupo|informacoes do grupo|informações do grupo)[.!?]*$/.test(
+      folded
+    ) ||
+    /(mostrar|mostra|ver|listar|lista).*(status|resumo|info|informac).*(grupo)/.test(folded)
+  ) {
+    return { action: 'status' };
+  }
+
+  if (/(quem|listar|lista|mostrar|mostra|ver).*(admins?|administradores).*(grupo)/.test(folded)) {
+    return { action: 'list_admins' };
+  }
+
+  if (/(fechar|fecha|travar|trava|bloquear|bloqueia).*(grupo).*(mensagen|falar|conversa)/.test(folded)) {
+    return { action: 'messages_admins_only_on' };
+  }
+
+  if (/(abrir|abre|liberar|libera).*(grupo).*(mensagen|falar|conversa)/.test(folded)) {
+    return { action: 'messages_admins_only_off' };
+  }
+
+  if (
+    /(bloquear|bloqueia|travar|trava|restringir|restringe).*(edicao|edição|info|informac|descricao|descrição|nome).*(grupo)/.test(
+      folded
+    ) ||
+    /(somente|apenas).*(admin).*(editar|altera).*(info|informac|descricao|descrição|nome).*(grupo)/.test(folded)
+  ) {
+    return { action: 'info_admins_only_on' };
+  }
+
+  if (
+    /(liberar|libera|permitir|permite).*(edicao|edição|info|informac|descricao|descrição|nome).*(grupo)/.test(folded)
+  ) {
+    return { action: 'info_admins_only_off' };
+  }
+
+  if (
+    /(somente|apenas).*(admin).*(adiciona|adicionar).*(membro|participante|pessoa).*(grupo)/.test(folded) ||
+    /(bloquear|bloqueia).*(adicao|adição|adicionar).*(membro|participante).*(grupo)/.test(folded)
+  ) {
+    return { action: 'add_members_admins_only_on' };
+  }
+
+  if (
+    /(liberar|libera|permitir|permite).*(adicao|adição|adicionar).*(membro|participante).*(grupo)/.test(folded)
+  ) {
+    return { action: 'add_members_admins_only_off' };
+  }
+
+  const subjectPayload = extractPayloadAfter(
+    /(?:mudar|alterar|trocar|renomear|definir|setar)\s+(?:o\s+)?(?:nome|titulo|título)\s+do\s+grupo\s*(?:para|:)\s*(.+)$/i,
+    /^nome\s+do\s+grupo\s*[:=-]\s*(.+)$/i,
+    /^renomear\s+(?:o\s+)?grupo\s*(?:para|:)?\s*["'`]?(.+?)["'`]?\s*$/i
+  );
+  if (subjectPayload) {
+    return { action: 'set_subject', subject: subjectPayload };
+  }
+
+  if (
+    (/(mudar|alterar|trocar|renomear|definir).*(nome|titulo|título).*(grupo)/.test(folded) ||
+      /^renomear\s+(o\s+)?grupo/.test(folded)) &&
+    !subjectPayload
+  ) {
+    return { action: 'set_subject_missing' };
+  }
+
+  const descriptionPayload = extractPayloadAfter(
+    /(?:mudar|alterar|trocar|definir|setar)\s+(?:a\s+)?(?:descricao|descrição)\s+do\s+grupo\s*(?:para|:)\s*(.+)$/i,
+    /^descricao\s+do\s+grupo\s*[:=-]\s*(.+)$/i,
+    /^descrição\s+do\s+grupo\s*[:=-]\s*(.+)$/i
+  );
+  if (descriptionPayload) {
+    return { action: 'set_description', description: descriptionPayload };
+  }
+
+  if (/(mudar|alterar|trocar|definir).*(descricao|descrição).*(grupo)/.test(folded) && !descriptionPayload) {
+    return { action: 'set_description_missing' };
+  }
+
+  if (/(renovar|renova|revogar|revoga|resetar|trocar).*(link|convite).*(grupo)/.test(folded)) {
+    return { action: 'refresh_invite_link' };
+  }
+
+  if (/(link|convite).*(grupo)/.test(folded) || /(mostrar|mostra|ver|listar|lista).*(link|convite).*(grupo|chat|whatsapp)/.test(folded)) {
+    return { action: 'get_invite_link' };
+  }
+
+  if (/(listar|lista|mostrar|mostra|ver).*(solicitac|pedido).*(entrada|pendente|grupo)/.test(folded)) {
+    return { action: 'membership_list' };
+  }
+
+  if (/(aprovar|aprova|aceitar|aceita).*(solicitac|pedido).*(entrada|grupo)/.test(folded)) {
+    return {
+      action: 'membership_approve',
+      requesterIds: phones.map((phone) => `${phone}@c.us`)
+    };
+  }
+
+  if (/(rejeitar|rejeita|recusar|recusa|negar|nega).*(solicitac|pedido).*(entrada|grupo)/.test(folded)) {
+    return {
+      action: 'membership_reject',
+      requesterIds: phones.map((phone) => `${phone}@c.us`)
+    };
+  }
+
+  if (
+    /(adiciona|adicionar|inclui|incluir|coloca|torna|promove|promover).*(admin).*(grupo)/.test(folded) &&
+    firstPhone
+  ) {
+    return { action: 'promote_admin', phone: firstPhone };
+  }
+
+  if (/(adiciona|adicionar|inclui|incluir|coloca|torna|promove|promover).*(admin).*(grupo)/.test(folded)) {
+    return { action: 'promote_admin_missing' };
+  }
+
+  if (
+    /(rebaixar|rebaixa|despromover|despromove|remover|remove|tirar|retirar).*(admin).*(grupo)/.test(folded) &&
+    firstPhone
+  ) {
+    return { action: 'demote_admin', phone: firstPhone };
+  }
+
+  if (/(rebaixar|rebaixa|despromover|despromove|remover|remove|tirar|retirar).*(admin).*(grupo)/.test(folded)) {
+    return { action: 'demote_admin_missing' };
+  }
+
+  return null;
+}
+
+function parseCallTestCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  if (!folded) return null;
+
+  const mentionsCall = /(ligac|chamada|call)/.test(folded);
+  const mentionsLink = /\blink\b/.test(folded);
+  const mentionsTest = /\bteste\b/.test(folded);
+  const mentionsBot = /\b(bot|voce)\b/.test(folded);
+  const mentionsCallType = /\b(video|voz|audio)\b/.test(folded);
+
+  if (!mentionsCall && !(mentionsLink && mentionsCallType)) {
+    return null;
+  }
+
+  const callType = /\bvideo\b/.test(folded) ? 'video' : 'voice';
+  const wantsCreate =
+    (
+      /(criar|cria|gerar|gera|mandar|manda|enviar|envia|fazer|faz|abrir|abre).*(link|ligac|chamada|call)/.test(
+        folded
+      ) ||
+      /(link).*(ligac|chamada|call)/.test(folded)
+    ) &&
+    (mentionsTest || mentionsLink || mentionsBot || mentionsCallType);
+
+  if (wantsCreate) {
+    return { action: 'create_link', callType };
+  }
+
+  const asksCapability =
+    mentionsCall &&
+    (
+      (mentionsTest && (mentionsBot || /(e possivel|eh possivel|da para|tem como|pode|consegue|realiza)/.test(folded))) ||
+      /(bot).*(ligac|chamada|call).*(teste)/.test(folded)
+    );
+
+  if (asksCapability) {
+    return { action: 'explain_capability' };
+  }
+
+  return null;
+}
+
+function buildCallTestCapabilityResponse() {
+  return (
+    'Hoje o bot nao inicia uma ligacao ativa sozinho pelo WhatsApp Web. ' +
+    'O suporte implementado e para gerar um link de ligacao de teste (voz ou video) e compartilhar no grupo. ' +
+    'Se quiser, peça: criar ligacao de teste ou criar ligacao de video de teste.'
+  );
+}
+
+function describeCallType(callType) {
+  return callType === 'video' ? 'video' : 'voz';
+}
+
+const GROUP_EPHEMERAL_DURATION_OPTIONS = Object.freeze([
+  {
+    seconds: 86400,
+    label: '24 horas',
+    patterns: [/\b24\s*(?:h|hs|hr|hrs|hora|horas)\b/, /\b1\s*d(?:ia)?\b/, /\bum\s+dia\b/, /\b86400\b/]
+  },
+  {
+    seconds: 604800,
+    label: '7 dias',
+    patterns: [/\b7\s*d(?:ias?)?\b/, /\b1\s*semana\b/, /\buma\s+semana\b/, /\b604800\b/]
+  },
+  {
+    seconds: 7776000,
+    label: '90 dias',
+    patterns: [/\b90\s*d(?:ias?)?\b/, /\b3\s*mes(?:es)?\b/, /\btres\s+mes(?:es)?\b/, /\b7776000\b/]
+  }
+]);
+
+function parseGroupEphemeralDurationSeconds(text) {
+  const folded = foldText(text);
+  if (!folded) return null;
+
+  for (const option of GROUP_EPHEMERAL_DURATION_OPTIONS) {
+    if (option.patterns.some((pattern) => pattern.test(folded))) {
+      return option.seconds;
+    }
+  }
+
+  return null;
+}
+
+function formatGroupEphemeralDuration(seconds) {
+  const numeric = Number.parseInt(String(seconds ?? ''), 10);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 'desativadas';
+
+  const known = GROUP_EPHEMERAL_DURATION_OPTIONS.find((option) => option.seconds === numeric);
+  if (known) return known.label;
+
+  if (numeric % 86400 === 0) {
+    const days = numeric / 86400;
+    return days === 1 ? '1 dia' : `${days} dias`;
+  }
+
+  if (numeric % 3600 === 0) {
+    const hours = numeric / 3600;
+    return hours === 1 ? '1 hora' : `${hours} horas`;
+  }
+
+  return `${numeric} segundos`;
+}
+
+function readGroupEphemeralDurationSeconds(chat) {
+  const metadata = chat?.groupMetadata && typeof chat.groupMetadata === 'object' ? chat.groupMetadata : {};
+  const candidates = [
+    metadata.ephemeralDuration,
+    metadata.ephemeralDurationInSec,
+    metadata?.disappearingMode?.duration,
+    metadata?.ephemeralSetting?.ephemeralDuration,
+    chat?.ephemeralDuration,
+    chat?.disappearingMode?.duration
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined || candidate === '') continue;
+    const numeric = Number.parseInt(String(candidate), 10);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+      return numeric;
+    }
+  }
+
+  return null;
+}
+
+async function setGroupEphemeralDuration(chat, durationSeconds, context = {}) {
+  const nextDuration = Number.parseInt(String(durationSeconds ?? ''), 10);
+  const supportedDurations = new Set([0, ...GROUP_EPHEMERAL_DURATION_OPTIONS.map((option) => option.seconds)]);
+
+  if (!supportedDurations.has(nextDuration)) {
+    throw new Error('Duracao de mensagens temporarias nao suportada.');
+  }
+
+  const chatId = String(chat?.id?._serialized || '');
+  const evaluateSources = [chat?.client, context?.client];
+  let evaluate = null;
+  for (const source of evaluateSources) {
+    if (!source) continue;
+    const candidate = source?.pupPage?.evaluate;
+    if (typeof candidate === 'function') {
+      evaluate = candidate.bind(source.pupPage);
+      break;
+    }
+  }
+
+  if (!chatId) {
+    throw new Error('Nao consegui identificar o grupo para alterar mensagens temporarias.');
+  }
+
+  if (typeof evaluate !== 'function') {
+    throw new Error('Nao consegui alterar mensagens temporarias nesta sessao. Reinicie o bot e tente novamente.');
+  }
+
+  let result = null;
+  try {
+    result = await evaluate(
+      async (targetChatId, desiredDuration) => {
+        const formatError = (error) => ({
+          name: error?.name || null,
+          message: error?.message || String(error)
+        });
+
+        const targetChat = await window.WWebJS.getChat(targetChatId, { getAsModel: false });
+        if (!targetChat) {
+          return {
+            ok: false,
+            code: 'chat_not_found',
+            message: 'Grupo nao encontrado no WhatsApp Web.'
+          };
+        }
+
+        if (typeof window.Store?.GroupUtils?.setGroupProperty !== 'function') {
+          return {
+            ok: false,
+            code: 'unsupported',
+            message: 'A sessao atual nao expoe GroupUtils.setGroupProperty.'
+          };
+        }
+
+        try {
+          await window.Store.GroupUtils.setGroupProperty(targetChat, 'ephemeral', desiredDuration);
+          return {
+            ok: true,
+            durationSeconds:
+              Number.parseInt(
+                String(
+                  targetChat?.groupMetadata?.ephemeralDuration ??
+                    targetChat?.groupMetadata?.ephemeralDurationInSec ??
+                    targetChat?.ephemeralDuration ??
+                    desiredDuration
+                ),
+                10
+              ) || desiredDuration
+          };
+        } catch (error) {
+          if (error?.name === 'ServerStatusCodeError') {
+            return {
+              ok: false,
+              code: 'server_status',
+              message: 'WhatsApp recusou a alteracao de mensagens temporarias.',
+              error: formatError(error)
+            };
+          }
+
+          return {
+            ok: false,
+            code: 'runtime_error',
+            error: formatError(error)
+          };
+        }
+      },
+      chatId,
+      nextDuration
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/reading ['"]?evaluate['"]?|pupPage|page/i.test(message)) {
+      throw new Error('Nao consegui alterar mensagens temporarias nesta sessao. Reinicie o bot e tente novamente.');
+    }
+    throw error;
+  }
+
+  if (!result?.ok) {
+    if (result?.code === 'server_status') {
+      return false;
+    }
+    if (result?.code === 'unsupported') {
+      throw new Error('Sessao atual do WhatsApp nao suporta alteracao de mensagens temporarias.');
+    }
+
+    const detail = result?.error?.message || result?.message || 'Falha ao alterar mensagens temporarias.';
+    throw new Error(detail);
+  }
+
+  if (chat?.groupMetadata && typeof chat.groupMetadata === 'object') {
+    chat.groupMetadata.ephemeralDuration = result.durationSeconds;
+  }
+  if (chat && typeof chat === 'object') {
+    chat.ephemeralDuration = result.durationSeconds;
+  }
+
+  return true;
+}
+
+function parseAuthorizationCommand(text) {
+  const folded = foldText(text);
+  const directPhone = extractPhoneCandidate(text);
+  const hasAdminKeyword = /\badmin\b/.test(folded);
+  const hasGroupKeyword = /\bgrupo\b/.test(folded);
+  const hasFullKeyword = /\b(full|completo|total)\b/.test(folded);
+  const looksLikePolicySentence =
+    !directPhone &&
+    /(somente|so|s[oó]|apenas).*(full|admin)/.test(folded) &&
+    /(mensagem|resposta|tecnica|tecnico|comportamento|retorno)/.test(folded);
+
+  if (looksLikePolicySentence) {
+    return null;
+  }
+
+  if (/\b(listar|lista|mostrar|mostra|ver)\b.*(autorizados|remetentes autorizados|numeros autorizados|n[uú]meros autorizados)/.test(folded)) {
+    return { action: 'list' };
+  }
+
+  if (/\b(listar|lista|mostrar|mostra|ver)\b.*(admins do bot|admin bot|administradores do bot)/.test(folded)) {
+    return { action: 'list_admins' };
+  }
+
+  if (/\b(listar|lista|mostrar|mostra|ver)\b.*(full|acesso total|permissao total|permissao full|acesso full)/.test(folded)) {
+    return { action: 'list_fulls' };
+  }
+
+  if (/\b(listar|lista|mostrar|mostra|ver)\b.*(privado|privados|chat privado|dm|pv)/.test(folded)) {
+    return { action: 'list_private' };
+  }
+
+  if (
+    /(autoriza|autorizar|libera|liberar|permite|permitir|adiciona|adicionar|concede|conceder).*(privado|chat privado|dm|pv)/.test(
+      folded
+    )
+  ) {
+    if (!directPhone) return { action: 'add_private_missing' };
+    return { action: 'add_private', phone: directPhone };
+  }
+
+  if (
+    /(remove|remover|bloqueia|bloquear|revoga|revogar|tirar|retirar).*(privado|chat privado|dm|pv)/.test(
+      folded
+    )
+  ) {
+    if (!directPhone) return { action: 'remove_private_missing' };
+    return { action: 'remove_private', phone: directPhone };
+  }
+
+  if (
+    /(autoriza|autorizar|libera|liberar|permite|permitir|tem permissao para falar|tem permissão para falar|pode falar com voce|pode falar com você)/.test(
+      folded
+    )
+  ) {
+    if (!directPhone) return { action: 'add_missing' };
+    return { action: 'add', phone: directPhone };
+  }
+
+  if (/\b(adiciona|adicionar|inclui|incluir|concede|conceder|dar)\b.*(autorizacao|autorização|permissao|permissão|acesso|interagir|falar com o bot)/.test(folded)) {
+    if (!directPhone) return { action: 'add_missing' };
+    return { action: 'add', phone: directPhone };
+  }
+
+  if (
+    /^bloque(ar|ia)\b/.test(folded) && directPhone ||
+    /(bloque(ar|ia)|banir|bane|revogar|revoga|remover|remove|retirar|tirar).*(autorizacao|autorização|interagir|falar com o bot|remetente|usuario|usuário)/.test(
+      folded
+    )
+  ) {
+    if (!directPhone) return { action: 'remove_missing' };
+    return { action: 'remove', phone: directPhone };
+  }
+
+  if (
+    /^liber(ar|a)\b/.test(folded) && directPhone ||
+    /(desbloque(ar|ia)).*(autorizacao|autorização|interagir|falar com o bot|remetente|usuario|usuário)/.test(folded)
+  ) {
+    if (!directPhone) return { action: 'add_missing' };
+    return { action: 'add', phone: directPhone };
+  }
+
+  if (/(remover|remove|revogar|revoga|tirar|retirar).*(autorizacao|autorização|permissao|permissão)/.test(folded)) {
+    if (!directPhone) return { action: 'remove_missing' };
+    return { action: 'remove', phone: directPhone };
+  }
+
+  if (/(remover|remove|revogar|revoga|tirar|retirar).*(permis)/.test(folded)) {
+    if (!directPhone) return { action: 'remove_missing' };
+    return { action: 'remove', phone: directPhone };
+  }
+
+  if (/(adiciona|adicionar|coloca|torna|promove).*(admin do bot|admin bot)/.test(folded)) {
+    if (!directPhone) return { action: 'add_admin_missing' };
+    return { action: 'add_admin', phone: directPhone };
+  }
+
+  if (/(adiciona|adicionar|inclui|incluir|coloca|torna|promove).*\badmin\b/.test(folded) && hasAdminKeyword && !hasGroupKeyword) {
+    if (!directPhone) return { action: 'add_admin_missing' };
+    return { action: 'add_admin', phone: directPhone };
+  }
+
+  if (/(remove|remover|tirar|retirar).*(admin do bot|admin bot)/.test(folded)) {
+    if (!directPhone) return { action: 'remove_admin_missing' };
+    return { action: 'remove_admin', phone: directPhone };
+  }
+
+  if (/(remove|remover|tirar|retirar).*\badmin\b/.test(folded) && hasAdminKeyword && !hasGroupKeyword) {
+    if (!directPhone) return { action: 'remove_admin_missing' };
+    return { action: 'remove_admin', phone: directPhone };
+  }
+
+  if (
+    /\b(adiciona|adicionar|inclui|incluir|coloca|torna|promove|concede|conceder)\b.*(full|acesso total|permissao total|permissao full|acesso full)/.test(
+      folded
+    ) ||
+    (/^(full|acesso total|permissao total)\b/.test(folded) && directPhone)
+  ) {
+    if (!directPhone) return { action: 'add_full_missing' };
+    return { action: 'add_full', phone: directPhone };
+  }
+
+  if (
+    /(remove|remover|tirar|retirar|revogar|revoga).*(full|acesso total|permissao total|permissao full|acesso full)/.test(
+      folded
+    ) ||
+    (/^(remover|remove|tirar|retirar)\b/.test(folded) && hasFullKeyword)
+  ) {
+    if (!directPhone) return { action: 'remove_full_missing' };
+    return { action: 'remove_full', phone: directPhone };
+  }
+
+  return null;
+}
+
+async function resolveAuthorizationMentionPhone(rawText, context = {}) {
+  const mentionTarget = pickMentionTarget(context);
+  if (mentionTarget) {
+    const mentionDigits = normalizeDigits(String(mentionTarget).split('@')[0]);
+    const mentionPhone = normalizePhoneForWhatsapp(mentionDigits);
+    if (mentionPhone) return mentionPhone;
+  }
+
+  const mentionFromText = extractAtNumberCandidates(rawText)[0] || '';
+  if (mentionFromText) {
+    const mentionPhone = normalizePhoneForWhatsapp(mentionFromText);
+    if (mentionPhone) return mentionPhone;
+  }
+
+  const aliasFromAt = extractAliasAfterAt(rawText);
+  if (aliasFromAt) {
+    const aliasPhone = await resolvePhoneByAlias({
+      groupId: context.groupId,
+      aliasRaw: aliasFromAt
+    });
+    if (aliasPhone) return aliasPhone;
+  }
+
+  return '';
+}
+
+function extractGroupIdCandidate(text) {
+  const raw = String(text || '');
+  const explicit = raw.match(/\b(\d{10,})@g\.us\b/i);
+  if (explicit?.[0]) {
+    return normalizeAccessGroup(explicit[0]);
+  }
+
+  const digits = raw.match(/\b\d{14,24}\b/g);
+  if (Array.isArray(digits) && digits.length) {
+    return normalizeAccessGroup(digits[0]);
+  }
+
+  return '';
+}
+
+function parseResponseRoutingCommand(text) {
+  const folded = foldText(text);
+  if (!folded) return null;
+
+  const targetGroup = extractGroupIdCandidate(text);
+
+  if (/\b(listar|lista|mostrar|mostra|ver)\b.*(grupos? de resposta|multi[- ]?grupo)/.test(folded)) {
+    return { action: 'list_response_groups' };
+  }
+
+  if (
+    /\b(adiciona|adicionar|inclui|incluir|ativa|ativar|libera|liberar|permite|permitir)\b.*(grupos? de resposta|multi[- ]?grupo)/.test(
+      folded
+    )
+  ) {
+    if (!targetGroup) return { action: 'add_response_group_missing' };
+    return { action: 'add_response_group', groupId: targetGroup };
+  }
+
+  if (
+    /\b(remove|remover|retira|retirar|tirar|desativa|desativar|bloqueia|bloquear)\b.*(grupos? de resposta|multi[- ]?grupo)/.test(
+      folded
+    )
+  ) {
+    if (!targetGroup) return { action: 'remove_response_group_missing' };
+    return { action: 'remove_response_group', groupId: targetGroup };
+  }
+
+  return null;
+}
+
+function parsePermissionCommand(text) {
+  const folded = foldText(text);
+  if (
+    /(verifica.*permiss|suas permiss|permissoes|permissoes|voce e admin|você é admin|voce e full|você é full|e admin do grupo|é admin do grupo|quem e admin|quem é admin)/.test(
+      folded
+    )
+  ) {
+    return { action: 'check' };
+  }
+
+  return null;
+}
+
+function parseAdminCommand(text) {
+  const folded = foldText(text);
+  if (/(me adiciona.*admin|me torne.*admin|remetente.*admin|libera.*admin)/.test(folded)) {
+    return { action: 'self_admin' };
+  }
+  return null;
+}
+
+function splitModerationKeywords(rawValue) {
+  const raw = compactSpaces(rawValue);
+  if (!raw) return [];
+
+  return Array.from(
+    new Set(
+      raw
+        .replace(/[.!?]+$/g, '')
+        .split(/[,;\n]+/)
+        .map((item) =>
+          compactSpaces(
+            String(item || '')
+              .replace(/^[-*•]\s*/g, '')
+              .replace(/^["'`]+|["'`]+$/g, '')
+          )
+        )
+        .filter(Boolean)
+    )
+  ).slice(0, 50);
+}
+
+function parseModerationCommand(text) {
+  const folded = foldText(text);
+  const normalized = compactSpaces(text);
+
+  if (
+    /^(moderacao|moderação|status moderacao|status moderação|status da moderacao|status da moderação|resumo da moderacao|resumo da moderação|configuracao de moderacao|configuração de moderação)[.!?]*$/.test(
+      folded
+    )
+  ) {
+    return { action: 'status' };
+  }
+
+  if (/(ajuda|comandos|como usar|manual).*(moderacao|moderação|palavras proibidas|avisos)/.test(folded)) {
+    return { action: 'help' };
+  }
+
+  if (/^(palavras proibidas|palavras inapropriadas|palavras banidas|palavras bloqueadas)[.!?]*$/.test(folded)) {
+    return { action: 'keywords_list' };
+  }
+
+  if (
+    /(quais|qual|me diga|diga|mostra|mostrar|lista|listar).*(palavras|termos|expressoes|express[oõ]es).*(proibidas|bloqueadas|banidas|nao pode|não pode)/.test(
+      folded
+    ) ||
+    /(o que|oq|que).*(nao pode|não pode).*(falar|dizer).*(grupo)/.test(folded)
+  ) {
+    return { action: 'keywords_list' };
+  }
+
+  if (/(listar|lista|mostrar|mostra|ver).*(palavras proibidas|palavras inapropriadas|palavras banidas|palavras bloqueadas)/.test(folded)) {
+    return { action: 'keywords_list' };
+  }
+
+  if (/(limpar|zera|zerar|apagar|remover|remove).*(palavras proibidas|palavras inapropriadas|palavras banidas|palavras bloqueadas)/.test(folded)) {
+    return { action: 'keywords_clear' };
+  }
+
+  if (
+    /(adicionar|adiciona|salvar|salva|gravar|grava|bloquear|bloqueia).*(palavras proibidas|palavras inapropriadas|palavras banidas|palavras bloqueadas)/.test(
+      folded
+    )
+  ) {
+    const parts = normalized.split(':');
+    const keywordRaw =
+      parts.length > 1
+        ? compactSpaces(parts.slice(1).join(':'))
+        : compactSpaces(
+            normalized.replace(
+              /.*(palavras proibidas|palavras inapropriadas|palavras banidas|palavras bloqueadas)/i,
+              ''
+            )
+          );
+    const keywords = splitModerationKeywords(keywordRaw);
+    if (!keywords.length) return { action: 'keyword_add_missing' };
+    if (keywords.length === 1) return { action: 'keyword_add', keyword: keywords[0] };
+    return { action: 'keyword_add_many', keywords };
+  }
+
+  if (/(adicionar|adiciona|salvar|salva|gravar|grava|bloquear|bloqueia).*(palavra proibida|palavra inapropriada|palavra banida|palavra bloqueada)/.test(folded)) {
+    const parts = normalized.split(':');
+    const keyword = parts.length > 1 ? compactSpaces(parts.slice(1).join(':')) : compactSpaces(normalized.replace(/.*(palavra proibida|palavra inapropriada|palavra banida|palavra bloqueada)/i, ''));
+    if (!keyword) return { action: 'keyword_add_missing' };
+    return { action: 'keyword_add', keyword };
+  }
+
+  if (/(remover|remove|apagar|apaga|desbloquear|desbloqueia).*(palavra proibida|palavra inapropriada|palavra banida|palavra bloqueada)/.test(folded)) {
+    const parts = normalized.split(':');
+    const keyword = parts.length > 1 ? compactSpaces(parts.slice(1).join(':')) : compactSpaces(normalized.replace(/.*(palavra proibida|palavra inapropriada|palavra banida|palavra bloqueada)/i, ''));
+    if (!keyword) return { action: 'keyword_remove_missing' };
+    return { action: 'keyword_remove', keyword };
+  }
+
+  if (/(ativar|ativa|ligar|liga).*(moderacao|moderação|filtro de palavras|palavra proibida)/.test(folded)) {
+    return { action: 'moderation_enable' };
+  }
+
+  if (/(desativar|desativa|desligar|desliga).*(moderacao|moderação|filtro de palavras|palavra proibida)/.test(folded)) {
+    return { action: 'moderation_disable' };
+  }
+
+  if (/(limite de avisos|maximo de avisos|maximo avisos|máximo de avisos|limite avisos)/.test(folded)) {
+    const value = extractFirstNumber(text);
+    if (!value) return { action: 'warnings_limit_missing' };
+    return { action: 'warnings_limit_set', value };
+  }
+
+  if (/(listar avisos|lista avisos|mostrar avisos|ver avisos|avisos do grupo)/.test(folded)) {
+    return { action: 'warnings_list' };
+  }
+
+  if (/(resetar avisos|reset avisos|limpar avisos|zerar avisos|redefinir avisos|redefine avisos)/.test(folded)) {
+    const target = extractPhoneCandidate(text);
+    return target ? { action: 'warnings_reset_one', target } : { action: 'warnings_reset_all' };
+  }
+
+  // Comandos em linguagem natural
+  const naturalKeyword =
+    folded.match(/nao falar\s+([a-z0-9_-]{2,})/) ||
+    folded.match(/ninguem pode falar a palavra\s+([a-z0-9_-]{2,})/) ||
+    folded.match(/nao pode falar a palavra\s+([a-z0-9_-]{2,})/);
+  if (naturalKeyword) {
+    const maybeLimit = extractFirstNumber(text);
+    return {
+      action: 'keyword_policy_set',
+      keyword: naturalKeyword[1],
+      limit: maybeLimit && maybeLimit > 0 ? maybeLimit : null
+    };
+  }
+
+  return null;
+}
+
+const SEARCH_STOPWORDS = new Set([
+  'o', 'a', 'os', 'as', 'um', 'uma', 'uns', 'umas',
+  'de', 'da', 'do', 'das', 'dos', 'em', 'na', 'no', 'nas', 'nos',
+  'para', 'pra', 'por', 'com', 'sem', 'ate', 'sobre', 'entre',
+  'que', 'e', 'ou', 'mas', 'se', 'nao', 'sim', 'ja',
+  'quero', 'queria', 'preciso', 'precisa', 'quero',
+  'comprar', 'compra', 'compre', 'adquirir',
+  'link', 'site', 'url', 'preco', 'valor', 'custo',
+  'mim', 'me', 'eu', 'tu', 'nos', 'voce', 'ele', 'ela',
+  'isso', 'este', 'esta', 'esse', 'essa', 'aquele', 'aquela',
+  'qual', 'quais', 'quanto', 'quanta', 'como', 'onde', 'quando',
+  'favor', 'please', 'obrigado', 'obrigada',
+  'mais', 'menos', 'muito', 'pouco', 'barato', 'caro',
+  'melhor', 'pior', 'bom', 'ruim', 'novo', 'velho'
+]);
+
+function cleanSearchQuery(rawQuery) {
+  let q = String(rawQuery || '').trim();
+
+  // Remove pedidos de link/compra: "quero o link para eu comprar no site mais barato"
+  q = q.replace(/\s*,?\s*quero\s+(?:o\s+)?link\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*me\s+(?:da|dá|manda|passa|envia)\s+(?:o\s+)?link\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*e\s+um\s+link\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*quero\s+comprar\s+(?:um|uma)\b/gi, '').trim();
+  q = q.replace(/\s*,?\s*para\s+eu\s+comprar\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*no\s+site\s+mais\s+barato\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*pra\s+mim\b.*/gi, '').trim();
+  q = q.replace(/\s*,?\s*para\s+mim\b.*/gi, '').trim();
+
+  // Remove "por favor" mantendo o que vem depois (pode ser o tópico real)
+  q = q.replace(/\bpor\s+favor[.,]?\s*/gi, ' ').trim();
+
+  // Remove "de um produto" (genérico demais)
+  q = q.replace(/\bde\s+um\s+produto\b/gi, '').trim();
+
+  // Limpa espaços extras e pontuação solta
+  q = q.replace(/\s{2,}/g, ' ').replace(/^[,.:;\s]+|[,.:;\s]+$/g, '').trim();
+
+  return q;
+}
+
+function hasSearchableContent(query) {
+  const folded = foldText(String(query || ''));
+  const words = folded.split(/\s+/).filter(Boolean);
+  const meaningful = words.filter((w) => w.length > 2 && !SEARCH_STOPWORDS.has(w));
+  return meaningful.length > 0;
+}
+
+function parseSearchCommand(text) {
+  const normalized = compactSpaces(text);
+  const prefixedSearch = normalized.match(
+    /^(?:buscar|busca|busque|pesquisar|pesquisa|pesquise|procura|procurar|procure|search)(?:\s+(?:na|no|pela|via))?\s*(?:internet|web|google)?(?:\s+sobre)?(?:\s*[:\-])?\s*(.*)$/i
+  );
+  if (prefixedSearch) {
+    const rawQuery = compactSpaces(prefixedSearch[1] || '');
+    if (!rawQuery) return { action: 'missing' };
+    const query = cleanSearchQuery(rawQuery);
+    if (!hasSearchableContent(query)) return null;
+    return { action: 'search', query };
+  }
+
+  const explicitInternetLookup = normalized.match(
+    /^(?:veja|verifica|verifique|confira|consulta|consulte|olha|olhe|acha|ache|encontra|encontre)\s+(?:na|no)\s+(?:internet|web|google)(?:\s+sobre)?\s*(.*)$/i
+  );
+  if (explicitInternetLookup) {
+    const rawQuery = compactSpaces(explicitInternetLookup[1] || '');
+    if (!rawQuery) return { action: 'missing' };
+    const query = cleanSearchQuery(rawQuery);
+    if (!hasSearchableContent(query)) return null;
+    return { action: 'search', query };
+  }
+
+  const explicit = normalized.match(/(buscar|busca|pesquisar|pesquisa|procura|procurar|search)\s+(.+)/i);
+  if (explicit) {
+    const rawQuery = compactSpaces(explicit[2] || '');
+    if (!rawQuery) return { action: 'missing' };
+    const query = cleanSearchQuery(rawQuery);
+    if (!hasSearchableContent(query)) return null;
+    return { action: 'search', query };
+  }
+
+  return null;
+}
+
+function parseImageCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+
+  if (/(gera|gerar|cria|criar|faz|fazer).*(foto|imagem)/.test(folded)) {
+    const byColon = normalized.includes(':') ? compactSpaces(normalized.split(':').slice(1).join(':')) : '';
+    if (byColon) return { action: 'generate', prompt: byColon };
+
+    const cleaned = compactSpaces(
+      normalized
+        .replace(/(gera|gerar|cria|criar|faz|fazer)/i, '')
+        .replace(/(uma|um|a)?\s*(foto|imagem)\s*(de|do|da)?/i, '')
+    );
+    return cleaned ? { action: 'generate', prompt: cleaned } : { action: 'missing' };
+  }
+
+  return null;
+}
+
+async function triggerSelfRestart() {
+  const delaySeconds = Math.max(1, Math.ceil(config.selfRestartDelayMs / 1000));
+  const startCommand = config.selfRestartStartCommand || 'npm start';
+  const cwd = process.cwd();
+
+  // Verificar se houve modificação real em src/ antes de reiniciar.
+  // Jobs FULL que apenas diagnosticam (sem alterar arquivos) não precisam reiniciar.
+  try {
+    const gitStatusResult = await new Promise((resolve) => {
+      const child = spawn('git', ['-C', cwd, 'status', '--porcelain', 'src/', 'scripts/'], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      let out = '';
+      child.stdout.on('data', (d) => { out += d.toString(); });
+      child.on('exit', () => resolve(out.trim()));
+      setTimeout(() => { child.kill(); resolve(''); }, 3000);
+    });
+    if (!gitStatusResult) {
+      // Nenhum arquivo modificado — restart desnecessário, manter serviço online
+      logger.info('[SelfRestart] Nenhuma modificacao em src/ detectada — restart cancelado, servico mantido online.', {});
+      return;
+    }
+    logger.info('[SelfRestart] Arquivos modificados detectados — reiniciando para aplicar mudancas.', { files: gitStatusResult.slice(0, 300) });
+  } catch {
+    // git falhou — prosseguir com restart por precaução
+  }
+
+  // Se rodando via systemd (INVOCATION_ID presente), basta sair — systemd relanca automaticamente
+  const underSystemd = Boolean(process.env.INVOCATION_ID || process.env.JOURNAL_STREAM);
+
+  if (!underSystemd) {
+    // Modo legado: lanca processo filho antes de sair
+    const script = `sleep ${delaySeconds}; cd ${quoteForShell(cwd)}; ${startCommand} >> logs/restart.log 2>&1`;
+    const launchCommand = `nohup bash -lc ${quoteForShell(script)} >/dev/null 2>&1 &`;
+    const child = spawn('bash', ['-lc', launchCommand], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+  }
+
+  const exitTimer = setTimeout(() => {
+    process.exit(0);
+  }, underSystemd ? 500 : 700);
+  exitTimer.unref?.();
+}
+
+async function runTerminalCommand(command) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const child = spawn('bash', ['-lc', command], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const outputCap = Math.max(config.terminalMaxOutputChars * 2, 2000);
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, config.terminalTimeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length >= outputCap) return;
+      stdout += chunk.toString('utf8');
+      if (stdout.length > outputCap) stdout = stdout.slice(0, outputCap);
+    });
+
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length >= outputCap) return;
+      stderr += chunk.toString('utf8');
+      if (stderr.length > outputCap) stderr = stderr.slice(0, outputCap);
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on('close', (exitCode) => {
+      clearTimeout(timeout);
+      resolve({
+        command,
+        exitCode: Number.isFinite(exitCode) ? exitCode : -1,
+        stdout: String(stdout || '').trim(),
+        stderr: String(stderr || '').trim(),
+        timedOut,
+        elapsedMs: Date.now() - startedAt
+      });
+    });
+  });
+}
+
+function looksReadOnlyFailure(text) {
+  const folded = foldText(text);
+  if (!folded) return false;
+  return /(read-only|somente leitura|modo somente leitura|nao consegui aplicar|edicao bloqueada|edicao foi bloqueada)/.test(
+    folded
+  );
+}
+
+async function notifyFullAutoTaskProgress(onProgress, patch) {
+  if (typeof onProgress !== 'function') return;
+  try {
+    await onProgress(patch);
+  } catch {
+    // nao bloqueia a execucao principal por falha de observabilidade.
+  }
+}
+
+async function runCodexFullAutoDevTask(requestText, context = {}, options = {}) {
+  const taskCheck = compactSpaces(requestText);
+  if (!taskCheck) {
+    return { ok: false, message: 'Solicitacao vazia para modo FULL.' };
+  }
+  // Preserva newlines e estrutura original (JSON, listas, diagramas) para o prompt do agente
+  const task = String(requestText).trim();
+
+  await settingsStore.ensureReady();
+  const runtime = settingsStore.get();
+  const provider = String(runtime.aiProvider || 'codex').toLowerCase();
+
+  const prompt = await (async () => {
+    const LOG_PREFIX = '[FULL:ctx]';
+
+    // ── Budget de contexto — evita prompt drift ────────────────────────────
+    // Ordem de corte se total > TOTAL_BUDGET: logs > lastJob > validation > history
+    const BUDGET = {
+      HISTORY_CHARS:    1_500,   // histórico de conversa
+      LAST_JOB_CHARS:   1_000,   // último job FULL
+      VALIDATION_CHARS:   800,   // última validação
+      LOGS_CHARS:       2_000,   // logs do sistema
+      TASK_CHARS:       4_000,   // pedido atual — nunca truncar sem avisar
+      TOTAL_BUDGET:    12_000    // teto total do contexto injetado
+    };
+
+    /** Trunca texto e anota se houve corte */
+    function budgetTrunc(text, max, label = '') {
+      const s = String(text || '');
+      if (s.length <= max) return s;
+      const note = label ? ` ...[${label} truncado em ${max} chars]` : ` ...[truncado]`;
+      return s.slice(0, max) + note;
+    }
+
+    // ── Helpers de sanitização ─────────────────────────────────────────────
+    /**
+     * Remove tokens, números de telefone, caminhos absolutos e chaves Bearer
+     * antes de injetar dados externos no prompt.
+     */
+    function maskSensitive(text) {
+      return String(text || '')
+        .replace(/Bearer\s+\S+/gi, 'Bearer [MASKED]')
+        .replace(/\b[A-Za-z0-9_-]{40,}\b/g, '[TOKEN]')          // tokens longos
+        .replace(/\b55\d{10,11}\b/g, '[PHONE]')                 // números BR
+        .replace(/\/home\/[^\s/]+/g, '/home/[USER]')             // home paths
+        .replace(/password[=:]\S+/gi, 'password=[MASKED]')
+        .replace(/secret[=:]\S+/gi, 'secret=[MASKED]');
+    }
+
+    /**
+     * Filtra linhas de log mantendo apenas as relevantes (erros, avisos, timeouts).
+     * Remove ruído de startup, heartbeat e linhas duplicadas seguidas.
+     */
+    function filterLogLines(raw) {
+      const NOISE = /SelfHealing|Watchdog|Scheduler|npm notice|DeprecationWarning|punycode|Iniciando bot|Painel web online|Bootstrap|autenticad|conectad|pronto\.|online enviada/i;
+      const RELEVANT = /error|warn|fail|timeout|exit\s*\d|exception|crash|killed|SIGTERM|SIGKILL|restart|parado|falh|excedeu|promise was collected/i;
+      const seen = new Set();
+      return raw
+        .split('\n')
+        .filter(l => {
+          const t = l.trim();
+          if (!t) return false;
+          if (NOISE.test(t)) return false;
+          if (!RELEVANT.test(t)) return false;
+          if (seen.has(t)) return false;
+          seen.add(t);
+          return true;
+        })
+        .slice(-30)   // máx 30 linhas relevantes
+        .join('\n');
+    }
+
+    /**
+     * Remove entradas de histórico de conversa que são boilerplate ou duplicadas.
+     */
+    function filterHistoryEntries(entries) {
+      const BOILERPLATE = /^(processando|aguarde|ok\.|✅|🔄|em andamento|resultado:|🔧|📄)/i;
+      const seen = new Set();
+      return entries.filter(e => {
+        const t = String(e.text || '').trim().slice(0, 80);
+        if (!t || BOILERPLATE.test(t)) return false;
+        if (seen.has(t)) return false;
+        seen.add(t);
+        return true;
+      });
+    }
+
+    // ── 1. Histórico recente de conversa do grupo ──────────────────────────
+    let historyBlock = '';
+    if (context.groupId) {
+      try {
+        const rawEntries = await listRecentConversationEntries(context.groupId, 14);
+        const entries = filterHistoryEntries(rawEntries).slice(-10);
+        if (entries.length) {
+          const lines = entries.map(e => {
+            const side = String(e.direction || '') === 'outbound' ? 'BOT' : 'USUARIO';
+            const ts = String(e.ts || '').slice(11, 19) || '--:--:--';
+            return `[${ts}] ${side}: ${maskSensitive(budgetTrunc(String(e.text || ''), 350))}`;
+          });
+          const historyRaw = lines.join('\n');
+          historyBlock = `### HISTORICO_GRUPO\n${budgetTrunc(historyRaw, BUDGET.HISTORY_CHARS, 'historico')}\n`;
+          console.info(`${LOG_PREFIX} full_prompt_context_built group_history entries=${entries.length} chars=${historyRaw.length}`);
+        } else {
+          historyBlock = `### HISTORICO_GRUPO\n(sem historico recente disponivel)\n`;
+        }
+      } catch (err) {
+        historyBlock = `### HISTORICO_GRUPO\n(indisponivel: ${String(err?.message || err).slice(0, 80)})\n`;
+      }
+    }
+
+    // ── 2. Último job FULL do mesmo grupo/usuário ──────────────────────────
+    let lastJobBlock = '';
+    try {
+      const senderNorm = String(context.senderNumber || '').replace(/\D/g, '');
+      const recentJobs = listFullAutoJobs({ limit: 20 });
+      const lj = recentJobs.find(j =>
+        j.id !== context._jobId &&
+        j.status !== 'running' &&
+        (
+          String(j.groupId || '') === String(context.groupId || '') ||
+          String(j.senderNumber || '').replace(/\D/g, '') === senderNorm
+        )
+      );
+      if (lj) {
+        const elapsed = lj.finishedAt ? Math.round((lj.finishedAt - lj.startedAt) / 1000) + 's' : 'em andamento';
+        lastJobBlock = [
+          '### ULTIMO_JOB_FULL',
+          `ID: ${lj.id} | Status: ${lj.status} | Duracao: ${elapsed}`,
+          `Pedido: ${maskSensitive(budgetTrunc(String(lj.request || ''), 300))}`,
+          `Resultado: ${maskSensitive(budgetTrunc(String(lj.summary || ''), BUDGET.LAST_JOB_CHARS - 400))}`,
+          ''
+        ].join('\n');
+        console.info(`${LOG_PREFIX} full_prompt_context_built last_job id=${lj.id} status=${lj.status}`);
+      } else {
+        lastJobBlock = `### ULTIMO_JOB_FULL\n(nenhum job anterior encontrado para este grupo/usuario)\n`;
+      }
+    } catch (err) {
+      lastJobBlock = `### ULTIMO_JOB_FULL\n(indisponivel: ${String(err?.message || err).slice(0, 80)})\n`;
+    }
+
+    // ── 3. Última validação (last-validation.json) ─────────────────────────
+    let lastValidationBlock = '';
+    try {
+      const lvPath = join(process.cwd(), 'logs', 'last-validation.json');
+      const lv = JSON.parse(await readFile(lvPath, 'utf8'));
+      if (lv) {
+        // Prioriza erros no output, depois warnings
+        const outputLines = String(lv.output || lv.summary || '').split('\n');
+        const errors = outputLines.filter(l => /error|fail|❌/i.test(l)).slice(0, 15);
+        const warnings = outputLines.filter(l => /warn/i.test(l)).slice(0, 5);
+        const relevant = [...errors, ...warnings].join('\n') || String(lv.summary || '').slice(0, 400);
+        lastValidationBlock = [
+          '### ULTIMA_VALIDACAO',
+          `Status: ${lv.ok ? 'OK' : 'FALHOU'} | ${lv.status || ''} | ${lv.ts || ''}`,
+          `Resumo: ${maskSensitive(budgetTrunc(String(lv.summary || ''), 300))}`,
+          relevant ? `Erros/Avisos:\n${maskSensitive(budgetTrunc(relevant, BUDGET.VALIDATION_CHARS - 200, 'validacao'))}` : '',
+          ''
+        ].filter(Boolean).join('\n');
+        console.info(`${LOG_PREFIX} full_prompt_context_built last_validation ok=${lv.ok}`);
+      }
+    } catch {
+      lastValidationBlock = `### ULTIMA_VALIDACAO\n(indisponivel)\n`;
+    }
+
+    // ── 4. Logs do sistema com timeout, fallback e filtro ─────────────────
+    let systemLogsBlock = '';
+    try {
+      const logsRaw = await Promise.race([
+        new Promise((resolve) => {
+          const proc = spawn('journalctl', ['-u', 'whatsapp-codex', '-n', '80', '--no-pager', '--output=short'], {});
+          let out = '';
+          proc.stdout?.on('data', d => { out += d; });
+          proc.stderr?.on('data', d => { out += d; });
+          proc.on('close', () => resolve(out));
+          proc.on('error', () => resolve(''));
+        }),
+        new Promise(resolve => setTimeout(() => resolve('__TIMEOUT__'), 4000))
+      ]);
+
+      if (logsRaw === '__TIMEOUT__' || !logsRaw.trim()) {
+        // Fallback: tenta arquivo de log local
+        try {
+          const localLog = await readFile(join(process.cwd(), 'logs', 'bot.log'), 'utf8');
+          const filtered = filterLogLines(localLog);
+          if (filtered) {
+            systemLogsBlock = `### LOGS_SISTEMA\n(fonte: bot.log — journalctl indisponivel)\n${maskSensitive(budgetTrunc(filtered, BUDGET.LOGS_CHARS, 'bot.log'))}\n`;
+            console.info(`${LOG_PREFIX} full_prompt_context_built logs_fallback=bot.log`);
+          } else {
+            systemLogsBlock = `### LOGS_SISTEMA\n(sem logs relevantes no bot.log)\n`;
+          }
+        } catch {
+          systemLogsBlock = `### LOGS_SISTEMA\n(journalctl timeout e bot.log indisponivel)\n`;
+          console.info(`${LOG_PREFIX} full_prompt_context_built logs_unavailable reason=timeout_and_no_fallback`);
+        }
+      } else {
+        const filtered = filterLogLines(logsRaw);
+        if (filtered) {
+          systemLogsBlock = `### LOGS_SISTEMA\n${maskSensitive(budgetTrunc(filtered, BUDGET.LOGS_CHARS, 'logs'))}\n`;
+          console.info(`${LOG_PREFIX} full_prompt_context_built logs lines=${filtered.split('\n').length} chars=${filtered.length}`);
+        } else {
+          systemLogsBlock = `### LOGS_SISTEMA\n(nenhuma linha de erro/aviso recente — sistema aparentemente saudavel)\n`;
+          console.info(`${LOG_PREFIX} full_prompt_context_built logs_clean`);
+        }
+      }
+    } catch (err) {
+      systemLogsBlock = `### LOGS_SISTEMA\n(erro ao coletar: ${String(err?.message || err).slice(0, 80)})\n`;
+    }
+
+    const _totalContextChars = historyBlock.length + lastJobBlock.length + lastValidationBlock.length + systemLogsBlock.length;
+    console.info(JSON.stringify({ event: 'full_prompt_context_built', jobId: context._jobId, groupId: context.groupId, totalChars: _totalContextChars, budget: BUDGET.TOTAL_BUDGET, withinBudget: _totalContextChars <= BUDGET.TOTAL_BUDGET }));
+    if (_totalContextChars > BUDGET.TOTAL_BUDGET) {
+      console.warn(JSON.stringify({ event: 'full_prompt_budget_exceeded', totalChars: _totalContextChars, exceeded: _totalContextChars - BUDGET.TOTAL_BUDGET }));
+    }
+
+    return [
+      '## MODO FULL — AGENTE DE EXECUCAO AUTONOMA',
+      '',
+      'Voce e um agente tecnico com acesso total ao sistema de arquivos do projeto.',
+      'Seu trabalho e EXECUTAR as mudancas, nao apenas descrever ou diagnosticar.',
+      '',
+      '### REGRAS OBRIGATORIAS:',
+      '1. USE as ferramentas de escrita de arquivo (write_file, edit_file, str_replace_based_edit) para fazer modificacoes AGORA.',
+      '2. NUNCA apenas descreva o que precisa ser feito. FACA imediatamente.',
+      '3. Para cada tarefa: leia o arquivo → edite → salve → valide.',
+      '4. Apos todas as edicoes, execute: npm run check (no diretorio /opt/chatbot)',
+      '5. Se npm run check falhar, corrija os erros e rode novamente.',
+      '6. Nao use git para reverter nada e nao faca commits.',
+      '7. Nao reinicie o processo do bot por conta propria.',
+      '8. Finalize com um resumo OBJETIVO do que foi alterado (arquivos + linhas modificadas).',
+      '',
+      '### SE A TAREFA PEDIR REMOCAO DE DADOS (alarmes, lembretes, configuracoes):',
+      '- Use terminal para modificar /opt/chatbot/data/*.json diretamente',
+      '- Exemplo: node -e "const fs=require(\'fs\'); fs.writeFileSync(\'data/alarms.json\', JSON.stringify({items:[],updatedAt:new Date().toISOString()},null,2))"',
+      '',
+      '### SE A TAREFA PEDIR CORRECAO DE BUG:',
+      '- Identifique o arquivo e linha exata com o bug',
+      '- Use str_replace_based_edit para fazer a correcao cirurgica',
+      '- Rode npm run check para confirmar',
+      '',
+      `Grupo: ${String(context.groupId || 'desconhecido')}`,
+      `Remetente: ${String(context.senderNumber || 'desconhecido')} (FULL)`,
+      '',
+      historyBlock,
+      lastJobBlock,
+      lastValidationBlock,
+      systemLogsBlock,
+      '### PEDIDO_ATUAL',
+      task
+    ].join('\n');
+  })();
+
+  const startedAt = Date.now();
+
+  await notifyFullAutoTaskProgress(options.onProgress, {
+    status: 'running',
+    statusLabel: 'editando arquivos',
+    detail: 'Status: executando alteracoes no projeto local.'
+  });
+
+  let child;
+  let outFile = '';
+
+  if (provider === 'copilot') {
+    const copilotFullModel = runtime.copilotFullModel || config.copilotFullModel || '';
+    const copilotModel = runtime.copilotModel || config.copilotModel || '';
+    const effectiveModel = copilotFullModel || copilotModel;
+    const args = [
+      '-p', prompt,
+      '-s',
+      '--no-color',
+      '--allow-all-tools',
+      '--no-ask-user'
+    ];
+    if (effectiveModel) {
+      args.push('--model', effectiveModel);
+    }
+    const effort = runtime.copilotFullReasoningEffort || config.copilotFullReasoningEffort || 'high';
+    if (effort) {
+      args.push('--effort', effort);
+    }
+
+    child = spawn(config.copilotBin, args, {
+      cwd: config.codexWorkdir,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true
+    });
+  } else {
+    outFile = join(tmpdir(), `codex-full-auto-${randomUUID()}.txt`);
+    const args = [
+      'exec',
+      '-',
+      '--skip-git-repo-check',
+      '--color',
+      'never',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '--sandbox',
+      'danger-full-access',
+      '-C',
+      config.codexWorkdir,
+      '-o',
+      outFile,
+      '-m',
+      config.fullAutoDevModel
+    ];
+
+    child = spawn(config.codexBin, args, {
+      cwd: config.codexWorkdir,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+  }
+
+  let stdout = '';
+  let stderr = '';
+  let timedOut = false;
+  // Timeout obrigatório: mínimo 5 min, máximo 90 min.
+  // FULL sem timeout é risco operacional real — nunca permite 0.
+  const FULL_TIMEOUT_MIN = 5 * 60 * 1000;   //   300_000 ms
+  const FULL_TIMEOUT_MAX = 90 * 60 * 1000;  // 5_400_000 ms
+  const rawTimeout = Number(runtime.fullAutoDevTimeoutMs || config.fullAutoDevTimeoutMs || 0);
+  const timeoutMs = rawTimeout <= 0
+    ? FULL_TIMEOUT_MIN
+    : Math.min(Math.max(rawTimeout, FULL_TIMEOUT_MIN), FULL_TIMEOUT_MAX);
+  if (rawTimeout <= 0) {
+    console.warn(JSON.stringify({ event: 'full_timeout_enforced', reason: 'config_was_zero_or_unset', appliedMs: timeoutMs }));
+  } else if (rawTimeout !== timeoutMs) {
+    console.warn(JSON.stringify({ event: 'full_timeout_clamped', original: rawTimeout, appliedMs: timeoutMs }));
+  }
+
+  function killTree() {
+    if (provider === 'copilot') {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    }
+    try { child.kill('SIGKILL'); } catch {}
+  }
+
+  const timeout =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          killTree();
+        }, timeoutMs)
+      : null;
+
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk.toString('utf8');
+  });
+
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString('utf8');
+  });
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('exit', (code) => resolve(code));
+    if (provider !== 'copilot') {
+      child.stdin.write(prompt);
+    }
+    child.stdin.end();
+
+    if (provider === 'copilot') {
+      const safetyTimeout = setTimeout(() => {
+        killTree();
+        resolve(null);
+      }, (timeoutMs || 300000) + 5000);
+      safetyTimeout.unref();
+      child.on('close', () => clearTimeout(safetyTimeout));
+    }
+  }).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+
+  if (timedOut) {
+    killTree();
+    if (outFile) await rm(outFile, { force: true }).catch(() => {});
+    return {
+      ok: false,
+      message: `Tempo limite excedido no modo FULL (${timeoutMs}ms).`
+    };
+  }
+
+  let lastMessage = '';
+  if (outFile) {
+    try {
+      lastMessage = (await readFile(outFile, 'utf8')).trim();
+    } catch {
+      // segue com stdout.
+    }
+    await rm(outFile, { force: true }).catch(() => {});
+  }
+
+  const summaryRaw = compactSpaces(lastMessage || stdout || stderr || '');
+  const summary = clampText(summaryRaw || 'Alteracao concluida.', 1600);
+
+  if (exitCode !== 0 && exitCode !== null) {
+    return {
+      ok: false,
+      message: `Falha no modo FULL (exit ${exitCode}): ${clampText(stderr || summary, 600)}`
+    };
+  }
+
+  if (exitCode === null && !summaryRaw) {
+    return {
+      ok: false,
+      message: 'Falha no modo FULL: processo encerrado por sinal sem saida.'
+    };
+  }
+
+  if (looksReadOnlyFailure(summary)) {
+    return {
+      ok: false,
+      message: `A IA retornou restricao de leitura no modo FULL. Ajuste o ambiente do ${provider === 'copilot' ? 'Copilot' : 'Codex'} local.`
+    };
+  }
+
+  await notifyFullAutoTaskProgress(options.onProgress, {
+    status: 'running',
+    statusLabel: 'validando alteracoes',
+    detail: 'Status: executando npm run check.'
+  });
+
+  const validation = await runTerminalCommand('npm run check');
+  const validationOutput = [validation.stdout, validation.stderr].filter(Boolean).join('\n');
+  const validationOk = !validation.timedOut && validation.exitCode === 0;
+  const validationStatus = validation.timedOut ? 'timeout' : `exit ${validation.exitCode}`;
+
+  const lastValidationPath = join(process.cwd(), 'logs', 'last-validation.json');
+  try {
+    await mkdir(join(process.cwd(), 'logs'), { recursive: true });
+    await writeFile(
+      lastValidationPath,
+      JSON.stringify(
+        {
+          ts: new Date().toISOString(),
+          ok: validationOk,
+          status: validationStatus,
+          summary: summary || '',
+          output: clampText(validationOutput || '(sem saida)', 2000),
+          willRestart: isFullAutoRestartEnabled()
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+  } catch {
+    // gravacao de last-validation.json e best-effort
+  }
+
+  return {
+    ok: true,
+    summary,
+    elapsedMs: Date.now() - startedAt,
+    validationOk,
+    validationStatus,
+    validationOutput: clampText(validationOutput || '(sem saida)', 1200)
+  };
+}
+
+function isValidIpv4(value) {
+  const input = String(value || '').trim();
+  const parts = input.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const n = Number.parseInt(part, 10);
+    return n >= 0 && n <= 255;
+  });
+}
+
+function isValidHostname(value) {
+  const input = String(value || '').trim().toLowerCase();
+  if (!input || input.length > 253) return false;
+  if (!/^[a-z0-9.-]+$/.test(input)) return false;
+  if (input.startsWith('.') || input.endsWith('.') || input.includes('..')) return false;
+  return input.includes('.');
+}
+
+function parsePingStats(output) {
+  const normalized = String(output || '');
+  const txRx = normalized.match(/(\d+)\s+packets transmitted,\s+(\d+)\s+received/i);
+  const loss = normalized.match(/(\d+(?:\.\d+)?)%\s+packet loss/i);
+  const rtt = normalized.match(/rtt [^=]+= ([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)\s*ms/i);
+
+  return {
+    transmitted: txRx ? Number.parseInt(txRx[1], 10) : null,
+    received: txRx ? Number.parseInt(txRx[2], 10) : null,
+    lossPercent: loss ? Number.parseFloat(loss[1]) : null,
+    minMs: rtt ? Number.parseFloat(rtt[1]) : null,
+    avgMs: rtt ? Number.parseFloat(rtt[2]) : null,
+    maxMs: rtt ? Number.parseFloat(rtt[3]) : null,
+    mdevMs: rtt ? Number.parseFloat(rtt[4]) : null
+  };
+}
+
+async function runPingDiagnostic(target) {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const child = spawn('ping', ['-c', '3', '-W', '2', target], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timeoutMs = Math.max(2000, Math.min(config.terminalTimeoutMs, 30000));
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on('close', (exitCode) => {
+      clearTimeout(timeout);
+      resolve({
+        target,
+        exitCode: Number.isFinite(exitCode) ? exitCode : -1,
+        timedOut,
+        elapsedMs: Date.now() - startedAt,
+        stdout: String(stdout || '').trim(),
+        stderr: String(stderr || '').trim(),
+        stats: parsePingStats(stdout)
+      });
+    });
+  });
+}
+
+async function runTcpProbe(target, ports = [53, 443], timeoutMs = 3500) {
+  for (const port of ports) {
+    const startedAt = Date.now();
+    const result = await new Promise((resolve) => {
+      const socket = net.createConnection({
+        host: target,
+        port,
+        timeout: timeoutMs
+      });
+
+      let done = false;
+      const finish = (payload) => {
+        if (done) return;
+        done = true;
+        socket.destroy();
+        resolve(payload);
+      };
+
+      socket.on('connect', () => {
+        finish({
+          ok: true,
+          port,
+          elapsedMs: Date.now() - startedAt
+        });
+      });
+
+      socket.on('timeout', () => {
+        finish({
+          ok: false,
+          port,
+          error: 'timeout',
+          elapsedMs: Date.now() - startedAt
+        });
+      });
+
+      socket.on('error', (error) => {
+        finish({
+          ok: false,
+          port,
+          error: error instanceof Error ? error.message : String(error),
+          elapsedMs: Date.now() - startedAt
+        });
+      });
+    });
+
+    if (result.ok) return result;
+  }
+
+  return {
+    ok: false,
+    port: ports[0] || null,
+    error: 'all probes failed',
+    elapsedMs: timeoutMs
+  };
+}
+
+function isParticipantAdmin(participant) {
+  return Boolean(participant?.isAdmin || participant?.isSuperAdmin || participant?.type === 'admin' || participant?.type === 'superadmin');
+}
+
+function findParticipantByWid(participants, targetWid) {
+  if (!targetWid || !Array.isArray(participants)) return null;
+  const targetDigits = normalizeDigits(String(targetWid).split('@')[0]);
+  return participants.find((participant) => {
+    const pid = extractSerializedWid(participant?.id || participant);
+    if (!pid) return false;
+    if (pid === targetWid) return true;
+    const participantDigits = normalizeDigits(pid.split('@')[0]);
+    if (!targetDigits || !participantDigits) return false;
+    return (
+      participantDigits === targetDigits ||
+      participantDigits.endsWith(targetDigits) ||
+      targetDigits.endsWith(participantDigits)
+    );
+  });
+}
+
+function pickMentionTarget(context = {}) {
+  const mentioned = Array.isArray(context.mentionedIds)
+    ? context.mentionedIds.map((item) => extractSerializedWid(item)).filter(Boolean)
+    : [];
+  if (!mentioned.length) return '';
+
+  const botWid = extractSerializedWid(context.client?.info?.wid);
+  const senderWid = extractSerializedWid(context.senderJid);
+  const botDigits = normalizeDigits(String(botWid || '').split('@')[0]);
+  const senderDigits = normalizeDigits(String(senderWid || '').split('@')[0]);
+
+  for (const candidate of mentioned) {
+    const candidateDigits = normalizeDigits(String(candidate).split('@')[0]);
+    if (botWid && (candidate === botWid || (botDigits && candidateDigits && numbersAreEquivalent(candidateDigits, botDigits)))) continue;
+    if (senderWid && (candidate === senderWid || (senderDigits && candidateDigits && numbersAreEquivalent(candidateDigits, senderDigits)))) continue;
+    return candidate;
+  }
+
+  return (
+    mentioned.find((candidate) => {
+      const candidateDigits = normalizeDigits(String(candidate).split('@')[0]);
+      const isSender =
+        candidate === senderWid ||
+        (senderDigits && candidateDigits && numbersAreEquivalent(candidateDigits, senderDigits));
+      const isBot =
+        candidate === botWid ||
+        (botDigits && candidateDigits && numbersAreEquivalent(candidateDigits, botDigits));
+      return !isSender && !isBot;
+    }) || ''
+  );
+}
+
+async function readGroupPermissions(context) {
+  const client = context.client;
+  const groupId = context.groupId;
+  if (!client || !groupId) return null;
+
+  const chat = await client.getChatById(groupId);
+  if (!chat?.isGroup) return null;
+
+  const participants = Array.isArray(chat.participants) ? chat.participants : [];
+  const botWid = extractSerializedWid(client.info?.wid);
+  const senderWid = String(context.senderJid || '');
+
+  const botParticipant = findParticipantByWid(participants, botWid);
+  const senderParticipant = findParticipantByWid(participants, senderWid);
+
+  return {
+    participantsCount: participants.length,
+    botWid,
+    senderWid,
+    botIsAdmin: isParticipantAdmin(botParticipant),
+    senderIsAdmin: isParticipantAdmin(senderParticipant)
+  };
+}
+
+async function ensureBotCanManageGroup(context) {
+  try {
+    const perms = await readGroupPermissions(context);
+    if (!perms) {
+      return { ok: true };
+    }
+
+    if (!perms.botIsAdmin) {
+      return {
+        ok: false,
+        message: 'Nao tenho permissao de admin no grupo para executar essa acao.'
+      };
+    }
+
+    return { ok: true };
+  } catch {
+    return { ok: true };
+  }
+}
+
+function makeIdVariantsFromDigits(digitsRaw) {
+  const digits = normalizeDigits(digitsRaw);
+  if (!digits) return [];
+  return [`${digits}@c.us`, `${digits}@lid`, `${digits}@s.whatsapp.net`];
+}
+
+function extractParticipantIds(chat) {
+  if (!chat?.isGroup || !Array.isArray(chat.participants)) return [];
+  return chat.participants
+    .map((participant) => extractSerializedWid(participant?.id || participant))
+    .filter(Boolean);
+}
+
+function resolveParticipantTargets(chat, { phoneDigits = '', mentionedId = '' }) {
+  const candidateSet = new Set();
+  const participantIds = extractParticipantIds(chat);
+
+  if (mentionedId) {
+    candidateSet.add(mentionedId);
+    const mentionedDigits = normalizeDigits(String(mentionedId).split('@')[0]);
+    for (const variant of makeIdVariantsFromDigits(mentionedDigits)) {
+      candidateSet.add(variant);
+    }
+  }
+
+  const normalizedPhone = normalizeDigits(phoneDigits);
+  for (const variant of makeIdVariantsFromDigits(normalizedPhone)) {
+    candidateSet.add(variant);
+  }
+
+  if (normalizedPhone) {
+    for (const pid of participantIds) {
+      const pDigits = normalizeDigits(String(pid).split('@')[0]);
+      if (!pDigits) continue;
+      if (numbersAreEquivalent(normalizedPhone, pDigits)) {
+        candidateSet.add(pid);
+      }
+    }
+  }
+
+  if (mentionedId) {
+    const mentionedDigits = normalizeDigits(String(mentionedId).split('@')[0]);
+    if (mentionedDigits) {
+      for (const pid of participantIds) {
+        const pDigits = normalizeDigits(String(pid).split('@')[0]);
+        if (!pDigits) continue;
+        if (numbersAreEquivalent(mentionedDigits, pDigits)) {
+          candidateSet.add(pid);
+        }
+      }
+    }
+  }
+
+  const ordered = Array.from(candidateSet).filter(Boolean);
+  return {
+    targets: ordered,
+    participantsCount: participantIds.length
+  };
+}
+
+function compactErrorMessage(error) {
+  const raw =
+    (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+      ? error.message
+      : String(error || 'erro desconhecido')) || 'erro desconhecido';
+  return compactSpaces(raw).slice(0, 180);
+}
+
+async function addNumberToGroup(context, phoneDigits) {
+  const client = context.client;
+  const groupId = context.groupId;
+  if (!client || !groupId) {
+    return {
+      ok: false,
+      message: 'Contexto do WhatsApp indisponivel para adicionar participante.'
+    };
+  }
+
+  const chat = await client.getChatById(groupId);
+  if (!chat?.isGroup || typeof chat.addParticipants !== 'function') {
+    return {
+      ok: false,
+      message: 'Nao consegui abrir o grupo para adicionar participante.'
+    };
+  }
+
+  const beforeIds = new Set(extractParticipantIds(chat));
+  const contactJid = `${phoneDigits}@c.us`;
+  const result = await chat.addParticipants([contactJid], {
+    autoSendInviteV4: true
+  });
+
+  if (typeof result === 'string') {
+    return {
+      ok: false,
+      message: result
+    };
+  }
+
+  const entry = result?.[contactJid] || result?.[Object.keys(result || {})[0]];
+  if (!entry) {
+    return {
+      ok: false,
+      message: 'Retorno vazio ao tentar adicionar participante.'
+    };
+  }
+
+  if (entry.code === 200) {
+    // Quando o grupo usa IDs ocultos (@lid), mapeamos automaticamente o novo ID para o numero real.
+    try {
+      const refreshed = await client.getChatById(groupId);
+      const afterIds = extractParticipantIds(refreshed);
+      const newIds = afterIds.filter((id) => !beforeIds.has(id));
+      for (const wid of newIds) {
+        const widDigits = normalizeDigits(String(wid).split('@')[0]);
+        if (!widDigits) continue;
+        if (numbersAreEquivalent(widDigits, phoneDigits)) continue;
+        await rememberAliasForNumber({
+          groupId,
+          phoneDigits,
+          aliasRaw: widDigits
+        });
+      }
+    } catch {
+      // Falha de mapeamento nao bloqueia a adicao.
+    }
+
+    return {
+      ok: true,
+      message: `Numero ${phoneDigits} adicionado ao grupo com sucesso.`
+    };
+  }
+
+  if (entry.code === 403 && entry.isInviteV4Sent) {
+    return {
+      ok: true,
+      message: `O numero ${phoneDigits} bloqueia adicao direta. Convite privado foi enviado.`
+    };
+  }
+
+  return {
+    ok: false,
+    message: entry.message || `Falha ao adicionar numero ${phoneDigits}. Codigo: ${entry.code ?? 'desconhecido'}.`
+  };
+}
+
+async function removeTargetFromGroup(context, { phoneDigits = '', mentionedId = '' }) {
+  const client = context.client;
+  const groupId = context.groupId;
+  if (!client || !groupId) {
+    return {
+      ok: false,
+      message: 'Contexto do WhatsApp indisponivel para remover participante.'
+    };
+  }
+
+  const chat = await client.getChatById(groupId);
+  if (!chat?.isGroup || typeof chat.removeParticipants !== 'function') {
+    return {
+      ok: false,
+      message: 'Nao consegui abrir o grupo para remover participante.'
+    };
+  }
+
+  const { targets, participantsCount } = resolveParticipantTargets(chat, { phoneDigits, mentionedId });
+  if (!targets.length) {
+    return {
+      ok: false,
+      message: `Nao consegui localizar o alvo no grupo (participantes visiveis: ${participantsCount}).`
+    };
+  }
+
+  const errors = [];
+  for (const candidate of targets) {
+    const participant = findParticipantByWid(chat.participants, candidate);
+    const targetIsAdmin = isParticipantAdmin(participant);
+
+    if (targetIsAdmin && typeof chat.demoteParticipants === 'function') {
+      try {
+        await chat.demoteParticipants([candidate]);
+      } catch (error) {
+        errors.push(`demote ${candidate}: ${compactErrorMessage(error)}`);
+      }
+    }
+
+    try {
+      await chat.removeParticipants([candidate]);
+      return {
+        ok: true,
+        message: `Participante ${candidate} removido do grupo.`
+      };
+    } catch (error) {
+      errors.push(`remove ${candidate}: ${compactErrorMessage(error)}`);
+    }
+  }
+
+  const detail = errors[0] ? ` Detalhe: ${errors[0]}.` : '';
+  return {
+    ok: false,
+    message: `Falha ao remover participante. Verifique se o bot e admin e se o alvo esta no grupo.${detail}`
+  };
+}
+
+async function promoteNumberToGroupAdmin(context, { phoneDigits = '', mentionedId = '' }) {
+  const client = context.client;
+  const groupId = context.groupId;
+  if (!client || !groupId) {
+    return {
+      ok: false,
+      message: 'Contexto do WhatsApp indisponivel para promover admin.'
+    };
+  }
+
+  const chat = await client.getChatById(groupId);
+  if (!chat?.isGroup || typeof chat.promoteParticipants !== 'function') {
+    return {
+      ok: false,
+      message: 'Nao consegui abrir o grupo para promover participante.'
+    };
+  }
+
+  const { targets } = resolveParticipantTargets(chat, { phoneDigits, mentionedId });
+  for (const candidate of targets) {
+    try {
+      await chat.promoteParticipants([candidate]);
+      return {
+        ok: true,
+        message: phoneDigits
+          ? `Numero ${phoneDigits} promovido para admin do grupo.`
+          : `Participante ${candidate} promovido para admin do grupo.`
+      };
+    } catch {
+      // tenta proximo.
+    }
+  }
+
+  return {
+    ok: false,
+    message: phoneDigits
+      ? `Falha ao promover ${phoneDigits}. Verifique se ele ja esta no grupo e se o bot e admin.`
+      : 'Falha ao promover participante. Verifique se o bot e admin.'
+  };
+}
+
+async function demoteNumberFromGroupAdmin(context, { phoneDigits = '', mentionedId = '' }) {
+  const client = context.client;
+  const groupId = context.groupId;
+  if (!client || !groupId) {
+    return {
+      ok: false,
+      message: 'Contexto do WhatsApp indisponivel para remover admin do grupo.'
+    };
+  }
+
+  const chat = await client.getChatById(groupId);
+  if (!chat?.isGroup || typeof chat.demoteParticipants !== 'function') {
+    return {
+      ok: false,
+      message: 'Nao consegui abrir o grupo para remover admin.'
+    };
+  }
+
+  const { targets } = resolveParticipantTargets(chat, { phoneDigits, mentionedId });
+  for (const candidate of targets) {
+    try {
+      await chat.demoteParticipants([candidate]);
+      return {
+        ok: true,
+        message: phoneDigits
+          ? `Numero ${phoneDigits} removido da administracao do grupo.`
+          : `Participante ${candidate} removido da administracao do grupo.`
+      };
+    } catch {
+      // tenta proximo alvo compativel.
+    }
+  }
+
+  return {
+    ok: false,
+    message: phoneDigits
+      ? `Falha ao remover admin ${phoneDigits}. Verifique se ele e admin do grupo e se o bot tem permissao.`
+      : 'Falha ao remover admin do grupo.'
+  };
+}
+
+function compactKeyForDisplay(key) {
+  const raw = String(key || '');
+  if (!raw) return 'desconhecido';
+  if (raw.includes('@')) return raw;
+  return `${raw}@c.us`;
+}
+
+function extractFirstNumber(text) {
+  const match = String(text || '').match(/\b(\d{1,4})\b/);
+  if (!match) return null;
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildItem(text) {
+  const now = new Date().toISOString();
+  return {
+    id: randomUUID(),
+    text: compactSpaces(text),
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function normalizeItems(rawItems) {
+  return rawItems
+    .map((item) => {
+      if (typeof item === 'string') {
+        return buildItem(item);
+      }
+
+      if (!item || typeof item !== 'object') return null;
+
+      const text = compactSpaces(item.text || item.value || '');
+      if (!text) return null;
+
+      const createdAt = typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString();
+      const updatedAt = typeof item.updatedAt === 'string' ? item.updatedAt : createdAt;
+      const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : randomUUID();
+
+      return {
+        id,
+        text,
+        createdAt,
+        updatedAt
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseCollectionContent(content) {
+  const normalized = String(content || '').trim();
+  if (!normalized) return [];
+
+  try {
+    const parsed = JSON.parse(normalized);
+
+    if (Array.isArray(parsed)) {
+      return normalizeItems(parsed);
+    }
+
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.items)) {
+      return normalizeItems(parsed.items);
+    }
+  } catch {
+    // fallback para formato jsonl antigo.
+  }
+
+  const jsonlItems = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  return normalizeItems(jsonlItems);
+}
+
+async function ensureParentDir(filePath) {
+  await mkdir(dirname(filePath), { recursive: true });
+}
+
+function resolveStructuredCollection(filePath) {
+  if (filePath === config.agendaFile) return 'agenda';
+  if (filePath === config.notesFile) return 'notes';
+  return '';
+}
+
+async function loadItems(filePath) {
+  try {
+    const content = await readFile(filePath, 'utf8');
+    const parsed = parseCollectionContent(content);
+    if (parsed.length > 0 || !filePath.endsWith('.json')) {
+      return parsed;
+    }
+
+    const legacyFile = `${filePath}l`;
+    try {
+      const legacyContent = await readFile(legacyFile, 'utf8');
+      const legacyItems = parseCollectionContent(legacyContent);
+      return legacyItems.length ? legacyItems : parsed;
+    } catch {
+      return parsed;
+    }
+  } catch {
+    if (filePath.endsWith('.json')) {
+      const legacyFile = `${filePath}l`;
+      try {
+        const legacyContent = await readFile(legacyFile, 'utf8');
+        return parseCollectionContent(legacyContent);
+      } catch {
+        // sem fallback legacy.
+      }
+    }
+
+    return [];
+  }
+}
+
+async function saveItems(filePath, items) {
+  await ensureParentDir(filePath);
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    items
+  };
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+async function addItem(filePath, text, options = {}) {
+  const collection = resolveStructuredCollection(filePath);
+  if (collection) {
+    return botDatabase.addItem(collection, text, options);
+  }
+
+  const items = await loadItems(filePath);
+  const item = buildItem(text);
+  items.push(item);
+  await saveItems(filePath, items);
+  return { item, total: items.length };
+}
+
+async function listItems(filePath, limit = 10, options = {}) {
+  const collection = resolveStructuredCollection(filePath);
+  if (collection) {
+    return botDatabase.listItems(collection, limit, options);
+  }
+
+  const items = await loadItems(filePath);
+  return items.slice(-Math.max(1, limit));
+}
+
+async function removeItemByIndex(filePath, indexOneBased, options = {}) {
+  const collection = resolveStructuredCollection(filePath);
+  if (collection) {
+    return botDatabase.removeItemByIndex(collection, indexOneBased, options);
+  }
+
+  const items = await loadItems(filePath);
+  const idx = indexOneBased - 1;
+  if (idx < 0 || idx >= items.length) return null;
+
+  const [removed] = items.splice(idx, 1);
+  await saveItems(filePath, items);
+  return {
+    removed,
+    remaining: items.length
+  };
+}
+
+async function updateItemByIndex(filePath, indexOneBased, newText, options = {}) {
+  const collection = resolveStructuredCollection(filePath);
+  if (collection) {
+    return botDatabase.updateItemByIndex(collection, indexOneBased, newText, options);
+  }
+
+  const items = await loadItems(filePath);
+  const idx = indexOneBased - 1;
+  if (idx < 0 || idx >= items.length) return null;
+
+  const previousText = items[idx].text;
+  items[idx].text = compactSpaces(newText);
+  items[idx].updatedAt = new Date().toISOString();
+  await saveItems(filePath, items);
+
+  return {
+    index: indexOneBased,
+    previousText,
+    updatedText: items[idx].text
+  };
+}
+
+async function clearItems(filePath, options = {}) {
+  const collection = resolveStructuredCollection(filePath);
+  if (collection) {
+    return botDatabase.clearItems(collection, options);
+  }
+
+  const items = await loadItems(filePath);
+  const count = items.length;
+  await saveItems(filePath, []);
+  return count;
+}
+
+function extractPayload(text, keywordRegex) {
+  const normalized = compactSpaces(text);
+  if (!normalized) return '';
+
+  const colonIndex = normalized.indexOf(':');
+  if (colonIndex > -1) {
+    const before = normalized.slice(0, colonIndex);
+    const strictKeywordRegex = new RegExp(`${keywordRegex.source}\\s*$`, keywordRegex.flags.replace(/g/g, ''));
+    if (strictKeywordRegex.test(foldText(before))) {
+      const after = compactSpaces(normalized.slice(colonIndex + 1));
+      if (after) return after;
+    }
+  }
+
+  const keywordMatch = keywordRegex.exec(foldText(normalized));
+  if (!keywordMatch) return '';
+  const afterKeyword = normalized.slice(keywordMatch.index + keywordMatch[0].length);
+  return compactSpaces(afterKeyword.replace(/^[-:,\s]+/g, ''));
+}
+
+function hasMeaningfulPayload(text) {
+  return /[\p{L}\p{N}]/u.test(String(text || ''));
+}
+
+const agendaSubjectRules = [
+  {
+    subject: 'Escala/Folga',
+    keywords: ['folga', 'escala', 'plantao', 'turno', 'trabalhar']
+  },
+  {
+    subject: 'Saude',
+    keywords: ['dentista', 'medico', 'consulta', 'exame', 'clinica', 'hospital', 'remedio', 'terapia', 'psicologo']
+  },
+  {
+    subject: 'Trabalho',
+    keywords: ['reuniao', 'cliente', 'projeto', 'deploy', 'sprint', 'ticket', 'prazo', 'empresa', 'time']
+  },
+  {
+    subject: 'Financeiro',
+    keywords: ['pagar', 'boleto', 'conta', 'pix', 'banco', 'fatura', 'imposto', 'salario', 'pagamento']
+  },
+  {
+    subject: 'Estudo',
+    keywords: ['estudar', 'curso', 'prova', 'faculdade', 'aula', 'treino', 'certificacao', 'leitura']
+  },
+  {
+    subject: 'Casa',
+    keywords: ['mercado', 'comprar', 'limpeza', 'casa', 'manutencao', 'conserto', 'supermercado']
+  },
+  {
+    subject: 'Sistema/Bot',
+    keywords: ['bot', 'vscode', 'codigo', 'servidor', 'linux', 'whatsapp', 'automacao']
+  }
+];
+
+const agendaStopWords = new Set([
+  'de', 'da', 'do', 'das', 'dos', 'a', 'o', 'as', 'os', 'e', 'em', 'para', 'por', 'com', 'sem', 'um', 'uma',
+  'que', 'na', 'no', 'nas', 'nos', 'ao', 'aos', 'ate', 'amanha', 'hoje', 'agora'
+]);
+
+const agendaGenericPayloads = new Set([
+  'agenda',
+  'a agenda',
+  'na agenda',
+  'minha agenda',
+  'uma agenda',
+  'um compromisso',
+  'compromisso'
+]);
+
+function toTitleCase(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+}
+
+function clampTextAtWordBoundary(text, maxChars) {
+  const normalized = compactSpaces(text);
+  if (!normalized || normalized.length <= maxChars) return normalized;
+
+  const sliced = normalized.slice(0, maxChars + 1);
+  const lastSpace = sliced.lastIndexOf(' ');
+  const cutoff = lastSpace >= Math.floor(maxChars * 0.6) ? lastSpace : maxChars;
+  return compactSpaces(sliced.slice(0, cutoff).replace(/[;,:-]+$/g, ''));
+}
+
+function cleanupAgendaFreeText(text) {
+  return compactSpaces(
+    String(text || '')
+      .replace(/^(?:que|e que)\s+/i, '')
+      .replace(/^(?:(?:na|no|a|o)\s+)?agenda\b(?:\s+(?:do|da|de))?\s+/i, '')
+      .replace(/^[-:,\s]+/g, '')
+  );
+}
+
+function normalizeAgendaSubjectLabel(text) {
+  const normalized = compactSpaces(String(text || '').replace(/^assunto\s*:\s*/i, '').replace(/^subject\s*:\s*/i, ''))
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/[.!?;:]+$/g, '');
+  if (!normalized) return '';
+  return clampTextAtWordBoundary(normalized, 48) || '';
+}
+
+function normalizeAgendaSummary(text) {
+  const normalized = compactSpaces(String(text || '').replace(/^resumo\s*:\s*/i, '').replace(/^summary\s*:\s*/i, ''))
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*([;,.!?])\s*/g, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[;,.!?]+$/g, '');
+
+  if (!normalized) return '';
+
+  const clipped = normalized.length > 160 ? clampTextAtWordBoundary(normalized, 160) : normalized;
+  if (!clipped) return '';
+  return clipped.charAt(0).toUpperCase() + clipped.slice(1);
+}
+
+function buildAgendaSummaryFallback(text) {
+  const cleaned = cleanupAgendaFreeText(text)
+    .replace(/\bque\s+(amanh[ãa]|hoje|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado|domingo|no proximo|na proxima)\b/gi, '$1')
+    .replace(/\beu\s+/gi, '')
+    .replace(/\s*,\s*/g, '; ')
+    .replace(/\s*\.\s*/g, '; ')
+    .replace(/;\s*que\s+/gi, '; ')
+    .replace(/;\s*e\s+/gi, '; ')
+    .replace(/;\s*;\s*/g, '; ')
+    .replace(/\s*;\s*$/g, '');
+
+  return normalizeAgendaSummary(cleaned);
+}
+
+function buildAgendaStoredItemText(payload = {}) {
+  const source = cleanupAgendaFreeText(payload.source || payload.summary || '');
+  const summary = normalizeAgendaSummary(payload.summary || source);
+  const fallbackSubject = normalizeAgendaSubjectLabel(payload.subject || inferAgendaSubjectFromText(summary || source) || 'Geral');
+  const subject = fallbackSubject || 'Geral';
+
+  if (!source || !summary) return summary || source;
+
+  return `${AGENDA_ITEM_V2_PREFIX}${JSON.stringify({
+    subject,
+    summary,
+    source
+  })}`;
+}
+
+function parseAgendaStoredItemText(text) {
+  const normalized = normalizeText(text);
+  if (!normalized.startsWith(AGENDA_ITEM_V2_PREFIX)) return null;
+
+  try {
+    const parsed = JSON.parse(normalized.slice(AGENDA_ITEM_V2_PREFIX.length));
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const source = cleanupAgendaFreeText(parsed.source || parsed.summary || '');
+    const summary = normalizeAgendaSummary(parsed.summary || source);
+    const subject = normalizeAgendaSubjectLabel(parsed.subject || inferAgendaSubjectFromText(summary || source));
+
+    if (!summary) return null;
+
+    return {
+      subject: subject || inferAgendaSubjectFromText(summary || source),
+      summary,
+      source: source || summary
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getAgendaEntryPresentation(text) {
+  const parsed = parseAgendaStoredItemText(text);
+  if (parsed) {
+    const searchableText = compactSpaces([parsed.summary, parsed.source, parsed.subject].filter(Boolean).join(' '));
+    return {
+      subject: parsed.subject || 'Geral',
+      summary: parsed.summary,
+      source: parsed.source || parsed.summary,
+      searchableText,
+      rawText: normalizeText(text)
+    };
+  }
+
+  const raw = cleanupAgendaFreeText(text);
+  return {
+    subject: inferAgendaSubjectFromText(raw),
+    summary: raw,
+    source: raw,
+    searchableText: raw,
+    rawText: raw
+  };
+}
+
+function inferAgendaSubjectFromText(text) {
+  const raw = cleanupAgendaFreeText(text);
+  const folded = foldText(raw);
+  if (!folded) return 'Geral';
+
+  let best = { subject: 'Geral', score: 0 };
+  for (const rule of agendaSubjectRules) {
+    let score = 0;
+    for (const keyword of rule.keywords) {
+      if (new RegExp(`\\b${keyword}\\b`).test(folded)) score += 1;
+    }
+    if (score > best.score) {
+      best = { subject: rule.subject, score };
+    }
+  }
+  if (best.score > 0) return best.subject;
+
+  const tokens = folded
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token && token.length > 2 && !agendaStopWords.has(token));
+
+  if (!tokens.length) return 'Geral';
+  return toTitleCase(tokens.slice(0, 2).join(' '));
+}
+
+function inferAgendaSubject(text) {
+  return getAgendaEntryPresentation(text).subject || 'Geral';
+}
+
+function shouldUseAgendaAiSummary(text, fallbackSubject, fallbackSummary) {
+  if (!config.agendaAiEnabled) return false;
+
+  const cleaned = cleanupAgendaFreeText(text);
+  const tokenCount = cleaned.split(/\s+/).filter(Boolean).length;
+
+  return (
+    cleaned.length >= 90 ||
+    tokenCount >= 14 ||
+    fallbackSubject === 'Geral' ||
+    (cleaned.length >= 70 && fallbackSummary === cleaned)
+  );
+}
+
+function tryParseAgendaAiResponse(text) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+
+  const candidates = [normalized];
+  const fenceStripped = normalized.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (fenceStripped && fenceStripped !== normalized) {
+    candidates.push(fenceStripped);
+  }
+
+  const jsonStart = normalized.indexOf('{');
+  const jsonEnd = normalized.lastIndexOf('}');
+  if (jsonStart >= 0 && jsonEnd > jsonStart) {
+    candidates.push(normalized.slice(jsonStart, jsonEnd + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const subject = normalizeAgendaSubjectLabel(parsed?.subject || parsed?.assunto || '');
+      const summary = normalizeAgendaSummary(parsed?.summary || parsed?.resumo || '');
+      if (subject && summary) {
+        return { subject, summary };
+      }
+    } catch {
+      // continua abaixo com parser de linhas.
+    }
+  }
+
+  const subjectMatch = normalized.match(/(?:subject|assunto)\s*:\s*(.+)/i);
+  const summaryMatch = normalized.match(/(?:summary|resumo)\s*:\s*(.+)/i);
+  const subject = normalizeAgendaSubjectLabel(subjectMatch?.[1] || '');
+  const summary = normalizeAgendaSummary(summaryMatch?.[1] || '');
+  return subject && summary ? { subject, summary } : null;
+}
+
+async function summarizeAgendaItemWithAi(text, context = {}, agendaEntry = null) {
+  const source = cleanupAgendaFreeText(text);
+  if (!source || !config.agendaAiEnabled) return null;
+
+  const prompt = [
+    'Tarefa interna: resumir um item de agenda.',
+    'Retorne somente JSON puro em uma unica linha.',
+    'Formato exato: {"subject":"...","summary":"..."}',
+    'Regras:',
+    '- subject: 2 a 5 palavras, especifico, em portugues, sem pontuacao final.',
+    '- summary: 1 frase curta em portugues, com ate 140 caracteres.',
+    '- Preserve datas, horarios, frequencia e detalhes relevantes.',
+    '- Nao invente informacoes.',
+    agendaEntry?.name ? `- Agenda destino: ${agendaEntry.name}` : '',
+    '',
+    'Texto original:',
+    source
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const response = await askAI(prompt, {
+    groupId: context.groupId,
+    senderNumber: context.senderNumber,
+    senderJid: context.senderJid,
+    isAdminSender: Boolean(context.isAdminSender),
+    isFullSender: Boolean(context.isFullSender)
+  });
+
+  return tryParseAgendaAiResponse(response);
+}
+
+async function prepareAgendaItemText(text, context = {}, agendaEntry = null) {
+  const source = cleanupAgendaFreeText(text);
+  if (!source) return '';
+
+  const fallbackSummary = buildAgendaSummaryFallback(source) || source;
+  const fallbackSubject = normalizeAgendaSubjectLabel(inferAgendaSubjectFromText(fallbackSummary)) || 'Geral';
+
+  let subject = fallbackSubject;
+  let summary = fallbackSummary;
+
+  if (shouldUseAgendaAiSummary(source, fallbackSubject, fallbackSummary)) {
+    const aiResult = await summarizeAgendaItemWithAi(source, context, agendaEntry);
+    const aiSubject = normalizeAgendaSubjectLabel(aiResult?.subject || '');
+    const aiSummary = normalizeAgendaSummary(aiResult?.summary || '');
+
+    if (aiSummary) summary = aiSummary;
+    if (aiSubject && !(aiSubject === 'Geral' && fallbackSubject !== 'Geral')) {
+      subject = aiSubject;
+    }
+  }
+
+  return buildAgendaStoredItemText({
+    subject,
+    summary,
+    source
+  });
+}
+
+function formatAgendaCountLabel(count) {
+  return `${count} ${count === 1 ? 'item' : 'itens'}`;
+}
+
+function formatAgendaEntryForDisplay(text) {
+  const compact = getAgendaEntryPresentation(text).summary;
+  if (!compact) return '';
+
+  let formatted = compact
+    .replace(/\s+(Preparo:)/gi, '\n$1')
+    .replace(/\s+(Cancelamento\/remarca[cç][aã]o:)/gi, '\n$1')
+    .replace(/\s+(Observa[cç][aã]o(?:es)?\s*:)/gi, '\n$1');
+
+  if (formatted.includes(' - ')) {
+    formatted = formatted.replace(/\s+-\s+/g, '\n- ');
+  }
+
+  return formatted
+    .split('\n')
+    .map((line) => compactSpaces(line))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function formatAgendaListLine(index, text) {
+  const normalizedIndex = String(index || '?');
+  const formatted = formatAgendaEntryForDisplay(text);
+  const lines = formatted
+    .split('\n')
+    .map((line) => compactSpaces(line))
+    .filter(Boolean);
+
+  if (!lines.length) return `- [${normalizedIndex}]`;
+  if (lines.length === 1) return `- [${normalizedIndex}] ${lines[0]}`;
+
+  return [`- [${normalizedIndex}] ${lines[0]}`, ...lines.slice(1).map((line) => `  ${line}`)].join('\n');
+}
+
+function formatAgendaIndexedLine(index, text) {
+  const normalizedIndex = String(index || '?');
+  const formatted = formatAgendaEntryForDisplay(text);
+  const lines = formatted
+    .split('\n')
+    .map((line) => compactSpaces(line))
+    .filter(Boolean);
+
+  if (!lines.length) return `${normalizedIndex}.`;
+  if (lines.length === 1) return `${normalizedIndex}. ${lines[0]}`;
+
+  return [`${normalizedIndex}. ${lines[0]}`, ...lines.slice(1).map((line) => `   ${line}`)].join('\n');
+}
+
+function tokenizeAgendaText(text) {
+  return foldText(getAgendaEntryPresentation(text).searchableText)
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token && token.length > 1 && !agendaStopWords.has(token));
+}
+
+function isAgendaPayloadTooGeneric(text) {
+  const folded = foldText(compactSpaces(text));
+  if (!folded) return true;
+  if (agendaGenericPayloads.has(folded)) return true;
+  if (/^[a-z][a-z0-9_]*_[a-z0-9_]*_\d+[!?]?$/i.test(folded)) return true;
+  if (
+    /\b(quero que voce|quero que você|voce|você)\b/.test(folded) &&
+    /\b(gerencie|gerir|crie|criar|edite|editar|altere|alterar|execute|executar|faca|faça)\b/.test(folded) &&
+    /\b(agenda|arquivo|bot|vscode)\b/.test(folded)
+  ) {
+    return true;
+  }
+  if (/\bcrie?\s+um\s+arquivo\s+de\s+agenda\b/.test(folded)) return true;
+
+  const sanitized = folded.replace(/\bagenda\b/g, '').trim();
+  if (!sanitized) return true;
+
+  const tokens = tokenizeAgendaText(sanitized);
+  return tokens.length === 0;
+}
+
+function findBestAgendaItemMatch(items, queryText) {
+  const query = getAgendaEntryPresentation(queryText).searchableText;
+  const foldedQuery = foldText(query);
+  if (!foldedQuery) return null;
+
+  const queryTokens = tokenizeAgendaText(query);
+  if (!items.length) return null;
+
+  let best = null;
+
+  for (const item of items) {
+    const itemText = getAgendaEntryPresentation(item.text).searchableText;
+    const foldedItem = foldText(itemText);
+    if (!foldedItem) continue;
+
+    let score = 0;
+    if (foldedItem === foldedQuery) {
+      score = 2000;
+    } else if (foldedItem.includes(foldedQuery)) {
+      score = 1500;
+    } else if (foldedQuery.includes(foldedItem) && foldedItem.length >= 6) {
+      score = 1100;
+    } else if (queryTokens.length) {
+      const itemTokens = tokenizeAgendaText(itemText);
+      if (itemTokens.length) {
+        const overlap = queryTokens.filter((token) => itemTokens.includes(token)).length;
+        if (overlap > 0) {
+          score = overlap * 120;
+        }
+      }
+    }
+
+    if (score <= 0) continue;
+    if (!best || score > best.score) {
+      best = { item, score };
+    }
+  }
+
+  return best ? best.item : null;
+}
+
+async function findAgendaItemByText(filePath, queryText, limit = 250, options = {}) {
+  const items = await listItems(filePath, limit, options);
+  return findBestAgendaItemMatch(items, queryText);
+}
+
+async function findAgendaItemByCollection(collection, queryText, limit = 250, options = {}) {
+  if (!collection) return null;
+  const items = await botDatabase.listItems(collection, limit, options);
+  return findBestAgendaItemMatch(items, queryText);
+}
+
+function buildAgendaGroupedResponse(agendaName, items) {
+  if (!items.length) {
+    return buildEmptyAgendaResponse(agendaName);
+  }
+
+  const grouped = new Map();
+  for (const item of items) {
+    const subject = inferAgendaSubject(item.text);
+    const list = grouped.get(subject) || [];
+    list.push({
+      index: item.index || null,
+      text: item.text
+    });
+    grouped.set(subject, list);
+  }
+
+  const sections = Array.from(grouped.entries()).map(([subject, entries]) => {
+    const lines = entries.map((entry) => formatAgendaListLine(entry.index || '?', entry.text)).join('\n');
+    return `${subject}:\n${lines}`;
+  });
+
+  const agendaHint = agendaName ? ` (agenda ${agendaName})` : '';
+  return `Aqui esta sua agenda por assunto (${formatAgendaCountLabel(items.length)})${agendaHint}:\n${sections.join('\n\n')}`;
+}
+
+function buildAgendaIndexedResponse(agendaName, items) {
+  if (!items.length) {
+    return buildEmptyAgendaResponse(agendaName);
+  }
+
+  const lines = items.map((item, index) => formatAgendaIndexedLine(item.index || index + 1, item.text));
+  const agendaHint = agendaName ? ` (agenda ${agendaName})` : '';
+  return `Sua agenda com numeros (${formatAgendaCountLabel(items.length)})${agendaHint}:\n${lines.join('\n')}`;
+}
+
+function normalizeAgendaCommandForNamedAgenda(command, agendaEntry) {
+  if (!command || typeof command !== 'object') return null;
+
+  const normalized = { ...command };
+  if (typeof normalized.text === 'string') {
+    normalized.text = stripLeadingAgendaReference(normalized.text, agendaEntry);
+  }
+
+  if (normalized.action === 'add' && !hasMeaningfulPayload(normalized.text || '')) {
+    return {
+      ...normalized,
+      action: 'add_missing_text'
+    };
+  }
+
+  if (normalized.action === 'remove_by_text' && !hasMeaningfulPayload(normalized.text || '')) {
+    return {
+      ...normalized,
+      action: 'remove_missing_index'
+    };
+  }
+
+  if (normalized.action === 'remove_by_text') {
+    const digitsOnly = normalizeDigits(normalized.text);
+    const hasLetters = /[\p{L}]/u.test(normalized.text || '');
+    if (normalized.text && digitsOnly && !hasLetters) {
+      const parsedIndex = Number.parseInt(digitsOnly, 10);
+      if (Number.isFinite(parsedIndex) && parsedIndex > 0) {
+        return {
+          ...normalized,
+          action: 'remove',
+          index: parsedIndex
+        };
+      }
+    }
+  }
+
+  return normalized;
+}
+
+async function executeNamedAgendaCommand(command, agendaEntry, context = {}) {
+  const normalizedCommand = normalizeAgendaCommandForNamedAgenda(command, agendaEntry);
+  const collection = buildNamedAgendaCollection(agendaEntry);
+  const dbOptions = buildDbOptionsFromContext(context);
+  const isSingleAgenda = Boolean(agendaEntry?.singleAgenda);
+  const agendaName = isSingleAgenda ? '' : String(agendaEntry?.name || '');
+  const agendaLabel = isSingleAgenda ? 'sua agenda' : `agenda ${agendaName}`;
+  if (!normalizedCommand || !collection) {
+    return {
+      handled: true,
+      response: 'Nao consegui identificar a agenda solicitada.'
+    };
+  }
+
+  if (normalizedCommand.action === 'add_missing_text') {
+    return {
+      handled: true,
+      response: isSingleAgenda
+        ? 'Me passe o texto para a agenda. Exemplo: agenda: dentista amanha 13h em Campo Grande'
+        : `Me passe o texto para a agenda ${agendaName}. Exemplo: agenda ${agendaName}: dentista amanha 13h em Campo Grande`
+    };
+  }
+
+  if (normalizedCommand.action === 'remove_missing_index') {
+    return {
+      handled: true,
+      response: isSingleAgenda
+        ? 'Para apagar da agenda, informe o numero. Exemplo: apagar agenda 2'
+        : `Para apagar da agenda ${agendaName}, informe o numero. Exemplo: apagar agenda ${agendaName} 2`
+    };
+  }
+
+  if (normalizedCommand.action === 'list') {
+    const items = await botDatabase.listItems(collection, 15, dbOptions);
+    return {
+      handled: true,
+      response: buildAgendaGroupedResponse(agendaName, items)
+    };
+  }
+
+  if (normalizedCommand.action === 'list_indexed') {
+    const items = await botDatabase.listItems(collection, 15, dbOptions);
+    return {
+      handled: true,
+      response: buildAgendaIndexedResponse(agendaName, items)
+    };
+  }
+
+  if (normalizedCommand.action === 'add') {
+    const preparedText = await prepareAgendaItemText(normalizedCommand.text, context, agendaEntry);
+    const result = await botDatabase.addItem(collection, preparedText, dbOptions);
+    return {
+      handled: true,
+      response: `Anotei na ${agendaLabel}: ${formatAgendaEntryForDisplay(result.item.text)}`
+    };
+  }
+
+  if (normalizedCommand.action === 'remove') {
+    const result = await botDatabase.removeItemByIndex(collection, normalizedCommand.index, dbOptions);
+    if (!result) {
+      return {
+        handled: true,
+        response: isSingleAgenda
+          ? `Nao encontrei o item ${normalizedCommand.index} na agenda. Use "listar agenda com numeros" para ver os indices.`
+          : `Nao encontrei o item ${normalizedCommand.index} na agenda ${agendaName}. Use "listar agenda ${agendaName} com numeros" para ver os indices.`
+      };
+    }
+
+    return {
+      handled: true,
+      response: `Feito. Item ${normalizedCommand.index} removido da ${agendaLabel}: ${formatAgendaEntryForDisplay(result.removed.text)}`
+    };
+  }
+
+  if (normalizedCommand.action === 'remove_by_text') {
+    const match = await findAgendaItemByCollection(collection, normalizedCommand.text, 250, dbOptions);
+    if (!match?.index) {
+      return {
+        handled: true,
+        response: isSingleAgenda
+          ? `Nao encontrei esse item na agenda: "${normalizedCommand.text}".`
+          : `Nao encontrei esse item na agenda ${agendaName}: "${normalizedCommand.text}".`
+      };
+    }
+
+    const result = await botDatabase.removeItemByIndex(collection, match.index, dbOptions);
+    if (!result) {
+      return {
+        handled: true,
+        response: isSingleAgenda
+          ? `Nao consegui remover o item identificado (${match.index}) da agenda. Tente novamente.`
+          : `Nao consegui remover o item identificado (${match.index}) da agenda ${agendaName}. Tente novamente.`
+      };
+    }
+
+    return {
+      handled: true,
+      response: `Feito. Item ${match.index} removido da ${agendaLabel}: ${formatAgendaEntryForDisplay(result.removed.text)}`
+    };
+  }
+
+  if (normalizedCommand.action === 'clear') {
+    const removedCount = await botDatabase.clearItems(collection, dbOptions);
+    return {
+      handled: true,
+      response:
+        removedCount > 0
+          ? isSingleAgenda
+            ? `Pronto. Limpei sua agenda (${removedCount} itens removidos).`
+            : `Pronto. Limpei a agenda ${agendaName} (${removedCount} itens removidos).`
+          : isSingleAgenda
+            ? 'Sua agenda ja estava vazia.'
+            : `A agenda ${agendaName} ja estava vazia.`
+    };
+  }
+
+  if (normalizedCommand.action === 'edit') {
+    const preparedText = await prepareAgendaItemText(normalizedCommand.text, context, agendaEntry);
+    const result = await botDatabase.updateItemByIndex(collection, normalizedCommand.index, preparedText, dbOptions);
+    if (!result) {
+      return {
+        handled: true,
+        response: isSingleAgenda
+          ? `Nao encontrei o item ${normalizedCommand.index} na agenda. Use "listar agenda com numeros" para ver os indices.`
+          : `Nao encontrei o item ${normalizedCommand.index} na agenda ${agendaName}. Use "listar agenda ${agendaName} com numeros" para ver os indices.`
+      };
+    }
+
+    return {
+      handled: true,
+      response: `Feito. Item ${normalizedCommand.index} da ${agendaLabel} atualizado para: ${formatAgendaEntryForDisplay(result.updatedText)}`
+    };
+  }
+
+  return {
+    handled: true,
+    response: 'Nao consegui executar essa acao na agenda informada.'
+  };
+}
+
+async function executeNamedAgendaSelectionCommand(command, agendaEntry, context = {}) {
+  if (command?.action === 'delete_named_agenda') {
+    const result = await botDatabase.deleteNamedAgenda(agendaEntry, buildDbOptionsFromContext(context));
+    if (!result?.ok || !result.agenda) {
+      return {
+        handled: true,
+        response: `Nao encontrei a agenda ${agendaEntry?.name || 'informada'}.`
+      };
+    }
+
+    return {
+      handled: true,
+      response:
+        result.removedItems > 0
+          ? `Agenda ${result.agenda.name} removida. Tambem apaguei ${formatAgendaCountLabel(result.removedItems)} dela.`
+          : `Agenda ${result.agenda.name} removida.`
+    };
+  }
+
+  return executeNamedAgendaCommand(command, agendaEntry, context);
+}
+
+function parseClockTime(text) {
+  const normalized = compactSpaces(text);
+  if (!normalized) return null;
+
+  const hhmm = normalized.match(/\b([01]?\d|2[0-3])\s*[:h]\s*([0-5]\d)\b/i);
+  if (hhmm) {
+    return {
+      hour: Number.parseInt(hhmm[1], 10),
+      minute: Number.parseInt(hhmm[2], 10)
+    };
+  }
+
+  const hourToken = normalized.match(/\b([01]?\d|2[0-3])\s*(?:h|hr|hrs|hora|horas)\b/i);
+  if (hourToken) {
+    return {
+      hour: Number.parseInt(hourToken[1], 10),
+      minute: 0
+    };
+  }
+
+  const hourAfterAs = normalized.match(/\b(?:as|às)\s*([01]?\d|2[0-3])\b/i);
+  if (hourAfterAs) {
+    return {
+      hour: Number.parseInt(hourAfterAs[1], 10),
+      minute: 0
+    };
+  }
+
+  return null;
+}
+
+function parseReminderBaseDate(text) {
+  const folded = foldText(text);
+  const now = new Date();
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+
+  if (/\bamanha\b|\bamanhã\b/.test(folded)) {
+    base.setDate(base.getDate() + 1);
+    return base;
+  }
+  if (/\bhoje\b/.test(folded)) {
+    return base;
+  }
+
+  const dateMatch = compactSpaces(text).match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (!dateMatch) return null;
+
+  const day = Number.parseInt(dateMatch[1], 10);
+  const month = Number.parseInt(dateMatch[2], 10);
+  const yearRaw = dateMatch[3];
+  const year =
+    yearRaw && yearRaw.length === 2
+      ? 2000 + Number.parseInt(yearRaw, 10)
+      : yearRaw
+        ? Number.parseInt(yearRaw, 10)
+        : now.getFullYear();
+
+  const parsed = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.getDate() !== day || parsed.getMonth() !== month - 1) return null;
+  return parsed;
+}
+
+function parseRelativeReminderDelay(text) {
+  const folded = foldText(text);
+  if (!folded) return null;
+
+  const delayMatch = folded.match(
+    /\b(?:daqui\s*(?:a|pra)?|em)\s*(\d{1,4})\s*(segundos?|s|minutos?|mins?|min|horas?|h)\b/
+  );
+  if (!delayMatch) return null;
+
+  const amount = Number.parseInt(delayMatch[1], 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const rawUnit = delayMatch[2];
+  let unitType = '';
+  let delayMs = 0;
+
+  if (/^s(?:egundo)?s?$/.test(rawUnit)) {
+    unitType = 'second';
+    delayMs = amount * 1000;
+  } else if (/^h(?:ora)?s?$/.test(rawUnit)) {
+    unitType = 'hour';
+    delayMs = amount * 60 * 60 * 1000;
+  } else {
+    unitType = 'minute';
+    delayMs = amount * 60 * 1000;
+  }
+
+  const labelUnit =
+    unitType === 'second'
+      ? amount === 1
+        ? 'segundo'
+        : 'segundos'
+      : unitType === 'hour'
+        ? amount === 1
+          ? 'hora'
+          : 'horas'
+        : amount === 1
+          ? 'minuto'
+          : 'minutos';
+
+  return {
+    amount,
+    unitType,
+    delayMs,
+    label: `${amount} ${labelUnit}`
+  };
+}
+
+function buildRelativeReminderSchedule(delayMs, now = new Date()) {
+  const delay = Math.max(1000, Number(delayMs || 0));
+  if (!Number.isFinite(delay) || delay <= 0) return { ok: false };
+
+  const dueAt = new Date(now.getTime() + delay);
+  if (Number.isNaN(dueAt.getTime())) return { ok: false };
+
+  return {
+    ok: true,
+    dueAtIso: dueAt.toISOString(),
+    dueAtLabel: formatLocalDateTime(dueAt)
+  };
+}
+
+function extractReminderInlineReference(rawText) {
+  const normalizedRaw = String(rawText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  const marker = normalizedRaw.match(
+    /\b(me lembra|me lembre|me lembrar|me avisa|me avise|cria lembrete|criar lembrete|novo lembrete|agendar lembrete|agenda lembrete)\b/i
+  );
+  if (!marker || typeof marker.index !== 'number' || marker.index <= 0) return '';
+
+  const candidate = compactSpaces(normalizedRaw.slice(0, marker.index));
+  if (!candidate || candidate.length < 16) return '';
+
+  return candidate;
+}
+
+function isReminderReferenceNoise(text) {
+  const folded = foldText(text);
+  if (!folded) return true;
+
+  const thinkingFolded = foldText(config.thinkingMessageText || 'Pesquisando...');
+  return (
+    folded === thinkingFolded ||
+    /^full\s*#/.test(folded) ||
+    /^executando no servidor/.test(folded) ||
+    /^servico ativo/.test(folded) ||
+    /^servico de volta/.test(folded) ||
+    /^processo online/.test(folded) ||
+    /^nao ha solicitacao full/.test(folded)
+  );
+}
+
+function normalizeReminderReferenceCandidate(text, maxChars = 620) {
+  const normalized = compactSpaces(
+    String(text || '')
+      .replace(/LOCAL_ACTION\s*:[\s\S]*$/i, '')
+      .replace(/^["'`]+|["'`]+$/g, '')
+  );
+  if (!normalized) return '';
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(10, maxChars - 3))}...`;
+}
+
+async function resolveReminderReferenceText(rawText, context = {}) {
+  const inline = normalizeReminderReferenceCandidate(extractReminderInlineReference(rawText));
+  if (inline && !isReminderReferenceNoise(inline)) {
+    return inline;
+  }
+
+  const currentMessage = context.message;
+  if (currentMessage?.hasQuotedMsg && typeof currentMessage.getQuotedMessage === 'function') {
+    try {
+      const quoted = await currentMessage.getQuotedMessage();
+      const quotedText = normalizeReminderReferenceCandidate(
+        `${String(quoted?.body || '').trim()} ${String(quoted?._data?.caption || '').trim()}`
+      );
+      if (quotedText && !isReminderReferenceNoise(quotedText)) {
+        return quotedText;
+      }
+    } catch {
+      // segue para historico recente.
+    }
+  }
+
+  const groupId = String(context.groupId || '').trim();
+  if (!groupId) return '';
+
+  const senderNumber = normalizeAccessPhone(context.senderNumber || '');
+  const incomingNormalized = normalizeReminderReferenceCandidate(rawText, 1200);
+  const incomingFolded = foldText(incomingNormalized);
+
+  try {
+    const entries = await listRecentConversationEntries(groupId, 30);
+
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (String(entry?.direction || '') !== 'outbound') continue;
+      const candidate = normalizeReminderReferenceCandidate(entry?.text || '');
+      if (!candidate) continue;
+      if (isReminderReferenceNoise(candidate)) continue;
+      return candidate;
+    }
+
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (String(entry?.direction || '') !== 'inbound') continue;
+
+      const entrySender = normalizeAccessPhone(entry?.senderNumber || '');
+      if (senderNumber && entrySender && entrySender !== senderNumber) continue;
+
+      const candidate = normalizeReminderReferenceCandidate(entry?.text || '');
+      if (!candidate) continue;
+      const candidateFolded = foldText(candidate);
+      if (!candidateFolded || candidateFolded === incomingFolded) continue;
+      if (isReminderReferenceNoise(candidate)) continue;
+      if (/(me lembra|me avisa|lembrete)/.test(candidateFolded)) continue;
+      return candidate;
+    }
+  } catch {
+    // falha silenciosa para manter resiliencia.
+  }
+
+  return '';
+}
+
+function extractReminderMessage(normalizedText) {
+  const normalized = compactSpaces(normalizedText);
+  if (!normalized) return '';
+
+  const messageMatch = normalized.match(/(?:\bque\b|\bpra\b|\bpara\b)\s+(.+)$/i);
+  if (messageMatch) {
+    return normalizeReminderMessageText(String(messageMatch[1] || '').replace(/[.?!]+$/, ''));
+  }
+
+  return '';
+}
+
+function parseReminderCommand(text) {
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  if (!normalized) return null;
+  const isQuestionLike = /\?$/.test(normalized) || /^(tem|ha|há|qual|quais|esse|este|minha|meu)\b/.test(folded);
+
+  if (
+    /^(lembretes?|listar lembretes?|lista lembretes?|mostrar lembretes?|ver lembretes?|meus lembretes?)$/.test(
+      folded
+    )
+    ||
+    /(?:^|\b)(tem|ha|há|listar|lista|mostrar|mostra|ver|quais|qual)\b.*\blembretes?\b/.test(folded)
+  ) {
+    return { action: 'list' };
+  }
+
+  if (
+    isQuestionLike &&
+    (/\b(?:esse|este|meu|minha)\s+lembrete\b/.test(folded) || /\bconforme solicitei\b/.test(folded))
+  ) {
+    return { action: 'describe_latest' };
+  }
+
+  if (
+    /(cancelar|cancela|apagar|apaga|remover|remove).*(todos|tudo).*(lembretes?|lembrete)/.test(folded) ||
+    /^(limpar|zera|zerar).*(lembretes?|lembrete)/.test(folded)
+  ) {
+    return { action: 'cancel_all' };
+  }
+
+  if (/(cancelar|cancela|apagar|apaga|remover|remove).*(lembretes?|lembrete)/.test(folded)) {
+    const index = extractFirstNumber(normalized);
+    if (!index) return { action: 'cancel_missing_index' };
+    return { action: 'cancel_one', index };
+  }
+
+  const reminderIntent =
+    /(me lembra|me lembre|me lembrar|me avisa|me avise|cria lembrete|criar lembrete|novo lembrete|agendar lembrete|agenda lembrete)/.test(
+      folded
+    ) || (/\blembrete\b/.test(folded) && !isQuestionLike);
+  if (!reminderIntent) return null;
+
+  const clock = parseClockTime(normalized);
+  const relativeDelay = parseRelativeReminderDelay(normalized);
+  const message = extractReminderMessage(normalized);
+  const messageIsReferenceOnly = referencesPreviousReminder(foldText(message));
+  const explicitBaseDate = parseReminderBaseDate(normalized);
+  const recurrence = parseReminderRecurrence(normalized);
+  const usePreviousReminder =
+    referencesPreviousReminder(folded) && (Boolean(clock) || Boolean(explicitBaseDate) || Boolean(recurrence));
+
+  if (relativeDelay) {
+    const schedule = buildRelativeReminderSchedule(relativeDelay.delayMs, new Date());
+    if (!schedule.ok) return null;
+
+    if ((!message || messageIsReferenceOnly) && referencesPreviousReminder(folded)) {
+      return {
+        action: 'set_relative_from_context',
+        dueAtIso: schedule.dueAtIso,
+        dueAtLabel: schedule.dueAtLabel,
+        relativeLabel: relativeDelay.label
+      };
+    }
+
+    if (!message) {
+      return {
+        action: 'set_missing_text_relative',
+        dueAtLabel: schedule.dueAtLabel,
+        relativeLabel: relativeDelay.label
+      };
+    }
+
+    return {
+      action: 'set',
+      dueAtIso: schedule.dueAtIso,
+      dueAtLabel: schedule.dueAtLabel,
+      text: message,
+      recurrence: null
+    };
+  }
+
+  if ((!clock || !message) && usePreviousReminder) {
+    return {
+      action: 'set_from_last',
+      clock,
+      explicitBaseDate,
+      recurrence
+    };
+  }
+
+  if (!clock) return { action: 'set_missing_time' };
+  if (!message) return { action: 'set_missing_text' };
+
+  const schedule = buildReminderSchedule({
+    clock,
+    recurrence,
+    explicitBaseDate,
+    now: new Date()
+  });
+  if (!schedule.ok && schedule.code === 'past_time') {
+    return {
+      action: 'set_past_time',
+      dueAtLabel: schedule.dueAtLabel
+    };
+  }
+  if (!schedule.ok) return null;
+
+  return {
+    action: 'set',
+    dueAtIso: schedule.dueAtIso,
+    dueAtLabel: schedule.dueAtLabel,
+    text: message,
+    recurrence: schedule.recurrence
+  };
+}
+
+function normalizeDailyGreetingMessage(text) {
+  const folded = foldText(text);
+  if (/\bboa tarde\b/.test(folded)) return 'Boa tarde!';
+  if (/\bboa noite\b/.test(folded)) return 'Boa noite!';
+  return 'Bom dia!';
+}
+
+function parseDailyBroadcastCommand(text) {
+  const folded = foldText(text);
+  const normalized = compactSpaces(text);
+  if (!folded) return null;
+
+  const asksList =
+    /(listar|lista|mostrar|mostra|ver|qual|quais).*(mensagem diaria|mensagem diaria automatica|agendamento diario|rotina diaria|bom dia automatico)/.test(
+      folded
+    ) ||
+    /(tem|ha|há).*(mensagem diaria|agendamento diario|bom dia automatico)/.test(folded);
+  if (asksList) {
+    return { action: 'list' };
+  }
+
+  const asksDisable =
+    /(desativar|desativa|remover|remove|cancelar|cancela|parar|pare|apagar|apaga).*(mensagem diaria|agendamento diario|bom dia automatico|boa tarde automatica|boa noite automatica|rotina diaria)/.test(
+      folded
+    ) ||
+    /(desativar|desativa|remover|remove|cancelar|cancela|parar|pare).*(bom dia|boa tarde|boa noite).*(todo dia|todos os dias|diariamente)/.test(
+      folded
+    );
+  if (asksDisable) {
+    return { action: 'disable' };
+  }
+
+  const hasDailyMarker = /(todo dia|todos os dias|diariamente|cada dia)/.test(folded);
+  const hasGreetingMarker = /(bom dia|boa tarde|boa noite|mensagem diaria|mensagem diaria automatica|agendamento diario|rotina diaria)/.test(
+    folded
+  );
+  const hasConfigVerb = /(configura|configure|programa|programe|agenda|agende|ativa|ative|defina|quero)/.test(folded);
+
+  if (hasDailyMarker && hasGreetingMarker && hasConfigVerb) {
+    const clock = parseClockTime(normalized);
+    if (!clock) return { action: 'set_missing_time' };
+
+    const customMatch = normalized.match(/\b(?:mensagem|texto)\s*[:\-]\s*(.+)$/i);
+    const customMessage = customMatch ? compactSpaces(customMatch[1] || '') : '';
+
+    return {
+      action: 'set',
+      hour: clock.hour,
+      minute: clock.minute,
+      message: customMessage || normalizeDailyGreetingMessage(normalized)
+    };
+  }
+
+  return null;
+}
+
+function parseAgendaCommand(text) {
+  const folded = foldText(text);
+  const normalized = compactSpaces(text);
+  const isQuestion =
+    /\?$/.test(normalized) ||
+    /^(o que|que|qual|quais|tem|aqui tem|pode|consegue)\b/.test(folded);
+  const hasInlineAgendaPayload = /^agenda\b.+[:\-]/i.test(normalized);
+  const bareAgendaListIntent =
+    /^(agenda|minha agenda|agenda de hoje|agenda agora|o que tem na agenda|que tem na agenda)\??$/.test(folded) ||
+    /^tem agenda(?:\s+(?:ai|aqui|agora|hoje))?\??$/.test(folded) ||
+    /^aqui tem agenda\??$/.test(folded) ||
+    /^qual(?: e| e a| a)? agenda\??$/.test(folded);
+
+  if (bareAgendaListIntent && !hasInlineAgendaPayload) {
+    return { action: 'list' };
+  }
+
+  if (/\b(?:listar|lista|ler|mostrar|ver)\s+agenda\b.*\b(indices|indice|index|numero|numeros|n[uú]mero|n[uú]meros)\b/.test(folded)) {
+    return { action: 'list_indexed' };
+  }
+
+  if (/^(?:listar|lista|ler|mostrar|ver)\s+agenda\b/.test(folded)) {
+    return { action: 'list' };
+  }
+
+  if (
+    /(limpa(r)? (a )?agenda|zera(r)? (a )?agenda|apaga(r)? (a )?agenda (toda|tudo|inteira)|apaga(r)? (toda|tudo) (a )?agenda|exclui(r)? (toda|tudo) (a )?agenda|remove(r)? (toda|tudo) (a )?agenda|deleta(r)? (toda|tudo) (a )?agenda|apaga(r)? tudo da agenda)/.test(
+      folded
+    )
+  ) {
+    return { action: 'clear' };
+  }
+
+  if (/(editar|edita|atualizar|atualiza|alterar|altera).*(agenda)/.test(folded)) {
+    const index = extractFirstNumber(text);
+    if (!index) return { action: 'edit_missing_index' };
+
+    const indexRegex = new RegExp(`\\b${index}\\b`);
+    const matchedIndex = indexRegex.exec(text);
+    const afterIndex = matchedIndex ? text.slice(matchedIndex.index + matchedIndex[0].length) : '';
+    const byColon = text.includes(':') ? compactSpaces(text.split(':').slice(1).join(':')) : '';
+    const newText = compactSpaces((byColon || afterIndex).replace(/^[-:,\s]+/g, ''));
+    if (!newText) return { action: 'edit_missing_text', index };
+
+    return { action: 'edit', index, text: newText };
+  }
+
+  if (/(apagar|apaga|remover|remove|deletar|deleta|excluir|exclui).*(agenda)/.test(folded)) {
+    if (/(toda|todo|tudo|inteira)/.test(folded)) {
+      return { action: 'clear' };
+    }
+    const payload = extractPayload(text, /\b(apagar|apaga|remover|remove|deletar|deleta|excluir|exclui)\b/i);
+    const normalizedTail = compactSpaces(
+      payload
+        .replace(/^(?:(?:na|no|da|do|de|a|o)\s*)?agenda\b/i, ' ')
+        .replace(/\bagenda\b/gi, ' ')
+        .replace(/^[-:,\s]+/g, '')
+    );
+
+    if (!normalizedTail) {
+      return { action: 'clear' };
+    }
+
+    const digitsOnly = normalizeDigits(normalizedTail);
+    const hasLetters = /[\p{L}]/u.test(normalizedTail);
+
+    if (normalizedTail && digitsOnly && !hasLetters) {
+      const parsedIndex = Number.parseInt(digitsOnly, 10);
+      if (Number.isFinite(parsedIndex) && parsedIndex > 0) {
+        return { action: 'remove', index: parsedIndex };
+      }
+    }
+
+    if (normalizedTail && !isAgendaPayloadTooGeneric(normalizedTail)) {
+      return { action: 'remove_by_text', text: normalizedTail };
+    }
+
+    return { action: 'remove_missing_index' };
+  }
+
+  const explicitAddIntent =
+    /(agendar|anotar|anota|adiciona agenda|adicionar agenda|adicione agenda|cria agenda|criar agenda|coloca na agenda|colocar na agenda|coloque na agenda|poe na agenda|p[oõ]e na agenda|marca na agenda|marcar na agenda|marque na agenda|registra na agenda|registrar na agenda|registre na agenda)/.test(
+      folded
+    );
+  const looseAgendaAddIntent =
+    /\b(adiciona(?:r|e)?|coloca(?:r|e)?|poe|p[oõ]e|marca(?:r|e)?|anota(?:r|e)?|registra(?:r|e)?|agendar)\b/.test(
+      folded
+    ) && /\bagenda\b/.test(folded);
+  const looseScheduleAddIntent =
+    /^(adiciona(?:r|e)?|coloca(?:r|e)?|poe|p[oõ]e|marca(?:r|e)?|anota(?:r|e)?|registra(?:r|e)?|agendar)\b/.test(
+      folded
+    ) &&
+    /(dia\s+\d{1,2}|amanha|amanhã|hoje|segunda|terca|terça|quarta|quinta|sexta|sabado|sábado|domingo|\b\d{1,2}h\b|\b\d{1,2}:\d{2}\b)/.test(
+      folded
+    );
+  const agendaColonIntent = /\bagenda\s*[:\-]/i.test(normalized);
+  const agendaPrefixAddIntent =
+    agendaColonIntent ||
+    (
+      /^agenda\s+/.test(folded) &&
+      !isQuestion &&
+      !/(vazia|vazio|banco|listar|lista|mostrar|ver|ler|apagar|remove|remover|deletar|excluir|editar|alterar|limpar|zerar)\b/.test(
+        folded
+      )
+    );
+
+  if (explicitAddIntent || looseAgendaAddIntent || looseScheduleAddIntent || agendaPrefixAddIntent) {
+    const addKeywordRegex = explicitAddIntent
+      ? /\b(agendar|anotar|anota|adiciona(?:r)?\s+agenda|cria(?:r)?\s+agenda|coloca(?:r)?\s+na\s+agenda|poe\s+na\s+agenda|p[oõ]e\s+na\s+agenda|marca(?:r)?\s+na\s+agenda|registra(?:r)?\s+na\s+agenda)\b/i
+      : looseAgendaAddIntent || looseScheduleAddIntent
+        ? /\b(adiciona(?:r|e)?|coloca(?:r|e)?|poe|p[oõ]e|marca(?:r|e)?|anota(?:r|e)?|registra(?:r|e)?|agendar)\b/i
+      : /\bagenda\b/i;
+    const payload = extractPayload(
+      text,
+      addKeywordRegex
+    );
+
+    if (!payload || !hasMeaningfulPayload(payload)) return { action: 'add_missing_text' };
+    const cleanedPayload = compactSpaces(
+      payload.replace(/^que\s+/i, '').replace(/^(por favor|pfv)\s+/i, '')
+    );
+    const normalizedPayload = compactSpaces(
+      cleanedPayload.replace(/^(?:na|no)?\s*agenda\b(?:\s+(?:do|da|de))?\s*/i, '')
+    );
+    if (!normalizedPayload || !hasMeaningfulPayload(normalizedPayload)) return { action: 'add_missing_text' };
+    if (isAgendaPayloadTooGeneric(normalizedPayload)) return { action: 'add_too_generic' };
+    return { action: 'add', text: normalizedPayload };
+  }
+
+  return null;
+}
+
+function parseNotesCommand(text) {
+  const folded = foldText(text);
+  const bareNotesShortcut = /^(textos|notas|meus textos|minhas notas)$/.test(folded);
+
+  if (
+    /(listar textos|listar notas|ler textos|ler notas|mostrar textos|mostrar notas|minhas notas|meus textos)/.test(folded) ||
+    bareNotesShortcut
+  ) {
+    return { action: 'list' };
+  }
+
+  if (
+    /(limpa(r)? (todos os |todas as |os |as )?(textos|notas)|zera(r)? (todos os |todas as |os |as )?(textos|notas)|apaga(r)? (todos os |todas as )?(textos|notas)|apaga(r)? (textos|notas) (todos|todas)|exclui(r)? (todos os |todas as )?(textos|notas)|remove(r)? (todos os |todas as )?(textos|notas)|deleta(r)? (todos os |todas as )?(textos|notas))/.test(
+      folded
+    )
+  ) {
+    return { action: 'clear' };
+  }
+
+  if (/(apagar|apaga|remover|remove|deletar|deleta|excluir|exclui).*(texto|nota)/.test(folded)) {
+    const index = extractFirstNumber(text);
+    if (!index) return { action: 'remove_missing_index' };
+    return { action: 'remove', index };
+  }
+
+  if (/(editar|edita|atualizar|atualiza|alterar|altera).*(texto|nota)/.test(folded)) {
+    const index = extractFirstNumber(text);
+    if (!index) return { action: 'edit_missing_index' };
+
+    const indexRegex = new RegExp(`\\b${index}\\b`);
+    const matchedIndex = indexRegex.exec(text);
+    const afterIndex = matchedIndex ? text.slice(matchedIndex.index + matchedIndex[0].length) : '';
+    const byColon = text.includes(':') ? compactSpaces(text.split(':').slice(1).join(':')) : '';
+    const newText = compactSpaces((byColon || afterIndex).replace(/^[-:,\s]+/g, ''));
+    if (!newText) return { action: 'edit_missing_text', index };
+
+    return { action: 'edit', index, text: newText };
+  }
+
+  if (
+    /(salvar texto|salva texto|grave texto|grava texto|guardar texto|guarde texto|anotar texto|anota texto|nova nota|criar nota|cria nota)/.test(
+      folded
+    )
+  ) {
+    const payload = extractPayload(
+      text,
+      /\b(salvar?\s+texto|grave\s+texto|grava\s+texto|guardar?\s+texto|anotar\s+texto|anota\s+texto|nova\s+nota|cria(?:r)?\s+nota)\b/
+    );
+
+    if (!payload || !hasMeaningfulPayload(payload)) return { action: 'add_missing_text' };
+    return { action: 'add', text: payload };
+  }
+
+  if (/(criar|crie|cria|salvar|salve|anotar|anote|gravar|grave).*(nota|texto)/.test(folded)) {
+    // Mensagem termina com "?" e sem ":" → é pergunta/intenção, não comando de salvar
+    if (text.trimEnd().endsWith('?') && !text.includes(':')) {
+      return null;
+    }
+    const payload = extractPayload(
+      text,
+      /\b(criar?|crie|cria|salvar?|salve|anotar?|anote|gravar?|grave)\b[\s\S]*\b(nota|texto)\b/
+    );
+
+    if (!payload) return { action: 'add_missing_text' };
+    return { action: 'add', text: payload };
+  }
+
+  return null;
+}
+
+function parseConversationCommand(text) {
+  const folded = foldText(text);
+
+  if (
+    /(limpar|apagar|deletar|remover|zera|zerar).*(conversas|conversa|historico|histórico).*(grupo)?/.test(folded)
+  ) {
+    return { action: 'clear' };
+  }
+
+  if (
+    /(listar|mostrar|ler|ver).*(conversa|historico)|ultimas conversas|ultimas mensagens|historico de conversa|histórico de conversa/.test(
+      folded
+    )
+  ) {
+    return { action: 'list' };
+  }
+
+  if (/(salvar|salve|gravar|grave|guardar).*(conversa|historico)/.test(folded)) {
+    return { action: 'status' };
+  }
+
+  return null;
+}
+
+function parseDeleteMessageCommand(text) {
+  const folded = foldText(text);
+  if (/(apagar|apaga|deletar|deleta|remove|remover).*(mensagem|msg)/.test(folded)) {
+    return { action: 'delete_quoted' };
+  }
+  return null;
+}
+
+function detectMediaTypeFilter(foldedText) {
+  const folded = String(foldedText || '');
+  const hasImage = /(imagem|imagens|foto|fotos)/.test(folded);
+  const hasVideo = /(video|videos)/.test(folded);
+  const hasDocument = /(documento|documentos)/.test(folded);
+  const hasGenericFiles = /(arquivo|arquivos)/.test(folded);
+
+  if (hasGenericFiles) return '';
+
+  const detectedTypes = [];
+  if (hasImage) detectedTypes.push('image');
+  if (hasVideo) detectedTypes.push('video');
+  if (hasDocument) detectedTypes.push('document');
+
+  if (detectedTypes.length === 1) return detectedTypes[0];
+  return '';
+}
+
+function parseMediaLibraryCommand(text) {
+  // Ignore clearly conversational multi-line messages (e.g., lists, rules, long texts)
+  // to avoid false-positive triggers from phrases like "manda video" embedded in prose.
+  const lineCount = (text.match(/\n/g) || []).length;
+  const wordCount = text.trim().split(/\s+/).length;
+  if (lineCount > 4 || wordCount > 40) {
+    return null;
+  }
+
+  const normalized = compactSpaces(text);
+  const folded = foldText(normalized);
+  const passwordMatch = normalized.match(/\bsenha\b\s*[:=]?\s*([^\s]{3,80})/i);
+  const password = passwordMatch ? String(passwordMatch[1] || '').trim() : '';
+
+  const explicitMediaId = normalized.match(
+    /(?:id|midia|m[ií]dia)\s*[:=#-]?\s*([a-f0-9-]{8,})/i
+  );
+  const mediaId = explicitMediaId ? String(explicitMediaId[1] || '').trim() : '';
+
+  if (/^(salvar|salve|gravar|grave)\s*(isso|essa|esse|aqui)?$/.test(folded)) {
+    return { action: 'save_status' };
+  }
+
+  const asksMediaNoun =
+    /(imagem|imagens|foto|fotos|video|videos|documento|documentos|arquivo|arquivos|midia|mídia|midias|mídias)/.test(
+      folded
+    );
+  const asksSavedScope = /(salv|no servidor|do servidor|da pasta|dos arquivos|biblioteca|midiateca)/.test(folded);
+  const asksListVerb = /(listar|lista|mostrar|mostra|consultar|consulta|ver)\b/.test(folded);
+  const asksAvailability = /\btem\b/.test(folded) && asksSavedScope;
+  const mediaTokens = folded.split(/\s+/).filter(Boolean);
+  const bareListShortcut =
+    asksMediaNoun &&
+    mediaTokens.length <= 4 &&
+    /(?:^|\s)(imagem|imagens|foto|fotos|video|videos|documento|documentos|arquivo|arquivos|midia|mídia|midias|mídias)\s*$/.test(
+      folded
+    ) &&
+    !/(adicion|salv|grava|envia|manda|apaga|remove|deleta|proteg|senha|download|baixar)/.test(folded);
+  const hasBulkDeleteIntent =
+    /(limpar|limpa|zerar|zera|apagar|apaga|deletar|deleta|remover|remove|excluir|exclui).*(tudo|toda|todas|todos|geral)/.test(
+      folded
+    );
+  const asksNonMediaCollection =
+    /(texto|textos|nota|notas|agenda|agendas|lembrete|lembretes|conversa|conversas|historico|histórico|mensagem|mensagens)/.test(
+      folded
+    );
+
+  if (
+    hasBulkDeleteIntent &&
+    (asksMediaNoun || asksSavedScope || /midias?\s+salvas?/.test(folded) || /arquivos?\s+salvos?/.test(folded))
+  ) {
+    return {
+      action: 'delete_all',
+      mediaType: detectMediaTypeFilter(folded),
+      password
+    };
+  }
+
+  if (hasBulkDeleteIntent && asksNonMediaCollection && !asksMediaNoun && !asksSavedScope) {
+    return null;
+  }
+
+  if (hasBulkDeleteIntent && !asksMediaNoun && !asksSavedScope) {
+    return {
+      action: 'delete_all_ambiguous',
+      password
+    };
+  }
+
+  if (
+    asksMediaNoun &&
+    (
+      /(enviar|envia|manda|mandar|liberar).*(imagem|imagens|foto|fotos|video|videos|documento|documentos|midia|mídia|midias|mídias|arquivo|arquivos)/.test(
+        folded
+      ) ||
+      /(mostrar|mostra).*(imagens|fotos|videos|documentos|midias|mídias).*(chat)/.test(folded)
+    )
+  ) {
+    const mediaType = detectMediaTypeFilter(folded);
+    const maybeLimit = extractFirstNumber(normalized);
+    return {
+      action: 'send_saved',
+      mediaType,
+      limit: maybeLimit && maybeLimit > 0 ? maybeLimit : 3
+    };
+  }
+
+  if (asksMediaNoun && (asksListVerb || asksAvailability || bareListShortcut)) {
+    const mediaType = detectMediaTypeFilter(folded);
+    return { action: 'list', mediaType };
+  }
+
+  if (
+    asksMediaNoun &&
+    /(adicionar|adiciona|salvar|salva|gravar|grava|guardar|guarda).*(imagem|imagens|foto|fotos|video|videos|documento|documentos|midia|mídia|midias|mídias|arquivo|arquivos)/.test(
+      folded
+    )
+  ) {
+    return { action: 'save_status' };
+  }
+
+  const deleteById = normalized.match(
+    /(?:apagar|apaga|deletar|deleta|remover|remove)\s+(?:midia|mídia|imagem|video|documento)\s+([a-f0-9-]{8,})/i
+  );
+  if (deleteById) {
+    return {
+      action: 'delete',
+      id: String(deleteById[1] || '').trim(),
+      password
+    };
+  }
+
+  if (
+    mediaId &&
+    /(desproteger|desbloquear|remover senha|tirar senha|liberar).*(midia|mídia|arquivo|imagem|video|documento)/.test(
+      folded
+    )
+  ) {
+    return {
+      action: 'unprotect_by_id',
+      id: mediaId,
+      password
+    };
+  }
+
+  if (
+    mediaId &&
+    /(^|\b)(proteger|travar|bloquear)\b/.test(folded) &&
+    /(midia|mídia|arquivo|imagem|video|documento)/.test(folded)
+  ) {
+    return {
+      action: 'protect_by_id',
+      id: mediaId,
+      password
+    };
+  }
+
+  if (
+    /(desproteger|desbloquear|remover senha|tirar senha|liberar).*(arquivo|midia|mídia|imagem|video|documento)/.test(
+      folded
+    )
+  ) {
+    return {
+      action: 'unprotect_quoted',
+      password
+    };
+  }
+
+  if (
+    /(^|\b)(proteger|travar|bloquear)\b/.test(folded) &&
+    /(arquivo|midia|mídia|imagem|video|documento)/.test(folded) &&
+    /senha/.test(folded)
+  ) {
+    return {
+      action: 'protect_quoted',
+      password
+    };
+  }
+
+  if (/(baixar|download|enviar|manda|mandar|liberar).*(arquivo|midia|mídia|imagem|video|documento)/.test(folded)) {
+    return {
+      action: 'send_quoted',
+      password
+    };
+  }
+
+  if (/(apagar|apaga|deletar|deleta|remover|remove|excluir|exclui).*(arquivo|midia|mídia|imagem|video|documento)/.test(folded)) {
+    return {
+      action: 'delete_quoted',
+      password
+    };
+  }
+
+  return null;
+}
+
+function parseStorageStatusCommand(text) {
+  const folded = foldText(text);
+  if (
+    /(onde|aonde|como).*(salv|grava).*(imagem|video|texto|conversa|dados|arquivo)/.test(folded) ||
+    /(como).*(consultar|ver|listar).*(imagem|midia|mídia).*(salv)/.test(folded)
+  ) {
+    return { action: 'show_paths' };
+  }
+  return null;
+}
+
+function parseIsoTs(value) {
+  const ts = new Date(String(value || '')).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+async function hasRecentMediaDeleteContext(groupId, senderNumber) {
+  const normalizedGroup = String(groupId || '').trim();
+  const normalizedSender = normalizeAccessPhone(senderNumber || '');
+  if (!normalizedGroup) return false;
+
+  const recent = await listRecentConversationEntries(normalizedGroup, 16);
+  if (!recent.length) return false;
+
+  const mediaContextPattern =
+    /(arquivos encontrados no servidor|midias salvas|lista arquivos|listar arquivos|tem arquivos no servidor|@ arquivos|@ arquivo)/i;
+  const byTs = [...recent].sort((a, b) => parseIsoTs(a?.ts) - parseIsoTs(b?.ts));
+
+  for (let i = byTs.length - 1; i >= 0; i -= 1) {
+    const entry = byTs[i];
+    const text = String(entry?.text || '');
+    const isOutbound = String(entry?.direction || '') === 'outbound';
+    if (!isOutbound || !mediaContextPattern.test(text)) continue;
+
+    const outboundTs = parseIsoTs(entry?.ts);
+    const inboundWindowStart = Math.max(0, outboundTs - 2 * 60 * 1000);
+    const hasRecentInboundFromSender = byTs.some((row) => {
+      if (String(row?.direction || '') !== 'inbound') return false;
+      const rowTs = parseIsoTs(row?.ts);
+      if (rowTs < inboundWindowStart || rowTs > outboundTs + 15000) return false;
+      const sender = normalizeAccessPhone(row?.senderNumber || '');
+      if (!normalizedSender || !sender) return true;
+      return sender === normalizedSender;
+    });
+
+    if (hasRecentInboundFromSender) return true;
+  }
+
+  return false;
+}
+
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}m ${s}s`;
+}
+
+function formatBytesShort(bytes) {
+  const size = Number(bytes || 0);
+  if (!Number.isFinite(size) || size < 0) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatConversationClock(isoTs) {
+  const date = new Date(isoTs);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return `${formatTwoDigits(date.getHours())}:${formatTwoDigits(date.getMinutes())}`;
+}
+
+function parseMediaIdFromAnyText(text) {
+  const normalized = compactSpaces(String(text || ''));
+  if (!normalized) return '';
+
+  const tagged = normalized.match(/MIDIA_ID\s*[:=#-]?\s*([a-f0-9-]{8,})/i);
+  if (tagged) return String(tagged[1] || '').trim();
+
+  const generic = normalized.match(/(?:id|midia|m[ií]dia)\s*[:=#-]?\s*([a-f0-9-]{8,})/i);
+  if (generic) return String(generic[1] || '').trim();
+
+  return '';
+}
+
+async function resolveQuotedMediaItem(context, fallbackId = '') {
+  const byFallback = String(fallbackId || '').trim();
+  if (byFallback) {
+    const item = mediaStore.getById(byFallback);
+    if (item) return item;
+  }
+
+  const currentMessage = context.message;
+  if (!currentMessage || typeof currentMessage.getQuotedMessage !== 'function' || !currentMessage.hasQuotedMsg) {
+    return null;
+  }
+
+  try {
+    const quoted = await currentMessage.getQuotedMessage();
+    if (!quoted) return null;
+
+    const quotedMessageId = String(quoted?.id?._serialized || '').trim();
+    const quotedBody = String(quoted?.body || '').trim();
+    const quotedCaption = String(quoted?._data?.caption || '').trim();
+
+    const fromTextId = parseMediaIdFromAnyText(`${quotedBody}\n${quotedCaption}`);
+    if (fromTextId) {
+      const item = mediaStore.getById(fromTextId);
+      if (item) return item;
+    }
+
+    if (quotedMessageId) {
+      const item = mediaStore.findByMessageId(quotedMessageId, context.groupId || '');
+      if (item) return item;
+    }
+  } catch {
+    // ignora e retorna null.
+  }
+
+  return null;
+}
+
+async function tryDeleteCurrentPasswordMessage(context) {
+  const currentMessage = context.message;
+  if (!currentMessage || typeof currentMessage.delete !== 'function') return false;
+  try {
+    await currentMessage.delete(true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseFullJobHistoryCommand(text) {
+  const folded = foldText(compactSpaces(text));
+  if (!folded) return null;
+
+  // "listar processos full" / "ver processos full" / "processos full"
+  if (/\b(listar?|ver|mostrar?|exibir|processos?)\s+(processos?\s+)?(full|dev)\b/.test(folded) ||
+      /^(processos?\s+full|full\s+processos?)$/.test(folded)) {
+    const limitMatch = folded.match(/\b(\d{1,3})\s*(ultimos?|recentes?|jobs?|processos?)?\b/);
+    return { action: 'list', limit: limitMatch ? Math.min(20, parseInt(limitMatch[1], 10)) : 5 };
+  }
+
+  // "log do processo <id>" / "log full <id>" / "log job <id>"
+  const logMatch = text.match(/\b(?:log|detalhe|detalhes)\s+(?:do\s+)?(?:processo|job|full)?\s*#?([A-Z0-9a-z_-]{3,})\b/i);
+  if (logMatch) {
+    return { action: 'log', jobId: logMatch[1].trim() };
+  }
+
+  // "log do ultimo processo full" / "log do ultimo job"
+  if (/\blog\s+do\s+(ultimo|ultimo\s+)?(processo|job)\s+full\b/.test(folded) ||
+      /\blog\s+full\b/.test(folded)) {
+    return { action: 'log_latest' };
+  }
+
+  return null;
+}
+
+/**
+ * Inicia um job FULL diretamente a partir de um requestText já preparado,
+ * sem passar por parseFullAutoDevCommand — sem truncamento, sem sanitização de linhas.
+ * Retorna {handled, response, afterSend, runAfterSendInBackground}, igual a tryHandleLocalAction.
+ */
+export async function startFullAutoJobDirect(requestText, context = {}) {
+  await settingsStore.ensureReady();
+
+  const running = getLatestFullAutoJob({
+    groupId: context.groupId,
+    senderNumber: normalizeAccessPhone(context.senderNumber || '') || 'desconhecido'
+  });
+  if (running?.status === 'running') {
+    return {
+      handled: true,
+      response: buildFullAutoMessage({
+        jobId: running.id,
+        status: running.statusLabel || 'ja em andamento',
+        request: running.request,
+        senderNumber: running.senderNumber,
+        lines: [running.detail || 'Acompanhar: status da minha solicitacao.']
+      })
+    };
+  }
+
+  const startLines = buildFullAutoStartLines();
+  const job = createFullAutoJob({
+    id: randomUUID().slice(0, 8),
+    groupId: context.groupId || 'sem-grupo',
+    request: requestText,
+    senderNumber: context.senderNumber || 'desconhecido',
+    status: 'running',
+    statusLabel: 'recebida e iniciada',
+    detail: buildFullAutoStartDetail()
+  });
+
+  return {
+    handled: true,
+    response: buildFullAutoMessage({
+      jobId: job.id,
+      status: 'recebida e iniciada',
+      request: job.request,
+      senderNumber: job.senderNumber,
+      lines: startLines
+    }),
+    runAfterSendInBackground: true,
+    afterSend: async () => {
+      const client = context.client;
+      const groupId = String(context.groupId || '').trim();
+      const notificationGroupId = resolveNotificationGroupId(context);
+      const autoRestartEnabled = isFullAutoRestartEnabled();
+      const stopProgressUpdates = startFullAutoProgressUpdates({
+        jobId: job.id,
+        client,
+        groupId: notificationGroupId || groupId
+      });
+
+      updateFullAutoJob(job.id, {
+        status: 'running',
+        statusLabel: 'editando e validando',
+        detail: 'Status: editando arquivos e preparando validacao tecnica.'
+      });
+      appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] Iniciado: editando arquivos e preparando validacao.`);
+
+      try {
+        if (client && notificationGroupId && notificationGroupId !== groupId) {
+          await client.sendMessage(
+            notificationGroupId,
+            buildFullAutoMessage({
+              jobId: job.id,
+              status: 'recebida e iniciada',
+              request: job.request,
+              senderNumber: job.senderNumber,
+              lines: startLines
+            })
+          );
+        }
+
+        const result = await runCodexFullAutoDevTask(requestText, context, {
+          onProgress: (patch) => {
+            updateFullAutoJob(job.id, patch);
+            if (patch.detail || patch.statusLabel) {
+              appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ${patch.statusLabel || ''}: ${patch.detail || ''}`.trim());
+            }
+          }
+        });
+
+        if (!result.ok) {
+          updateFullAutoJob(job.id, {
+            status: 'error',
+            statusLabel: 'falhou na execucao',
+            error: result.message || 'Falha no modo FULL.',
+            detail: result.message || 'Falha no modo FULL.',
+            finishedAt: Date.now()
+          });
+          appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ERRO: ${result.message || 'Falha no modo FULL.'}`);
+          const currentJob = getFullAutoJobById(job.id);
+          if (client && groupId) {
+            await client.sendMessage(groupId, buildFullAutoSimpleFailureMessage());
+          }
+          if (client && notificationGroupId && notificationGroupId !== groupId) {
+            await client.sendMessage(
+              notificationGroupId,
+              buildFullAutoMessage({
+                jobId: currentJob?.id || job.id,
+                status: 'falhou na execucao',
+                request: currentJob?.request || job.request,
+                senderNumber: currentJob?.senderNumber || job.senderNumber,
+                lines: [`Detalhe: ${clampText(currentJob?.error || result.message || 'Falha no modo FULL.', 500)}`]
+              })
+            );
+          }
+          // Envia .txt com detalhe completo no grupo de notificações
+          await sendFullJobResultAsTxtIfLarge(client, null, {
+            jobId: currentJob?.id || job.id,
+            request: currentJob?.request || job.request,
+            summary: `ERRO: ${result.message || 'Falha no modo FULL.'}`,
+            validationOutput: '',
+            status: 'error'
+          }, notificationGroupId || groupId);
+          return;
+        }
+
+        if (!result.validationOk) {
+          updateFullAutoJob(job.id, {
+            status: 'error',
+            statusLabel: `validacao falhou (${result.validationStatus})`,
+            error: `Validacao falhou (${result.validationStatus}).`,
+            summary: result.summary || '',
+            validationStatus: result.validationStatus || '',
+            detail: result.validationOutput || result.summary || `Validacao falhou (${result.validationStatus}).`,
+            finishedAt: Date.now()
+          });
+          appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] VALIDAÇÃO FALHOU (${result.validationStatus}): ${result.summary || result.validationOutput || ''}`);
+          const currentJob = getFullAutoJobById(job.id);
+          if (client && (notificationGroupId || groupId)) {
+            await client.sendMessage(
+              notificationGroupId || groupId,
+              buildFullAutoMessage({
+                jobId: currentJob?.id || job.id,
+                status: `validacao falhou (${result.validationStatus})`,
+                request: currentJob?.request || job.request,
+                senderNumber: currentJob?.senderNumber || job.senderNumber,
+                lines: [
+                  `Resumo: ${clampText(result.summary || '', 500)}`,
+                  `Saida: ${clampText(result.validationOutput || '', 450)}`
+                ]
+              })
+            );
+          }
+          // Envia .txt com saída completa do npm run check no grupo de notificações
+          await sendFullJobResultAsTxtIfLarge(client, null, {
+            jobId: currentJob?.id || job.id,
+            request: currentJob?.request || job.request,
+            summary: result.summary || '',
+            validationOutput: result.validationOutput || '',
+            status: 'validation_failed'
+          }, notificationGroupId || groupId);
+
+          // ── Auto-retentativa: dispara novo FULL para se autocorrigir ──────
+          // Só executa uma vez por falha (evita loop infinito verificando se o
+          // request já começa com o prefixo de autocorreção).
+          const originalRequest = String(currentJob?.request || job.request || '');
+          const isAutoFix = originalRequest.startsWith('[AUTOCORRECAO]');
+          if (!isAutoFix && client) {
+            const fixRequest =
+              `[AUTOCORRECAO] O job FULL #${job.id} falhou na validacao.\n` +
+              `Erro de validacao (${result.validationStatus}):\n` +
+              `${clampText(result.validationOutput || result.summary || 'Sem detalhes.', 1500)}\n\n` +
+              `Tarefa original: ${clampText(originalRequest, 500)}\n\n` +
+              `Analise os erros acima, corrija todos os problemas encontrados, ` +
+              `rode npm run check e certifique que passa com exit 0.`;
+
+            appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] 🔄 Disparando autocorreção...`);
+
+            const fixContext = {
+              client,
+              groupId: notificationGroupId || groupId,
+              notificationGroupId: notificationGroupId || groupId,
+              senderNumber: currentJob?.senderNumber || job.senderNumber || ''
+            };
+
+            setTimeout(() => {
+              startFullAutoJobDirect(fixRequest, fixContext).catch((e) => {
+                logger.error('[FULL] Falha ao disparar autocorreccao', {
+                  error: e instanceof Error ? e.message : String(e)
+                });
+              });
+            }, 3000);
+          }
+          return;
+        }
+
+        updateFullAutoJob(job.id, {
+          status: 'done',
+          statusLabel: autoRestartEnabled
+            ? `concluida, validada e reiniciando (${result.validationStatus})`
+            : `concluida e validada (${result.validationStatus})`,
+          summary: result.summary || '',
+          validationStatus: result.validationStatus || '',
+          detail: result.summary || 'Solicitacao concluida com sucesso.',
+          finishedAt: Date.now()
+        });
+        appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ✅ CONCLUÍDO (${result.validationStatus}): ${result.summary || 'Solicitacao concluida com sucesso.'}`);
+
+        // Extrai arquivos modificados mencionados no summary e registra em filesChanged[]
+        // Padrão: caminhos absolutos ou relativos como "src/foo.js", "/opt/chatbot/src/foo.js"
+        const _fileMatches = String(result.summary || '').match(/(?:\/opt\/chatbot\/|src\/|data\/|scripts\/)[\w./\-]+\.\w{1,8}/g);
+        if (_fileMatches) {
+          for (const f of [...new Set(_fileMatches)]) appendFileChanged(job.id, f);
+        }
+
+        const currentJob = getFullAutoJobById(job.id);
+        if (client && groupId) {
+          try {
+            await client.sendMessage(groupId, buildFullAutoSimpleSuccessMessage());
+          } catch {
+            // best-effort: notificacao curta no grupo de origem
+          }
+          // Envia relatorio .txt APENAS para grupo de notificacoes (nao polui grupo de origem)
+          await sendFullJobResultAsTxtIfLarge(client, null, {
+            jobId: currentJob?.id || job.id,
+            request: currentJob?.request || job.request,
+            summary: result.summary || '',
+            validationOutput: result.validationOutput || '',
+            status: 'done'
+          }, notificationGroupId || groupId);
+        }
+        if (client && notificationGroupId && notificationGroupId !== groupId) {
+          await client.sendMessage(
+            notificationGroupId,
+            buildFullAutoMessage({
+              jobId: currentJob?.id || job.id,
+              status: autoRestartEnabled
+                ? `concluida, validada e reiniciando (${result.validationStatus})`
+                : `concluida e validada (${result.validationStatus})`,
+              request: currentJob?.request || job.request,
+              senderNumber: currentJob?.senderNumber || job.senderNumber,
+              lines: [
+                `Resumo: ${clampText(result.summary || '', 700)}`,
+                autoRestartEnabled
+                  ? 'Proximo passo: reiniciando o servico para aplicar as mudancas.'
+                  : 'Servico mantido online porque ENABLE_SELF_RESTART=false.'
+              ]
+            })
+          );
+        }
+        if (autoRestartEnabled) {
+          // Aguarda flush das mensagens antes de reiniciar o processo
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await triggerSelfRestart();
+        }
+      } catch (error) {
+        updateFullAutoJob(job.id, {
+          status: 'error',
+          statusLabel: 'falhou com erro interno',
+          error: error instanceof Error ? error.message : String(error),
+          detail: error instanceof Error ? error.message : String(error),
+          finishedAt: Date.now()
+        });
+        appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ❌ ERRO INTERNO: ${error instanceof Error ? error.message : String(error)}`);
+        const currentJob = getFullAutoJobById(job.id);
+        if (client && (notificationGroupId || groupId)) {
+          await client.sendMessage(
+            notificationGroupId || groupId,
+            buildFullAutoMessage({
+              jobId: currentJob?.id || job.id,
+              status: 'falhou com erro interno',
+              request: currentJob?.request || job.request,
+              senderNumber: currentJob?.senderNumber || job.senderNumber,
+              lines: [`Detalhe: ${clampText(currentJob?.error || 'Falha interna.', 500)}`]
+            })
+          );
+        }
+      } finally {
+        stopProgressUpdates();
+      }
+    }
+  };
+}
+
+export async function tryHandleLocalAction(rawText, context = {}) {
+  await settingsStore.ensureReady();
+  await mediaStore.ensureReady();
+  await scheduledMessagesStore.ensureReady();
+  await reminderStore.ensureReady();
+  const runtimeSettings = settingsStore.get();
+
+  // Verificar @despesa / @despesas ANTES do removeMentions (que striparia o @)
+  const rawTrimmed = String(rawText || '').trim();
+  if (/^@despesas?\b/i.test(rawTrimmed)) {
+    const expenseCmdRaw = parseExpenseCommand(rawTrimmed, context);
+    if (expenseCmdRaw) {
+      return handleExpenseCommand(expenseCmdRaw, { text: rawTrimmed, context });
+    }
+  }
+
+  // @tokens — relatório de uso do Copilot (admin ou full)
+  if (/^@tokens?\b/i.test(rawTrimmed)) {
+    const senderIsAdmin = isAdminSender(context.senderNumber);
+    const senderIsFull = isFullSender(context.senderNumber);
+    if (!senderIsAdmin && !senderIsFull) {
+      return {
+        handled: true,
+        response: `Comando @tokens bloqueado: apenas admin ou full pode consultar.`
+      };
+    }
+    return {
+      handled: true,
+      response: formatCopilotUsageReport()
+    };
+  }
+
+  const text = normalizeAddressedCommandText(removeMentions(rawText));
+  if (!text) return null;
+  const folded = foldText(text);
+
+  if (isGreetingOnly(text)) {
+    return {
+      handled: true,
+      response: 'Oi! Estou online. Como posso ajudar?'
+    };
+  }
+
+  if (isSimpleCheckin(text)) {
+    return {
+      handled: true,
+      response: 'Tudo certo por aqui. Como posso ajudar?'
+    };
+  }
+
+  if (/^(adiciona|adicione|adicionar)$/.test(folded)) {
+    return {
+      handled: true,
+      response:
+        'Me diga o que voce quer adicionar: agenda, permissao, admin, participante no grupo ou apenas enviar imagem/video para salvar.'
+    };
+  }
+
+  const fullAutoDevCmd = parseFullAutoDevCommand(rawText) || parseFullAutoDevCommand(text);
+  const fullStatusCmd = fullAutoDevCmd ? null : parseFullAutoStatusCommand(text);
+
+  // Comandos de histórico de jobs FULL (apenas para senders FULL)
+  if (!fullAutoDevCmd && isFullSender(context.senderNumber)) {
+    const histCmd = parseFullJobHistoryCommand(text) || parseFullJobHistoryCommand(rawText);
+    if (histCmd) {
+      if (histCmd.action === 'list') {
+        const limit = histCmd.limit || 5;
+        const jobs = listFullAutoJobs({ limit });
+        if (!jobs.length) {
+          return { handled: true, response: 'Nenhum processo FULL registrado.' };
+        }
+        const lines = [`Últimos ${jobs.length} processo(s) FULL:`];
+        for (const j of jobs) {
+          const elapsed = j.finishedAt
+            ? formatElapsed(j.finishedAt - j.startedAt)
+            : `em andamento (${formatElapsed(Date.now() - j.startedAt)})`;
+          const label = j.status === 'done' ? '✅' : j.status === 'error' ? '❌' : '🔄';
+          lines.push(`${label} #${j.id} | ${j.status} | ${elapsed}`);
+          lines.push(`   Pedido: ${clampText(j.request || '-', 80)}`);
+          if (j.summary) lines.push(`   Resposta: ${clampText(j.summary, 100)}`);
+        }
+        lines.push(`\nPara ver o log completo: log do processo <id>`);
+        return { handled: true, response: lines.join('\n') };
+      }
+
+      if (histCmd.action === 'log' || histCmd.action === 'log_latest') {
+        let job = null;
+        if (histCmd.action === 'log' && histCmd.jobId) {
+          job = getFullAutoJobById(histCmd.jobId);
+          if (!job) {
+            // Try partial match from recent jobs
+            const recent = listFullAutoJobs({ limit: 50 });
+            job = recent.find(j => j.id.startsWith(histCmd.jobId) || j.id.includes(histCmd.jobId)) || null;
+          }
+        } else {
+          const recent = listFullAutoJobs({ limit: 1 });
+          job = recent[0] || null;
+        }
+
+        if (!job) {
+          return { handled: true, response: 'Processo não encontrado. Use: listar processos full' };
+        }
+
+        const logLines = Array.isArray(job.logLines) ? job.logLines : [];
+        const lines = [
+          `📋 Log Job #${job.id}`,
+          `Status: ${job.status} | ${job.statusLabel || ''}`,
+          `Pedido: ${clampText(job.request, 100)}`,
+          `Início: ${new Date(job.startedAt).toLocaleString('pt-BR')}`,
+          ``,
+          `Log de execução (${logLines.length} linhas):`
+        ];
+
+        if (logLines.length) {
+          // Show last 15 lines to fit in WhatsApp message
+          const showLines = logLines.slice(-15);
+          if (logLines.length > 15) lines.push(`... (mostrando últimas 15 de ${logLines.length} linhas)`);
+          lines.push(...showLines);
+        } else {
+          lines.push('(sem linhas de log registradas)');
+        }
+
+        if (job.summary) {
+          lines.push(`\n✅ Resposta final:\n${clampText(job.summary, 500)}`);
+        }
+        if (job.error) {
+          lines.push(`\n❌ Erro:\n${clampText(job.error, 300)}`);
+        }
+
+        return { handled: true, response: lines.join('\n') };
+      }
+    }
+  }
+
+  if (fullStatusCmd?.action === 'status' && isFullSender(context.senderNumber)) {
+    const job = getLatestFullAutoJob({
+      groupId: context.groupId,
+      senderNumber: normalizeAccessPhone(context.senderNumber || '') || 'desconhecido'
+    });
+    if (!job) {
+      return {
+        handled: true,
+        response: 'Nao ha solicitacao FULL em andamento agora.'
+      };
+    }
+
+    if (job.status === 'running') {
+      return {
+        handled: true,
+        response: buildFullAutoMessage({
+          jobId: job.id,
+          status: `${job.statusLabel || 'em andamento'} (${formatElapsed(Date.now() - job.startedAt)})`,
+          request: job.request,
+          senderNumber: job.senderNumber,
+          lines: [job.detail || 'Status: editando e validando.']
+        })
+      };
+    }
+
+    if (job.status === 'done') {
+      return {
+        handled: true,
+        response: buildFullAutoMessage({
+          jobId: job.id,
+          status: job.statusLabel || 'concluida com sucesso',
+          request: job.request,
+          senderNumber: job.senderNumber,
+          lines: [job.detail ? `Resumo: ${clampText(job.detail, 240)}` : `Resumo: ${clampText(job.summary || 'Concluida.', 240)}`]
+        })
+      };
+    }
+
+    return {
+      handled: true,
+      response: buildFullAutoMessage({
+        jobId: job.id,
+        status: job.statusLabel || 'terminou com erro',
+        request: job.request,
+        senderNumber: job.senderNumber,
+        lines: [`Detalhe: ${clampText(job.detail || job.error || 'Falha nao detalhada.', 240)}`]
+      })
+    };
+  }
+
+  if (fullAutoDevCmd) {
+    const senderIsFull = isFullSender(context.senderNumber);
+    const senderIsAdmin = isAdminSender(context.senderNumber);
+
+    if (!senderIsFull) {
+      if (senderIsAdmin) {
+        return {
+          handled: true,
+          response:
+            'Como admin eu respondo normalmente, mas execucao de edicao de codigo/validacao/restart automatico e exclusiva da permissao FULL.'
+        };
+      }
+      return {
+        handled: true,
+        response: `Acao de alteracao no codigo bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao FULL.`
+      };
+    }
+
+    if (!config.fullAutoDevEnabled) {
+      return {
+        handled: true,
+        response: 'Modo FULL de alteracao automatica esta desativado (FULL_AUTO_DEV_ENABLED=false).'
+      };
+    }
+
+    if (fullAutoDevCmd.action === 'missing') {
+      return {
+        handled: true,
+        response: 'Pedido FULL incompleto. Use a palavra-chave: @ valida <o que devo editar no codigo>.'
+      };
+    }
+
+    if (fullAutoDevCmd.action === 'too_long') {
+      return {
+        handled: true,
+        response:
+          `Pedido FULL muito longo. Envie um resumo de ate ${fullAutoDevCmd.maxChars || 1400} caracteres com objetivo direto.` +
+          '\nExemplo: @ valida ajustar retorno do comando agenda para mostrar indice.'
+      };
+    }
+
+    const startLines = buildFullAutoStartLines();
+    if (fullAutoDevCmd.truncated && fullAutoDevCmd.originalChars && fullAutoDevCmd.maxChars) {
+      startLines.unshift(
+        `Observacao: pedido muito longo, processando os primeiros ${fullAutoDevCmd.maxChars} de ${fullAutoDevCmd.originalChars} caracteres.`
+      );
+    }
+
+    const running = getLatestFullAutoJob({
+      groupId: context.groupId,
+      senderNumber: normalizeAccessPhone(context.senderNumber || '') || 'desconhecido'
+    });
+    if (running?.status === 'running') {
+      return {
+        handled: true,
+        response: buildFullAutoMessage({
+          jobId: running.id,
+          status: running.statusLabel || 'ja em andamento',
+          request: running.request,
+          senderNumber: running.senderNumber,
+          lines: [running.detail || 'Acompanhar: status da minha solicitacao.']
+        })
+      };
+    }
+
+    const job = createFullAutoJob({
+      id: randomUUID().slice(0, 8),
+      groupId: context.groupId || 'sem-grupo',
+      request: fullAutoDevCmd.request,
+      senderNumber: context.senderNumber || 'desconhecido',
+      status: 'running',
+      statusLabel: 'recebida e iniciada',
+      detail: buildFullAutoStartDetail()
+    });
+
+    return {
+      handled: true,
+      response: buildFullAutoMessage({
+        jobId: job.id,
+        status: 'recebida e iniciada',
+        request: job.request,
+        senderNumber: job.senderNumber,
+        lines: startLines
+      }),
+      runAfterSendInBackground: true,
+      afterSend: async () => {
+        const client = context.client;
+        const groupId = String(context.groupId || '').trim();
+        const notificationGroupId = resolveNotificationGroupId(context);
+        const autoRestartEnabled = isFullAutoRestartEnabled();
+        const stopProgressUpdates = startFullAutoProgressUpdates({
+          jobId: job.id,
+          client,
+          groupId: notificationGroupId || groupId
+        });
+
+        updateFullAutoJob(job.id, {
+          status: 'running',
+          statusLabel: 'editando e validando',
+          detail: 'Status: editando arquivos e preparando validacao tecnica.'
+        });
+        appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] Iniciado: editando arquivos e preparando validacao.`);
+
+        try {
+          if (client && notificationGroupId && notificationGroupId !== groupId) {
+            await client.sendMessage(
+              notificationGroupId,
+              buildFullAutoMessage({
+                jobId: job.id,
+                status: 'recebida e iniciada',
+                request: job.request,
+                senderNumber: job.senderNumber,
+                lines: startLines
+              })
+            );
+          }
+
+          const result = await runCodexFullAutoDevTask(fullAutoDevCmd.request, context, {
+            onProgress: (patch) => {
+              updateFullAutoJob(job.id, patch);
+              if (patch.detail || patch.statusLabel) {
+                appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ${patch.statusLabel || ''}: ${patch.detail || ''}`.trim());
+              }
+            }
+          });
+          if (!result.ok) {
+            updateFullAutoJob(job.id, {
+              status: 'error',
+              statusLabel: 'falhou na execucao',
+              error: result.message || 'Falha no modo FULL.',
+              detail: result.message || 'Falha no modo FULL.',
+              finishedAt: Date.now()
+            });
+            appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ERRO: ${result.message || 'Falha no modo FULL.'}`);
+
+            const currentJob = getFullAutoJobById(job.id);
+            if (client && groupId) {
+              await client.sendMessage(groupId, buildFullAutoSimpleFailureMessage());
+            }
+            if (client && notificationGroupId && notificationGroupId !== groupId) {
+              await client.sendMessage(
+                notificationGroupId,
+                buildFullAutoMessage({
+                  jobId: currentJob?.id || job.id,
+                  status: 'falhou na execucao',
+                  request: currentJob?.request || job.request,
+                  senderNumber: currentJob?.senderNumber || job.senderNumber,
+                  lines: [`Detalhe: ${clampText(currentJob?.error || result.message || 'Falha no modo FULL.', 500)}`]
+                })
+              );
+            }
+            return;
+          }
+
+          if (!result.validationOk) {
+            updateFullAutoJob(job.id, {
+              status: 'error',
+              statusLabel: `validacao falhou (${result.validationStatus})`,
+              error: `Validacao falhou (${result.validationStatus}).`,
+              summary: result.summary || '',
+              validationStatus: result.validationStatus || '',
+              detail: result.validationOutput || result.summary || `Validacao falhou (${result.validationStatus}).`,
+              finishedAt: Date.now()
+            });
+            appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] VALIDAÇÃO FALHOU (${result.validationStatus}): ${result.summary || result.validationOutput || ''}`);
+
+            const currentJob = getFullAutoJobById(job.id);
+            if (client && (notificationGroupId || groupId)) {
+              await client.sendMessage(
+                notificationGroupId || groupId,
+                buildFullAutoMessage({
+                  jobId: currentJob?.id || job.id,
+                  status: `validacao falhou (${result.validationStatus})`,
+                  request: currentJob?.request || job.request,
+                  senderNumber: currentJob?.senderNumber || job.senderNumber,
+                  lines: [
+                    `Resumo: ${clampText(result.summary || '', 500)}`,
+                    `Saida: ${clampText(result.validationOutput || '', 450)}`
+                  ]
+                })
+              );
+            }
+
+            // ── Auto-retentativa: dispara novo FULL para se autocorrigir ────
+            const originalRequest = String(currentJob?.request || job.request || '');
+            const isAutoFix = originalRequest.startsWith('[AUTOCORRECAO]');
+            if (!isAutoFix && client) {
+              const fixRequest =
+                `[AUTOCORRECAO] O job FULL #${job.id} falhou na validacao.\n` +
+                `Erro de validacao (${result.validationStatus}):\n` +
+                `${clampText(result.validationOutput || result.summary || 'Sem detalhes.', 1500)}\n\n` +
+                `Tarefa original: ${clampText(originalRequest, 500)}\n\n` +
+                `Analise os erros acima, corrija todos os problemas encontrados, ` +
+                `rode npm run check e certifique que passa com exit 0.`;
+
+              appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] 🔄 Disparando autocorreção...`);
+
+              const fixContext = {
+                client,
+                groupId: notificationGroupId || groupId,
+                notificationGroupId: notificationGroupId || groupId,
+                senderNumber: currentJob?.senderNumber || job.senderNumber || ''
+              };
+
+              setTimeout(() => {
+                startFullAutoJobDirect(fixRequest, fixContext).catch((e) => {
+                  logger.error('[FULL] Falha ao disparar autocorreccao', {
+                    error: e instanceof Error ? e.message : String(e)
+                  });
+                });
+              }, 3000);
+            }
+            return;
+          }
+
+          updateFullAutoJob(job.id, {
+            status: 'done',
+            statusLabel: autoRestartEnabled
+              ? `concluida, validada e reiniciando (${result.validationStatus})`
+              : `concluida e validada (${result.validationStatus})`,
+            summary: result.summary || '',
+            validationStatus: result.validationStatus || '',
+            detail: result.summary || 'Solicitacao concluida com sucesso.',
+            finishedAt: Date.now()
+          });
+          appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ✅ CONCLUÍDO (${result.validationStatus}): ${result.summary || 'Solicitacao concluida com sucesso.'}`);
+
+          // Extrai arquivos modificados mencionados no summary
+          const _fileMatches2 = String(result.summary || '').match(/(?:\/opt\/chatbot\/|src\/|data\/|scripts\/)[\w./\-]+\.\w{1,8}/g);
+          if (_fileMatches2) {
+            for (const f of [...new Set(_fileMatches2)]) appendFileChanged(job.id, f);
+          }
+
+          const currentJob = getFullAutoJobById(job.id);
+
+          if (client && groupId) {
+            try {
+              await client.sendMessage(groupId, buildFullAutoSimpleSuccessMessage());
+            } catch {
+              // Mantem o job como concluido; a notificacao curta no grupo de origem e best-effort.
+            }
+            // Envia relatorio completo como arquivo sempre (sem threshold)
+            await sendFullJobResultAsTxtIfLarge(client, groupId, {
+              jobId: currentJob?.id || job.id,
+              request: currentJob?.request || job.request,
+              summary: result.summary || '',
+              validationOutput: result.validationOutput || '',
+              status: 'done'
+            }, notificationGroupId);
+          }
+
+          if (client && notificationGroupId && notificationGroupId !== groupId) {
+            await client.sendMessage(
+              notificationGroupId,
+              buildFullAutoMessage({
+                jobId: currentJob?.id || job.id,
+                status: autoRestartEnabled
+                  ? `concluida, validada e reiniciando (${result.validationStatus})`
+                  : `concluida e validada (${result.validationStatus})`,
+                request: currentJob?.request || job.request,
+                senderNumber: currentJob?.senderNumber || job.senderNumber,
+                lines: [
+                  `Resumo: ${clampText(result.summary || '', 700)}`,
+                  autoRestartEnabled
+                    ? 'Proximo passo: reiniciando o servico para aplicar as mudancas.'
+                    : 'Servico mantido online porque ENABLE_SELF_RESTART=false.'
+                ]
+              })
+            );
+          }
+
+          if (autoRestartEnabled) {
+            // Aguarda flush das mensagens antes de reiniciar o processo
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            await triggerSelfRestart();
+          }
+        } catch (error) {
+          updateFullAutoJob(job.id, {
+            status: 'error',
+            statusLabel: 'falhou com erro interno',
+            error: error instanceof Error ? error.message : String(error),
+            detail: error instanceof Error ? error.message : String(error),
+            finishedAt: Date.now()
+          });
+          appendJobLog(job.id, `[${new Date().toLocaleString('pt-BR')}] ❌ ERRO INTERNO: ${error instanceof Error ? error.message : String(error)}`);
+
+          const currentJob = getFullAutoJobById(job.id);
+          if (client && (notificationGroupId || groupId)) {
+            await client.sendMessage(
+              notificationGroupId || groupId,
+              buildFullAutoMessage({
+                jobId: currentJob?.id || job.id,
+                status: 'falhou com erro interno',
+                request: currentJob?.request || job.request,
+                senderNumber: currentJob?.senderNumber || job.senderNumber,
+                lines: [`Detalhe: ${clampText(currentJob?.error || 'Falha interna.', 500)}`]
+              })
+            );
+          }
+        } finally {
+          stopProgressUpdates();
+        }
+      }
+    };
+  }
+
+  const reminderCmd = parseReminderCommand(text);
+  if (reminderCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de lembrete bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    const groupId = String(context.groupId || '').trim();
+    if (!groupId) {
+      return {
+        handled: true,
+        response: 'Nao consegui identificar o grupo para salvar o lembrete.'
+      };
+    }
+
+    if (reminderCmd.action === 'set_missing_time') {
+      return {
+        handled: true,
+        response:
+          'Me diga o horario do lembrete. Exemplo: me lembra as 22h de hoje que eu tenho que tomar remedio.'
+      };
+    }
+
+    if (reminderCmd.action === 'set_missing_text') {
+      return {
+        handled: true,
+        response:
+          'Me diga o conteudo do lembrete. Exemplo: me lembra as 22h de hoje que eu tenho que tomar remedio.'
+      };
+    }
+
+    if (reminderCmd.action === 'set_missing_text_relative') {
+      return {
+        handled: true,
+        response:
+          'Entendi o prazo, mas faltou o conteudo. Exemplo: me lembra daqui a 10 minutos que eu preciso confirmar esse pedido.'
+      };
+    }
+
+    if (reminderCmd.action === 'set_past_time') {
+      return {
+        handled: true,
+        response:
+          `Esse horario ja passou (${reminderCmd.dueAtLabel}). ` +
+          'Informe um horario futuro ou remova "hoje" para eu agendar no proximo horario valido.'
+      };
+    }
+
+    if (reminderCmd.action === 'set_relative_from_context') {
+      const referenceText = await resolveReminderReferenceText(rawText, context);
+      if (!referenceText) {
+        return {
+          handled: true,
+          response:
+            'Nao consegui identificar o conteudo para lembrar. Tente assim: me lembra daqui a 10 minutos que eu preciso confirmar o pedido.'
+        };
+      }
+
+      const result = await reminderStore.addReminder({
+        groupId,
+        senderNumber: context.senderNumber || '',
+        dueAt: reminderCmd.dueAtIso,
+        text: referenceText,
+        recurrence: null
+      });
+      if (!result.ok) {
+        return {
+          handled: true,
+          response: `Nao consegui criar o lembrete: ${result.message || 'erro desconhecido'}.`
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Perfeito. Vou te lembrar disso em ${reminderCmd.relativeLabel || 'alguns minutos'} (${reminderCmd.dueAtLabel}).\n` +
+          `Resumo: ${clampText(referenceText, 220)}`
+      };
+    }
+
+    if (reminderCmd.action === 'set') {
+      const result = await reminderStore.addReminder({
+        groupId,
+        senderNumber: context.senderNumber || '',
+        dueAt: reminderCmd.dueAtIso,
+        text: reminderCmd.text,
+        recurrence: reminderCmd.recurrence || null
+      });
+      if (!result.ok) {
+        return {
+          handled: true,
+          response: `Nao consegui criar o lembrete: ${result.message || 'erro desconhecido'}.`
+        };
+      }
+      return {
+        handled: true,
+        response: reminderCmd.recurrence
+          ? `Perfeito. Lembrete recorrente criado para ${formatReminderScheduleLabel({ dueAt: reminderCmd.dueAtIso, recurrence: reminderCmd.recurrence })}.\nProximo envio: ${reminderCmd.dueAtLabel}\nTexto: ${reminderCmd.text}`
+          : `Perfeito. Lembrete criado para ${reminderCmd.dueAtLabel}: ${reminderCmd.text}`
+      };
+    }
+
+    if (reminderCmd.action === 'set_from_last') {
+      const sourceReminder =
+        reminderStore.findLatestByGroupSender(groupId, context.senderNumber || '') ||
+        reminderStore.findLatestByGroupSender(groupId);
+      if (!sourceReminder) {
+        return {
+          handled: true,
+          response:
+            'Nao encontrei um lembrete recente para repetir. Me diga o horario e o texto completos.'
+        };
+      }
+
+      const sourceClock = extractClockFromDate(sourceReminder.dueAt);
+      const schedule = buildReminderSchedule({
+        clock: reminderCmd.clock || sourceClock,
+        recurrence: reminderCmd.recurrence || null,
+        explicitBaseDate: reminderCmd.explicitBaseDate || null,
+        now: new Date()
+      });
+      if (!schedule.ok && schedule.code === 'past_time') {
+        return {
+          handled: true,
+          response:
+            `Esse horario ja passou (${schedule.dueAtLabel}). ` +
+            'Informe um horario futuro ou remova "hoje" para eu agendar no proximo horario valido.'
+        };
+      }
+      if (!schedule.ok) {
+        return {
+          handled: true,
+          response:
+            'Nao consegui repetir o lembrete anterior. Me diga o horario e o texto completos.'
+        };
+      }
+
+      const normalizedText = normalizeReminderMessageText(sourceReminder.text) || sourceReminder.text;
+      const result = await reminderStore.addReminder({
+        groupId,
+        senderNumber: context.senderNumber || '',
+        dueAt: schedule.dueAtIso,
+        text: normalizedText,
+        recurrence: schedule.recurrence || null
+      });
+      if (!result.ok) {
+        return {
+          handled: true,
+          response: `Nao consegui criar o lembrete: ${result.message || 'erro desconhecido'}.`
+        };
+      }
+
+      return {
+        handled: true,
+        response: schedule.recurrence
+          ? `Perfeito. Repeti o ultimo lembrete como recorrente ${formatReminderScheduleLabel({ dueAt: schedule.dueAtIso, recurrence: schedule.recurrence })}.\nProximo envio: ${schedule.dueAtLabel}\nTexto: ${normalizedText}`
+          : `Perfeito. Repeti o ultimo lembrete para ${schedule.dueAtLabel}: ${normalizedText}`
+      };
+    }
+
+    if (reminderCmd.action === 'list') {
+      const items = reminderStore.listPendingByGroup(groupId, 20);
+      if (!items.length) {
+        return {
+          handled: true,
+          response: 'Nao ha lembretes pendentes neste grupo.'
+        };
+      }
+      const lines = items.map((item) => formatReminderListLine(item));
+      return {
+        handled: true,
+        response: `Lembretes pendentes (${items.length}):\n${lines.join('\n')}\nPara cancelar: cancelar lembrete <numero>`
+      };
+    }
+
+    if (reminderCmd.action === 'describe_latest') {
+      const latestReminder =
+        reminderStore.findLatestPendingByGroupSender(groupId, context.senderNumber || '') ||
+        reminderStore.findLatestPendingByGroupSender(groupId);
+      if (!latestReminder) {
+        return {
+          handled: true,
+          response: 'Nao encontrei lembrete pendente neste grupo.'
+        };
+      }
+
+      const label = formatReminderScheduleLabel(latestReminder);
+      const textLabel = normalizeReminderMessageText(latestReminder.text) || latestReminder.text;
+      return {
+        handled: true,
+        response: latestReminder.recurrence
+          ? `Sim. Esse lembrete esta recorrente ${label}.\nProximo envio: ${formatLocalDateTime(latestReminder.dueAt)}\nTexto: ${textLabel}`
+          : `Nao. Esse lembrete nao esta recorrente.\nAgendado para: ${formatLocalDateTime(latestReminder.dueAt)}\nTexto: ${textLabel}`
+      };
+    }
+
+    if (reminderCmd.action === 'cancel_missing_index') {
+      return {
+        handled: true,
+        response: 'Informe qual lembrete cancelar. Exemplo: cancelar lembrete 1'
+      };
+    }
+
+    if (reminderCmd.action === 'cancel_one') {
+      const result = await reminderStore.cancelByIndex(groupId, reminderCmd.index);
+      if (!result.ok || !result.canceled) {
+        return {
+          handled: true,
+          response: `Nao encontrei lembrete ${reminderCmd.index} para cancelar.`
+        };
+      }
+      return {
+        handled: true,
+        response: `Lembrete ${reminderCmd.index} cancelado com sucesso.`
+      };
+    }
+
+    if (reminderCmd.action === 'cancel_all') {
+      const result = await reminderStore.cancelAllByGroup(groupId);
+      return {
+        handled: true,
+        response:
+          result.ok && result.canceled > 0
+            ? `Pronto. Cancelei ${result.canceled} lembrete(s) pendente(s) deste grupo.`
+            : 'Nao havia lembretes pendentes para cancelar neste grupo.'
+      };
+    }
+  }
+
+  const timeQuestionResponse = await buildTimeQuestionResponse(text);
+  if (timeQuestionResponse) {
+    return {
+      handled: true,
+      response: timeQuestionResponse
+    };
+  }
+
+  const adminCmd = parseAdminCommand(text);
+  if (adminCmd?.action === 'self_admin') {
+    if (config.allowAllAdmins) {
+      return {
+        handled: true,
+        response: `Admins estao liberados para todos neste bot (ADMIN_SENDER_NUMBERS=all). Seu sender atual: ${context.senderNumber || 'desconhecido'}.`
+      };
+    }
+
+    if (isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Seu sender ${context.senderNumber || 'desconhecido'} ja esta como admin do bot.`
+      };
+    }
+
+    return {
+      handled: true,
+      response:
+        'Seu sender ainda nao esta admin no bot. Adicione em ADMIN_SENDER_NUMBERS no .env e reinicie o servico.'
+    };
+  }
+
+  const settingsCmd = parseBotSettingsCommand(text, context) || parseBotSettingsCommand(rawText, context);
+  if (settingsCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de configuracao bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    if (settingsCmd.action === 'menu') {
+      const current = settingsStore.get();
+      const [availability, menuUrl] = await Promise.all([
+        getBotConfigModelAvailability({
+          forceRefresh: false,
+          refreshWhenStale: false,
+          allowProbe: false
+        }),
+        resolvePanelUrl('/bot-config-menu.html')
+      ]);
+      setBotConfigMenuState(context, { view: 'overview' });
+      return {
+        handled: true,
+        response: buildBotConfigMenuOverview(current, {
+          modelAvailability: availability,
+          menuUrl
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'menu_section') {
+      const current = settingsStore.get();
+      const [availability, menuUrl] = await Promise.all([
+        getBotConfigModelAvailability({
+          forceRefresh: false,
+          refreshWhenStale: false,
+          allowProbe: false
+        }),
+        resolvePanelUrl('/bot-config-menu.html')
+      ]);
+      setBotConfigMenuState(context, { view: 'section', section: settingsCmd.section });
+      return {
+        handled: true,
+        response: buildBotConfigMenuSectionMessage(settingsCmd.section, current, {
+          modelAvailability: availability,
+          menuUrl
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'menu_invalid_option') {
+      const current = settingsStore.get();
+      const [availability, menuUrl] = await Promise.all([
+        getBotConfigModelAvailability({
+          forceRefresh: false,
+          refreshWhenStale: false,
+          allowProbe: false
+        }),
+        resolvePanelUrl('/bot-config-menu.html')
+      ]);
+      setBotConfigMenuState(context, { view: 'overview' });
+      return {
+        handled: true,
+        response: buildBotConfigMenuInvalidOptionMessage('overview', settingsCmd.optionNumber, current, {
+          modelAvailability: availability,
+          menuUrl
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'menu_section_option') {
+      const current = settingsStore.get();
+      const [availability, menuUrl] = await Promise.all([
+        getBotConfigModelAvailability({
+          forceRefresh: false,
+          refreshWhenStale: false,
+          allowProbe: false
+        }),
+        resolvePanelUrl('/bot-config-menu.html')
+      ]);
+      const result = await executeBotConfigMenuSectionOption(settingsCmd.section, settingsCmd.optionNumber, current, {
+        modelAvailability: availability,
+        menuUrl
+      });
+      if (result?.nextState?.view === 'section') {
+        setBotConfigMenuState(context, result.nextState);
+      } else if (result?.nextState?.view === 'overview') {
+        setBotConfigMenuState(context, { view: 'overview' });
+      }
+      return {
+        handled: true,
+        response: result?.response || buildBotConfigMenuSectionMessage(settingsCmd.section, current, {
+          modelAvailability: availability,
+          menuUrl
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'help') {
+      return {
+        handled: true,
+        response: buildRuntimeSettingsHelpMessage()
+      };
+    }
+
+    if (settingsCmd.action === 'show') {
+      const current = settingsStore.get();
+      const availability = await getBotConfigModelAvailability({
+        forceRefresh: false,
+        refreshWhenStale: false,
+        allowProbe: false
+      });
+      return {
+        handled: true,
+        response: buildRuntimeSettingsSummary(current, {
+          modelAvailability: availability
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'models') {
+      const current = settingsStore.get();
+      const availability = await getBotConfigModelAvailability({
+        forceRefresh: false,
+        refreshWhenStale: false,
+        allowProbe: false
+      });
+      return {
+        handled: true,
+        response: buildRuntimeSettingsSummary(current, {
+          modelAvailability: availability
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'models_test') {
+      const current = settingsStore.get();
+      const availability = await getBotConfigModelAvailability({
+        forceRefresh: true,
+        refreshWhenStale: true
+      });
+      return {
+        handled: true,
+        response: buildRuntimeSettingsSummary(current, {
+          modelAvailability: availability
+        })
+      };
+    }
+
+    if (settingsCmd.action === 'audit') {
+      const entries = await settingsStore.listAudit(10);
+      if (!entries.length) {
+        return {
+          handled: true,
+          response: 'Sem auditoria de configuracao registrada ainda.'
+        };
+      }
+
+      const lines = entries.map((item, index) => {
+        const keys = Array.isArray(item.changedKeys) ? item.changedKeys.join(', ') : '';
+        return `${index + 1}. ${item.id} | ${item.ts} | ${item.actor || 'desconhecido'} | ${keys || 'sem chaves'}`;
+      });
+      return {
+        handled: true,
+        response: `Auditoria de configuracao (ultimos ${entries.length}):\n${lines.join('\n')}`
+      };
+    }
+
+    if (settingsCmd.action === 'rollback') {
+      const result = await settingsStore.rollback(settingsCmd.auditId, {
+        actor: context.senderNumber || 'desconhecido',
+        source: 'whatsapp_command'
+      });
+      return {
+        handled: true,
+        response: result.ok
+          ? `Rollback aplicado com sucesso. Nova auditoria: ${result.auditId || 'sem id'}`
+          : `Falha no rollback: ${result.message}`
+      };
+    }
+
+    if (settingsCmd.action === 'set_missing') {
+      return {
+        handled: true,
+        response:
+          'Informe chave e valor. Exemplo: configurar bot: mencao obrigatoria=true\n' +
+          'Para ajuda completa: ajuda configuracao bot'
+      };
+    }
+
+    if (settingsCmd.action === 'set_invalid') {
+      return {
+        handled: true,
+        response:
+          'Formato invalido. Use: configurar bot: chave=valor\n' +
+          'Exemplo: configurar bot: timeout ia=25000'
+      };
+    }
+
+    if (settingsCmd.action === 'set') {
+      const normalizedKey = normalizeRuntimeSettingKey(settingsCmd.key);
+      if (!normalizedKey || !BOT_SETTINGS_ALLOWED_KEYS.has(normalizedKey)) {
+        return {
+          handled: true,
+          response:
+            `Chave nao permitida: ${settingsCmd.key}\n` +
+            'Use: ajuda configuracao bot\n' +
+            'Exemplos de chave: mencao obrigatoria, timeout ia, limite resposta, salvar midia automatica'
+        };
+      }
+
+      const beforeSettings = settingsStore.get();
+      const beforeValue = formatRuntimeSettingValue(beforeSettings[normalizedKey]);
+      const result = await settingsStore.update(
+        {
+          [normalizedKey]: settingsCmd.value
+        },
+        {
+          actor: context.senderNumber || 'desconhecido',
+          source: 'whatsapp_command',
+          reason: `set:${normalizedKey}`
+        }
+      );
+
+      const afterValue = formatRuntimeSettingValue((result.settings || beforeSettings)[normalizedKey]);
+      return {
+        handled: true,
+        response: result.changed
+          ? `Configuracao atualizada: ${normalizedKey}\nAntes: ${beforeValue}\nAgora: ${afterValue}\nAuditoria: ${result.auditId || 'sem id'}.`
+          : `Nenhuma mudanca aplicada para ${normalizedKey}.`
+      };
+    }
+  }
+
+  const authorizationCmd = parseAuthorizationCommand(text);
+  if (authorizationCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de autorizacao bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    let resolvedAuthorizationCmd = authorizationCmd;
+    if (
+      resolvedAuthorizationCmd.action === 'add_missing' ||
+      resolvedAuthorizationCmd.action === 'remove_missing' ||
+      resolvedAuthorizationCmd.action === 'add_admin_missing' ||
+      resolvedAuthorizationCmd.action === 'remove_admin_missing' ||
+      resolvedAuthorizationCmd.action === 'add_full_missing' ||
+      resolvedAuthorizationCmd.action === 'remove_full_missing' ||
+      resolvedAuthorizationCmd.action === 'add_private_missing' ||
+      resolvedAuthorizationCmd.action === 'remove_private_missing'
+    ) {
+      const mentionPhone = await resolveAuthorizationMentionPhone(rawText, context);
+      if (mentionPhone) {
+        const actionMap = {
+          add_missing: 'add',
+          remove_missing: 'remove',
+          add_admin_missing: 'add_admin',
+          remove_admin_missing: 'remove_admin',
+          add_full_missing: 'add_full',
+          remove_full_missing: 'remove_full',
+          add_private_missing: 'add_private',
+          remove_private_missing: 'remove_private'
+        };
+        const mappedAction = actionMap[resolvedAuthorizationCmd.action];
+        if (mappedAction) {
+          resolvedAuthorizationCmd = {
+            action: mappedAction,
+            phone: mentionPhone
+          };
+        }
+      }
+    }
+
+    if (resolvedAuthorizationCmd.action === 'list') {
+      const snap = accessControl.snapshot();
+      const allowed = snap.effectiveAuthorized;
+      if (!allowed.length) {
+        return {
+          handled: true,
+          response: 'Nao ha remetentes autorizados cadastrados.'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Remetentes autorizados (${allowed.length}):\n${allowed.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
+          `\n\nFixos (.env): ${snap.staticAuthorized.length} | Dinamicos (painel/comando): ${snap.dynamicAuthorized.length}` +
+          `\nPainel detalhado: /multi-grupos.html`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'list_admins') {
+      const admins = accessControl.allAdminNumbers();
+      if (!admins.length) {
+        return {
+          handled: true,
+          response: 'Nao ha admins do bot cadastrados.'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Admins do bot (${admins.length}):\n${admins.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
+          `\n\nPainel detalhado: /multi-grupos.html`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'list_fulls') {
+      const fulls = accessControl.allFullNumbers();
+      if (!fulls.length) {
+        return {
+          handled: true,
+          response: 'Nao ha numeros com permissao FULL cadastrados.'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Permissao FULL (${fulls.length}):\n${fulls.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` +
+          `\n\nPainel detalhado: /multi-grupos.html`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'list_private') {
+      const privateAllowed = accessControl.allPrivateNumbers();
+      if (!privateAllowed.length) {
+        return {
+          handled: true,
+          response: 'Nao ha numeros autorizados para chat privado.'
+        };
+      }
+
+      return {
+        handled: true,
+        response: `Privado autorizado (${privateAllowed.length}):\n${privateAllowed
+          .map((item, idx) => `${idx + 1}. ${item}`)
+          .join('\n')}\n\nPainel detalhado: /multi-grupos.html`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para autorizar. Exemplo: autoriza 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add') {
+      const result = await accessControl.addAuthorized(resolvedAuthorizationCmd.phone);
+      return {
+        handled: true,
+        response: result.added
+          ? `Numero ${result.number} autorizado para falar com o bot.`
+          : result.reason === 'exists'
+            ? `Numero ${result.number} ja estava autorizado.`
+            : 'Numero invalido para autorizacao.'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para remover autorizacao. Exemplo: remover autorizacao 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove') {
+      const result = await accessControl.removeAuthorized(resolvedAuthorizationCmd.phone);
+      if (!result.removed && accessControl.isAuthorized(result.number || resolvedAuthorizationCmd.phone)) {
+        return {
+          handled: true,
+          response: `Numero ${result.number || resolvedAuthorizationCmd.phone} esta autorizado via .env (fixo). Remova de AUTHORIZED_SENDER_NUMBERS para bloquear de forma permanente.`
+        };
+      }
+      return {
+        handled: true,
+        response: result.removed
+          ? `Permissao removida: numero ${result.number} bloqueado para falar com o bot.`
+          : `Numero ${result.number || resolvedAuthorizationCmd.phone} nao estava na lista dinamica de autorizados.`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_admin_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para tornar admin do bot. Exemplo: adiciona admin do bot 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_admin') {
+      const result = await accessControl.addAdmin(resolvedAuthorizationCmd.phone);
+      return {
+        handled: true,
+        response: result.added
+          ? `Numero ${result.number} agora e admin do bot.`
+          : result.reason === 'exists'
+            ? `Numero ${result.number} ja e admin do bot.`
+            : 'Numero invalido para admin do bot.'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_admin_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para remover admin do bot. Exemplo: remover admin do bot 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_admin') {
+      const result = await accessControl.removeAdmin(resolvedAuthorizationCmd.phone);
+      if (!result.removed && accessControl.isFull(result.number || resolvedAuthorizationCmd.phone)) {
+        return {
+          handled: true,
+          response: `Numero ${result.number || resolvedAuthorizationCmd.phone} esta com FULL ativo. Remova FULL primeiro para perder acesso total.`
+        };
+      }
+      if (!result.removed && accessControl.isAdmin(result.number || resolvedAuthorizationCmd.phone)) {
+        return {
+          handled: true,
+          response: `Numero ${result.number || resolvedAuthorizationCmd.phone} esta como admin via .env (fixo). Remova de ADMIN_SENDER_NUMBERS para bloquear permanente.`
+        };
+      }
+      return {
+        handled: true,
+        response: result.removed
+          ? `Numero ${result.number} removido de admin do bot.`
+          : `Numero ${result.number || resolvedAuthorizationCmd.phone} nao estava na lista dinamica de admin do bot.`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_full_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para conceder FULL. Exemplo: adicionar full 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_full') {
+      const result = await accessControl.addFull(resolvedAuthorizationCmd.phone);
+      return {
+        handled: true,
+        response: result.added
+          ? `Numero ${result.number} agora tem permissao FULL (acesso total ao bot).`
+          : result.reason === 'exists'
+            ? `Numero ${result.number} ja possui permissao FULL.`
+            : 'Numero invalido para permissao FULL.'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_full_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para remover FULL. Exemplo: remover full 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_full') {
+      const result = await accessControl.removeFull(resolvedAuthorizationCmd.phone);
+      if (!result.removed && accessControl.isFull(result.number || resolvedAuthorizationCmd.phone)) {
+        return {
+          handled: true,
+          response: `Numero ${result.number || resolvedAuthorizationCmd.phone} esta FULL via .env (fixo). Remova de FULL_SENDER_NUMBERS para bloquear permanente.`
+        };
+      }
+      return {
+        handled: true,
+        response: result.removed
+          ? `Numero ${result.number} removido da permissao FULL.`
+          : `Numero ${result.number || resolvedAuthorizationCmd.phone} nao estava na lista dinamica de FULL.`
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_private_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para liberar chat privado. Exemplo: autorizar privado 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'add_private') {
+      const result = await accessControl.addPrivate(resolvedAuthorizationCmd.phone);
+      return {
+        handled: true,
+        response: result.added
+          ? `Numero ${result.number} liberado para conversar no chat privado com o bot.`
+          : result.reason === 'exists'
+            ? `Numero ${result.number} ja possui permissao de chat privado.`
+            : 'Numero invalido para permissao de chat privado.'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_private_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para bloquear chat privado. Exemplo: remover privado 21 96486-6832'
+      };
+    }
+
+    if (resolvedAuthorizationCmd.action === 'remove_private') {
+      const result = await accessControl.removePrivate(resolvedAuthorizationCmd.phone);
+      return {
+        handled: true,
+        response: result.removed
+          ? `Permissao de chat privado removida para ${result.number}.`
+          : `Numero ${result.number || resolvedAuthorizationCmd.phone} nao estava na lista de chat privado.`
+      };
+    }
+  }
+
+  const responseRoutingCmd = parseResponseRoutingCommand(text);
+  if (responseRoutingCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de multi-grupo bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    const authorizedGroupId = String(context.authorizedGroupId || '').trim();
+    const currentGroupId = String(context.groupId || '').trim();
+    const primaryGroupId = normalizeAccessGroup(authorizedGroupId || (currentGroupId.endsWith('@g.us') ? currentGroupId : ''));
+
+    if (responseRoutingCmd.action === 'list_response_groups') {
+      const groups = accessControl.allResponseGroupIds(primaryGroupId);
+      if (!groups.length) {
+        return {
+          handled: true,
+          response: 'Nenhum grupo de resposta ativo no momento.'
+        };
+      }
+
+      const dynamic = new Set(accessControl.extraResponseGroupIds());
+      const lines = groups.map((groupId, index) => {
+        const origin = groupId === primaryGroupId ? 'principal' : dynamic.has(groupId) ? 'dinamico' : 'ativo';
+        return `${index + 1}. ${groupId} (${origin})`;
+      });
+      return {
+        handled: true,
+        response:
+          `Multi-Grupo de Resposta (${groups.length} ativo(s)):\n${lines.join('\n')}` +
+          `\n\nPainel detalhado: /multi-grupos.html`
+      };
+    }
+
+    if (responseRoutingCmd.action === 'add_response_group_missing') {
+      return {
+        handled: true,
+        response: 'Informe o ID do grupo. Exemplo: adicionar grupo de resposta 120363400000000000@g.us'
+      };
+    }
+
+    if (responseRoutingCmd.action === 'add_response_group') {
+      if (primaryGroupId && responseRoutingCmd.groupId === primaryGroupId) {
+        return {
+          handled: true,
+          response: `O grupo ${responseRoutingCmd.groupId} ja e o principal de resposta.`
+        };
+      }
+
+      const result = await accessControl.addResponseGroup(responseRoutingCmd.groupId);
+      return {
+        handled: true,
+        response: result.added
+          ? `Grupo ${result.groupId} adicionado ao Multi-Grupo de Resposta.`
+          : result.reason === 'exists'
+            ? `Grupo ${result.groupId} ja estava no Multi-Grupo de Resposta.`
+            : 'Group ID invalido para adicionar.'
+      };
+    }
+
+    if (responseRoutingCmd.action === 'remove_response_group_missing') {
+      return {
+        handled: true,
+        response: 'Informe o ID do grupo para remover. Exemplo: remover grupo de resposta 120363400000000000@g.us'
+      };
+    }
+
+    if (responseRoutingCmd.action === 'remove_response_group') {
+      if (primaryGroupId && responseRoutingCmd.groupId === primaryGroupId) {
+        return {
+          handled: true,
+          response: `Nao removi ${responseRoutingCmd.groupId}: esse e o grupo principal configurado.`
+        };
+      }
+
+      const result = await accessControl.removeResponseGroup(responseRoutingCmd.groupId);
+      return {
+        handled: true,
+        response: result.removed
+          ? `Grupo ${result.groupId} removido do Multi-Grupo de Resposta.`
+          : `Grupo ${result.groupId || responseRoutingCmd.groupId} nao estava na lista dinamica.`
+      };
+    }
+  }
+
+  const storageStatusCmd = parseStorageStatusCommand(text);
+  if (storageStatusCmd?.action === 'show_paths') {
+    return {
+      handled: true,
+      response:
+        `Dados salvos no servidor Linux:\n` +
+        `- Banco SQLite: ${config.botDatabaseFile}\n` +
+        `- Agenda: ${config.agendaFile}\n` +
+        `- Textos: ${config.notesFile}\n` +
+        `- Conversas: ${config.conversationsDir}\n` +
+        `- Midias (arquivos): ${settingsStore.get().mediaRootDir}\n` +
+        `- Midias (indice): ${config.mediaIndexFile}\n` +
+        `Para consultar imagens: "listar imagens salvas".`
+    };
+  }
+
+  const mediaCmd = parseMediaLibraryCommand(text);
+  if (mediaCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de midia bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    if (mediaCmd.action === 'delete_all_ambiguous') {
+      const canInferDeleteAll = await hasRecentMediaDeleteContext(context.groupId || '', context.senderNumber || '');
+      if (!canInferDeleteAll) {
+        return {
+          handled: true,
+          response:
+            'Para evitar apagar dados por engano, confirme assim: "apagar todas as midias do grupo".\n' +
+            'Se quiser limpar so imagens: "apagar todas as imagens do grupo".'
+        };
+      }
+
+      const normalized = compactSpaces(text);
+      const inferredType = detectMediaTypeFilter(foldText(normalized));
+      const toDelete = [];
+      let offset = 0;
+      const pageSize = 500;
+      const groupId = String(context.groupId || '').trim();
+
+      while (true) {
+        const page = mediaStore.list({
+          groupId,
+          mediaType: inferredType || '',
+          includeDeleted: false,
+          limit: pageSize,
+          offset
+        });
+        if (!page.items.length) break;
+        toDelete.push(...page.items);
+        if (page.items.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      if (!toDelete.length) {
+        return {
+          handled: true,
+          response: 'Nao encontrei midias salvas para apagar neste grupo.'
+        };
+      }
+
+      let removed = 0;
+      let skippedProtected = 0;
+      let failed = 0;
+      for (const item of toDelete) {
+        const result = await mediaStore.deleteById(item.id, { password: mediaCmd.password || '' });
+        if (result.ok && result.deleted) {
+          removed += 1;
+        } else if (!result.ok && /(protegid|senha)/i.test(String(result.message || ''))) {
+          skippedProtected += 1;
+        } else {
+          failed += 1;
+        }
+      }
+
+      let response = `Pronto. Apaguei ${removed} midia(s) deste grupo.`;
+      if (skippedProtected > 0) response += ` ${skippedProtected} protegida(s) por senha nao foram removidas.`;
+      if (failed > 0) response += ` ${failed} falharam na remocao.`;
+      return { handled: true, response };
+    }
+
+    if (mediaCmd.action === 'save_status') {
+      return {
+        handled: true,
+        response:
+          'As midias enviadas no grupo ja sao salvas automaticamente no servidor. Se quiser, use: listar imagens salvas no servidor.'
+      };
+    }
+
+    if (mediaCmd.action === 'list') {
+      const result = mediaStore.list({
+        groupId: context.groupId || '',
+        mediaType: mediaCmd.mediaType || '',
+        limit: 8,
+        includeDeleted: false
+      });
+
+      if (!result.items.length) {
+        return {
+          handled: true,
+          response:
+            'Nao encontrei midias salvas neste grupo para esse filtro.\n' +
+            'Envie uma foto/video/documento no grupo para salvar automaticamente e depois use: lista arquivos.'
+        };
+      }
+
+      const typeLabel = (type) => {
+        const normalized = String(type || '').toLowerCase();
+        if (normalized === 'image') return 'Imagem';
+        if (normalized === 'video') return 'Video';
+        if (normalized === 'audio') return 'Audio';
+        if (normalized === 'document') return 'Documento';
+        return 'Arquivo';
+      };
+
+      const lines = result.items.map((item, index) => {
+        const sender = item.senderNumber || item.senderJid || 'desconhecido';
+        const when = String(item.createdAt || '').replace('T', ' ').slice(0, 16);
+        const size = formatBytesShort(item.sizeBytes);
+        return (
+          `[${index + 1}] ${typeLabel(item.mediaType)}\n` +
+          `ID: ${item.id}\n` +
+          `Nome: ${item.fileName}\n` +
+          `Tamanho: ${size}\n` +
+          `Data: ${when}\n` +
+          `Enviado por: ${sender}`
+        );
+      });
+
+      return {
+        handled: true,
+        response:
+          `Arquivos salvos neste grupo (${result.total} no total, mostrando ${result.items.length}):\n\n` +
+          `${lines.join('\n')}\n\n` +
+          `Acoes rapidas:\n` +
+          `1. baixar arquivo <id>\n` +
+          `2. apagar arquivo <id>\n` +
+          `3. apagar todas as midias do grupo\n` +
+          `Download direto: http://localhost:${config.port}/api/media/<id>/download`
+      };
+    }
+
+    if (mediaCmd.action === 'send_saved') {
+      const limit = Math.max(1, Math.min(8, Number.parseInt(String(mediaCmd.limit || 3), 10) || 3));
+      const result = mediaStore.list({
+        groupId: context.groupId || '',
+        mediaType: mediaCmd.mediaType || '',
+        limit,
+        includeDeleted: false
+      });
+
+      if (!result.items.length) {
+        return {
+          handled: true,
+          response: 'Nao encontrei midias salvas para enviar neste filtro.'
+        };
+      }
+
+      const mediaItems = [];
+      let blockedByPassword = 0;
+
+      for (const item of result.items) {
+        const resolved = await mediaStore.resolveDownloadPath(item.id, { password: '' });
+        if (!resolved.ok) {
+          blockedByPassword += 1;
+          continue;
+        }
+
+        mediaItems.push({
+          mediaId: item.id,
+          path: resolved.filePath,
+          caption:
+            `MIDIA_ID:${item.id}\n` +
+            `${item.mediaType || 'arquivo'} | ${item.fileName || 'arquivo'} | ${formatBytesShort(item.sizeBytes)}`
+        });
+      }
+
+      if (!mediaItems.length) {
+        return {
+          handled: true,
+          response:
+            blockedByPassword > 0
+              ? 'As midias encontradas estao protegidas por senha. Cite a midia e envie: baixar arquivo senha <senha>.'
+              : 'Nao consegui preparar as midias para envio agora.'
+        };
+      }
+
+      const blockedText =
+        blockedByPassword > 0
+          ? `\nObs: ${blockedByPassword} midia(s) protegida(s) por senha nao foram enviadas.`
+          : '';
+
+      return {
+        handled: true,
+        response: `Enviando ${mediaItems.length} midia(s) salva(s) agora.${blockedText}`,
+        mediaItems
+      };
+    }
+
+    if (mediaCmd.action === 'delete') {
+      const deleted = await mediaStore.deleteById(mediaCmd.id, { password: mediaCmd.password || '' });
+      return {
+        handled: true,
+        response: deleted.ok
+          ? `Midia ${mediaCmd.id} removida com sucesso.`
+          : `Nao consegui remover ${mediaCmd.id}: ${deleted.message}`
+      };
+    }
+
+    if (mediaCmd.action === 'delete_all') {
+      const groupId = String(context.groupId || '').trim();
+      if (!groupId) {
+        return {
+          handled: true,
+          response: 'Nao consegui identificar o grupo para apagar as midias.'
+        };
+      }
+
+      const toDelete = [];
+      let offset = 0;
+      const pageSize = 500;
+      while (true) {
+        const page = mediaStore.list({
+          groupId,
+          mediaType: mediaCmd.mediaType || '',
+          includeDeleted: false,
+          limit: pageSize,
+          offset
+        });
+        if (!page.items.length) break;
+        toDelete.push(...page.items);
+        if (page.items.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      if (!toDelete.length) {
+        return {
+          handled: true,
+          response: 'Nao encontrei midias salvas para apagar neste grupo.'
+        };
+      }
+
+      let removed = 0;
+      let skippedProtected = 0;
+      let failed = 0;
+
+      for (const item of toDelete) {
+        const result = await mediaStore.deleteById(item.id, { password: mediaCmd.password || '' });
+        if (result.ok && result.deleted) {
+          removed += 1;
+          continue;
+        }
+
+        if (!result.ok && /(protegid|senha)/i.test(String(result.message || ''))) {
+          skippedProtected += 1;
+          continue;
+        }
+
+        failed += 1;
+      }
+
+      let response = `Pronto. Apaguei ${removed} midia(s) deste grupo.`;
+      if (skippedProtected > 0) {
+        response += ` ${skippedProtected} protegida(s) por senha nao foram removidas.`;
+      }
+      if (failed > 0) {
+        response += ` ${failed} falharam na remocao.`;
+      }
+
+      return {
+        handled: true,
+        response
+      };
+    }
+
+    if (mediaCmd.action === 'protect_by_id') {
+      if (!mediaCmd.password) {
+        return {
+          handled: true,
+          response: 'Informe a senha. Exemplo: proteger midia <id> senha 1234'
+        };
+      }
+
+      const result = await mediaStore.markProtected(mediaCmd.id, true, { password: mediaCmd.password });
+      return {
+        handled: true,
+        response: result.ok
+          ? `Midia ${mediaCmd.id} protegida com senha.`
+          : `Nao consegui proteger ${mediaCmd.id}: ${result.message}`
+      };
+    }
+
+    if (mediaCmd.action === 'unprotect_by_id') {
+      const item = mediaStore.getById(mediaCmd.id);
+      if (!item) {
+        return {
+          handled: true,
+          response: `Nao encontrei a midia ${mediaCmd.id}.`
+        };
+      }
+
+      if (item.protectedPasswordHash && item.protectedPasswordSalt) {
+        const ok = mediaStore.verifyPasswordForItem(item, mediaCmd.password || '');
+        if (!ok) {
+          return {
+            handled: true,
+            response: 'Senha obrigatoria ou incorreta para remover a protecao.'
+          };
+        }
+      }
+
+      const result = await mediaStore.markProtected(mediaCmd.id, false, { clearPassword: true });
+      return {
+        handled: true,
+        response: result.ok
+          ? `Protecao removida da midia ${mediaCmd.id}.`
+          : `Nao consegui remover protecao de ${mediaCmd.id}: ${result.message}`
+      };
+    }
+
+    if (mediaCmd.action === 'protect_quoted') {
+      const item = await resolveQuotedMediaItem(context);
+      if (!item) {
+        return {
+          handled: true,
+          response: 'Cite a mensagem da midia que deseja proteger e envie: proteger arquivo senha <senha>.'
+        };
+      }
+
+      if (!mediaCmd.password) {
+        return {
+          handled: true,
+          response: 'Informe a senha. Exemplo: proteger arquivo senha 1234'
+        };
+      }
+
+      const result = await mediaStore.markProtected(item.id, true, { password: mediaCmd.password });
+      const deletedPasswordMsg = await tryDeleteCurrentPasswordMessage(context);
+      return {
+        handled: true,
+        response: result.ok
+          ? `Midia protegida com senha. ID: ${item.id}.${deletedPasswordMsg ? ' Mensagem de senha removida do chat.' : ''}`
+          : `Nao consegui proteger a midia citada: ${result.message}`
+      };
+    }
+
+    if (mediaCmd.action === 'unprotect_quoted') {
+      const item = await resolveQuotedMediaItem(context);
+      if (!item) {
+        return {
+          handled: true,
+          response: 'Cite a midia para remover protecao. Exemplo: desproteger arquivo senha <senha>.'
+        };
+      }
+
+      if (item.protectedPasswordHash && item.protectedPasswordSalt) {
+        const ok = mediaStore.verifyPasswordForItem(item, mediaCmd.password || '');
+        if (!ok) {
+          return {
+            handled: true,
+            response: 'Senha obrigatoria ou incorreta para remover a protecao da midia citada.'
+          };
+        }
+      }
+
+      const result = await mediaStore.markProtected(item.id, false, { clearPassword: true });
+      const deletedPasswordMsg = await tryDeleteCurrentPasswordMessage(context);
+      return {
+        handled: true,
+        response: result.ok
+          ? `Protecao removida da midia citada. ID: ${item.id}.${deletedPasswordMsg ? ' Mensagem de senha removida do chat.' : ''}`
+          : `Nao consegui remover protecao da midia citada: ${result.message}`
+      };
+    }
+
+    if (mediaCmd.action === 'send_quoted') {
+      const item = await resolveQuotedMediaItem(context);
+      if (!item) {
+        return {
+          handled: true,
+          response: 'Cite a midia e envie: baixar arquivo senha <senha> (ou sem senha se nao estiver protegida).'
+        };
+      }
+
+      const resolved = await mediaStore.resolveDownloadPath(item.id, { password: mediaCmd.password || '' });
+      if (!resolved.ok) {
+        return {
+          handled: true,
+          response: `Nao consegui liberar a midia citada: ${resolved.message}`
+        };
+      }
+
+      const deletedPasswordMsg = mediaCmd.password ? await tryDeleteCurrentPasswordMessage(context) : false;
+      return {
+        handled: true,
+        response:
+          `Liberando a midia citada agora. ID: ${item.id}.` +
+          `${deletedPasswordMsg ? ' Mensagem de senha removida do chat.' : ''}`,
+        mediaItems: [
+          {
+            mediaId: item.id,
+            path: resolved.filePath,
+            caption: `MIDIA_ID:${item.id}\nArquivo liberado`
+          }
+        ]
+      };
+    }
+
+    if (mediaCmd.action === 'delete_quoted') {
+      const item = await resolveQuotedMediaItem(context);
+      if (!item) {
+        return {
+          handled: true,
+          response: 'Cite a midia que deseja apagar e envie: apagar arquivo (ou com senha, se protegido).'
+        };
+      }
+
+      const result = await mediaStore.deleteById(item.id, { password: mediaCmd.password || '' });
+      const deletedPasswordMsg = mediaCmd.password ? await tryDeleteCurrentPasswordMessage(context) : false;
+      return {
+        handled: true,
+        response: result.ok
+          ? `Midia citada removida com sucesso. ID: ${item.id}.${deletedPasswordMsg ? ' Mensagem de senha removida do chat.' : ''}`
+          : `Nao consegui remover a midia citada: ${result.message}`
+      };
+    }
+  }
+
+  const deleteMsgCmd = parseDeleteMessageCommand(text);
+  if (deleteMsgCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de apagar mensagem bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    const currentMessage = context.message;
+    if (!currentMessage || typeof currentMessage.getQuotedMessage !== 'function' || !currentMessage.hasQuotedMsg) {
+      return {
+        handled: true,
+        response: 'Para apagar, responda (cite) a mensagem alvo e envie: apagar mensagem.'
+      };
+    }
+
+    try {
+      const quoted = await currentMessage.getQuotedMessage();
+      if (!quoted || typeof quoted.delete !== 'function') {
+        return {
+          handled: true,
+          response: 'Nao consegui acessar a mensagem citada para apagar.'
+        };
+      }
+      await quoted.delete(true);
+      return {
+        handled: true,
+        response: 'Mensagem apagada com sucesso.'
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao apagar mensagem: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const aliasLearning = parseAliasLearningCommand(rawText);
+  if (aliasLearning) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de memoria bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    if (aliasLearning.action === 'learn_alias_missing') {
+      return {
+        handled: true,
+        response: 'Faltou o nome/apelido para eu aprender. Exemplo: numero 21 96486-6832 e Fernanda'
+      };
+    }
+
+    if (aliasLearning.action === 'learn_alias') {
+      const learnedPhone = extractPhoneCandidate(text);
+      if (!learnedPhone) {
+        return {
+          handled: true,
+          response: 'Nao encontrei o numero para associar. Exemplo: numero 21 96486-6832 e Fernanda'
+        };
+      }
+
+      const result = await rememberAliasForNumber({
+        groupId: context.groupId,
+        phoneDigits: learnedPhone,
+        aliasRaw: aliasLearning.alias
+      });
+
+      if (!result.saved) {
+        return {
+          handled: true,
+          response: 'Nao consegui salvar essa associacao agora.'
+        };
+      }
+
+      if (result.previous && !numbersAreEquivalent(result.previous, result.phone)) {
+        return {
+          handled: true,
+          response: `Aprendi e atualizei: ${result.alias} agora e ${result.phone} (antes: ${result.previous}).`
+        };
+      }
+
+      return {
+        handled: true,
+        response: `Aprendi: ${result.alias} = ${result.phone}.`
+      };
+    }
+  }
+
+  const moderation = parseModerationCommand(text);
+  if (moderation) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de moderacao bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    const engine = context.moderation;
+    if (!engine) {
+      return {
+        handled: true,
+        response: 'Motor de moderacao indisponivel no momento.'
+      };
+    }
+
+    if (moderation.action === 'keywords_list') {
+      const items = engine.listKeywords();
+      const warningEntries = Object.entries(engine.getWarnings(context.groupId || ''));
+      if (!items.length) {
+        return {
+          handled: true,
+          response:
+            'Nenhuma palavra proibida cadastrada.\n' +
+            'Use: adicionar palavra proibida: spam\n' +
+            'Ou varias: adicionar palavras proibidas: spam, golpe, nudez'
+        };
+      }
+      return {
+        handled: true,
+        response:
+          `Palavras proibidas (${items.length}):\n` +
+          `${items.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}\n` +
+          `Limite atual: ${engine.maxWarnings()} aviso(s) | Avisos ativos: ${warningEntries.length}`
+      };
+    }
+
+    if (moderation.action === 'status') {
+      const snapshot = engine.snapshot(context.groupId || '');
+      const keywordPreview = (snapshot.keywords || []).slice(0, 8);
+      const warningEntries = Object.entries(snapshot.warnings || {});
+      const extraKeywords = Math.max(0, (snapshot.keywords || []).length - keywordPreview.length);
+
+      let response =
+        `Moderacao do grupo: ${snapshot.enabled ? 'ATIVA' : 'DESATIVADA'}\n` +
+        `Limite de avisos: ${snapshot.maxWarnings}\n` +
+        `Palavras proibidas: ${(snapshot.keywords || []).length}\n` +
+        `Usuarios com aviso ativo: ${warningEntries.length}`;
+
+      if (keywordPreview.length) {
+        response += `\nAmostra de palavras: ${keywordPreview.join(', ')}${extraKeywords ? ` (+${extraKeywords})` : ''}`;
+      }
+
+      response +=
+        '\nComandos: palavras proibidas | adicionar palavra proibida: spam | limite de avisos 3 | listar avisos';
+
+      return {
+        handled: true,
+        response
+      };
+    }
+
+    if (moderation.action === 'help') {
+      return {
+        handled: true,
+        response:
+          'Ajuda de moderacao (admin):\n' +
+          '1. status moderacao\n' +
+          '2. palavras proibidas\n' +
+          '3. adicionar palavra proibida: spam\n' +
+          '4. adicionar palavras proibidas: spam, golpe, nudez\n' +
+          '5. remover palavra proibida: spam\n' +
+          '6. limite de avisos 3\n' +
+          '7. listar avisos\n' +
+          '8. redefinir avisos (ou: redefinir avisos 21 96486-6832)'
+      };
+    }
+
+    if (moderation.action === 'keywords_clear') {
+      const removed = await engine.clearKeywords();
+      return {
+        handled: true,
+        response: `Lista de palavras proibidas limpa (${removed} removidas).`
+      };
+    }
+
+    if (moderation.action === 'keyword_add_missing') {
+      return {
+        handled: true,
+        response: 'Informe a palavra. Exemplo: adicionar palavra proibida: spam'
+      };
+    }
+
+    if (moderation.action === 'keyword_add') {
+      const result = await engine.addKeyword(moderation.keyword);
+      if (result.added) {
+        return {
+          handled: true,
+          response: `Palavra proibida adicionada: ${result.keyword}`
+        };
+      }
+      return {
+        handled: true,
+        response: result.reason === 'exists' ? `Essa palavra ja existe: ${result.keyword}` : 'Palavra invalida.'
+      };
+    }
+
+    if (moderation.action === 'keyword_add_many') {
+      const queue = Array.from(new Set((moderation.keywords || []).map((item) => compactSpaces(item)).filter(Boolean))).slice(0, 30);
+      if (!queue.length) {
+        return {
+          handled: true,
+          response: 'Nao encontrei palavras validas para adicionar.'
+        };
+      }
+
+      const added = [];
+      const existing = [];
+      const invalid = [];
+
+      for (const item of queue) {
+        const result = await engine.addKeyword(item);
+        if (result.added) {
+          added.push(result.keyword);
+        } else if (result.reason === 'exists') {
+          existing.push(result.keyword || item);
+        } else {
+          invalid.push(item);
+        }
+      }
+
+      let response =
+        `Palavras processadas: ${queue.length}. ` +
+        `Adicionadas: ${added.length}. Ja existentes: ${existing.length}. Invalidas: ${invalid.length}.`;
+
+      if (added.length) {
+        response += `\nNovas: ${added.join(', ')}`;
+      }
+      if (existing.length) {
+        response += `\nJa estavam na lista: ${existing.join(', ')}`;
+      }
+      if (invalid.length) {
+        response += `\nIgnoradas por formato: ${invalid.join(', ')}`;
+      }
+
+      return {
+        handled: true,
+        response
+      };
+    }
+
+    if (moderation.action === 'keyword_policy_set') {
+      const addResult = await engine.addKeyword(moderation.keyword);
+      let limitText = '';
+      if (moderation.limit && moderation.limit > 0) {
+        const limit = await engine.setMaxWarnings(moderation.limit);
+        limitText = ` Limite configurado para ${limit} avisos.`;
+      }
+
+      return {
+        handled: true,
+        response: addResult.added
+          ? `Regra aplicada: palavra proibida "${addResult.keyword}".${limitText}`
+          : `Regra mantida: palavra "${addResult.keyword || moderation.keyword}" ja estava proibida.${limitText}`
+      };
+    }
+
+    if (moderation.action === 'keyword_remove_missing') {
+      return {
+        handled: true,
+        response: 'Informe a palavra para remover. Exemplo: remover palavra proibida: spam'
+      };
+    }
+
+    if (moderation.action === 'keyword_remove') {
+      const result = await engine.removeKeyword(moderation.keyword);
+      return {
+        handled: true,
+        response: result.removed ? `Palavra removida: ${result.keyword}` : `Palavra nao encontrada: ${result.keyword}`
+      };
+    }
+
+    if (moderation.action === 'moderation_enable') {
+      await engine.setEnabled(true);
+      return {
+        handled: true,
+        response: `Moderacao ativada. Limite atual: ${engine.maxWarnings()} avisos.`
+      };
+    }
+
+    if (moderation.action === 'moderation_disable') {
+      await engine.setEnabled(false);
+      return {
+        handled: true,
+        response: 'Moderacao desativada.'
+      };
+    }
+
+    if (moderation.action === 'warnings_limit_missing') {
+      return {
+        handled: true,
+        response: 'Informe o limite. Exemplo: limite de avisos 3'
+      };
+    }
+
+    if (moderation.action === 'warnings_limit_set') {
+      const limit = await engine.setMaxWarnings(moderation.value);
+      return {
+        handled: true,
+        response: `Limite de avisos atualizado para ${limit}.`
+      };
+    }
+
+    if (moderation.action === 'warnings_list') {
+      const map = engine.getWarnings(context.groupId);
+      const entries = Object.entries(map);
+      if (!entries.length) {
+        return {
+          handled: true,
+          response: `Sem avisos registrados no grupo.\nLimite atual: ${engine.maxWarnings()} aviso(s).`
+        };
+      }
+
+      const lines = entries
+        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+        .map(([who, count], idx) => `${idx + 1}. ${compactKeyForDisplay(who)} - ${count} aviso(s)`);
+
+      return {
+        handled: true,
+        response:
+          `Avisos no grupo (${entries.length} usuario(s)):\n` +
+          `${lines.join('\n')}\n` +
+          'Para resetar todos: redefinir avisos | Para um numero: redefinir avisos 21 96486-6832'
+      };
+    }
+
+    if (moderation.action === 'warnings_reset_all') {
+      const removed = await engine.resetWarnings(context.groupId);
+      return {
+        handled: true,
+        response: removed
+          ? `Avisos do grupo resetados (${removed} registro(s)).`
+          : 'Nao havia avisos ativos para resetar no grupo.'
+      };
+    }
+
+    if (moderation.action === 'warnings_reset_one') {
+      const removed = await engine.resetWarnings(context.groupId, `${moderation.target}@c.us`);
+      if (removed) {
+        return {
+          handled: true,
+          response: `Avisos resetados para ${moderation.target}.`
+        };
+      }
+      return {
+        handled: true,
+        response: `Nao encontrei avisos para ${moderation.target}.`
+      };
+    }
+  }
+
+  const searchCmd = parseSearchCommand(text);
+  if (searchCmd) {
+    if (searchCmd.action === 'missing') {
+      return {
+        handled: true,
+        response: 'Informe a busca. Exemplo: buscar: cotacao do dolar hoje'
+      };
+    }
+
+    try {
+      const data = await runWebSearch(searchCmd.query);
+      return {
+        handled: true,
+        response: `Busca web por "${data.query}":\n${data.summary}`
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha na busca web: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const imageCmd = parseImageCommand(text);
+  if (imageCmd) {
+    if (imageCmd.action === 'missing') {
+      return {
+        handled: true,
+        response: 'Informe o que gerar. Exemplo: gera uma foto de cachorro astronauta'
+      };
+    }
+
+    try {
+      const imagePath = await generateImageFromPrompt(imageCmd.prompt);
+      return {
+        handled: true,
+        response: `Imagem gerada para: ${imageCmd.prompt}`,
+        mediaPath: imagePath,
+        mediaCaption: `Imagem: ${imageCmd.prompt}`
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao gerar imagem: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const permissionCmd = parsePermissionCommand(text);
+  if (permissionCmd?.action === 'check') {
+    try {
+      const perms = await readGroupPermissions(context);
+      if (!perms) {
+        return {
+          handled: true,
+          response: 'Nao consegui verificar permissoes agora (grupo/contexto indisponivel).'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Permissoes no grupo: botAdmin=${perms.botIsAdmin ? 'sim' : 'nao'}, remetenteAdmin=${perms.senderIsAdmin ? 'sim' : 'nao'}, participantes=${perms.participantsCount}. ` +
+          `Permissao no bot: admin=${isAdminSender(context.senderNumber) ? 'sim' : 'nao'}, full=${isFullSender(context.senderNumber) ? 'sim' : 'nao'}.`
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao verificar permissoes: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const callTestCmd = parseCallTestCommand(text);
+  if (callTestCmd) {
+    if (callTestCmd.action === 'explain_capability') {
+      return {
+        handled: true,
+        response: buildCallTestCapabilityResponse()
+      };
+    }
+
+    if (!isAdminSender(context.senderNumber) && !isFullSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: 'Gerar ligacao de teste exige permissao admin ou FULL.'
+      };
+    }
+
+    const client = context.client;
+    if (!client || typeof client.createCallLink !== 'function') {
+      return {
+        handled: true,
+        response: 'Esta sessao do WhatsApp nao suporta gerar link de ligacao de teste agora.'
+      };
+    }
+
+    const startTime = new Date(Date.now() + 5 * 60 * 1000);
+    const callType = callTestCmd.callType === 'video' ? 'video' : 'voice';
+
+    try {
+      const link = compactSpaces(await client.createCallLink(startTime, callType));
+      if (!link) {
+        return {
+          handled: true,
+          response: 'Nao consegui gerar o link de ligacao de teste agora. Tente novamente em instantes.'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Link de ligacao de teste (${describeCallType(callType)}) gerado.\n` +
+          `Inicio previsto: ${formatLocalDateTime(startTime)}\n` +
+          `Link: ${link}\n` +
+          'Obs: o bot nao inicia uma ligacao ativa sozinho; o teste acontece ao abrir o link no WhatsApp.'
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao gerar ligacao de teste: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const groupControlCmd = parseGroupControlCommand(text);
+  if (groupControlCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de controle de grupo bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    const client = context.client;
+    const groupId = String(context.groupId || '').trim();
+    if (!client || !groupId) {
+      return {
+        handled: true,
+        response: 'Nao consegui identificar o grupo atual para aplicar o controle.'
+      };
+    }
+
+    let chat = null;
+    try {
+      chat = await client.getChatById(groupId);
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao abrir o grupo: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+
+    if (!chat?.isGroup) {
+      return {
+        handled: true,
+        response: 'O chat atual nao e um grupo.'
+      };
+    }
+
+    const requireManageCheck = async () => {
+      if (
+        groupControlCmd.action === 'status' ||
+        groupControlCmd.action === 'list_admins' ||
+        groupControlCmd.action === 'membership_list' ||
+        groupControlCmd.action === 'ephemeral_status'
+      ) {
+        return { ok: true };
+      }
+      return ensureBotCanManageGroup(context);
+    };
+
+    const metadata = chat.groupMetadata && typeof chat.groupMetadata === 'object' ? chat.groupMetadata : {};
+    const participants = Array.isArray(chat.participants) ? chat.participants : [];
+    const adminEntries = participants
+      .filter((participant) => isParticipantAdmin(participant))
+      .map((participant) => {
+        const pid = extractSerializedWid(participant?.id || participant);
+        const digits = normalizeDigits(String(pid || '').split('@')[0]);
+        return digits || pid;
+      })
+      .filter(Boolean);
+
+    if (groupControlCmd.action === 'status') {
+      const announce = Boolean(metadata.announce);
+      const restrict = Boolean(metadata.restrict);
+      const addMembersAdminsOnly = /admin/i.test(String(metadata.memberAddMode || ''));
+      const description = compactSpaces(String(chat.description || metadata.desc || '')).slice(0, 260);
+      const ephemeralDuration = readGroupEphemeralDurationSeconds(chat);
+      return {
+        handled: true,
+        response:
+          `Controle do grupo:\n` +
+          `Nome: ${String(chat.name || metadata.subject || '(sem nome)').trim()}\n` +
+          `Descricao: ${description || '(sem descricao)'}\n` +
+          `Participantes: ${participants.length}\n` +
+          `Admins: ${adminEntries.length}\n` +
+          `Mensagens: ${announce ? 'somente admins' : 'todos podem falar'}\n` +
+          `Edicao de info: ${restrict ? 'somente admins' : 'participantes podem editar'}\n` +
+          `Adicionar membros: ${addMembersAdminsOnly ? 'somente admins' : 'participantes podem adicionar'}\n` +
+          `Mensagens temporarias: ${
+            ephemeralDuration === null ? 'indisponivel nesta sessao' : formatGroupEphemeralDuration(ephemeralDuration)
+          }`
+      };
+    }
+
+    if (groupControlCmd.action === 'list_admins') {
+      if (!adminEntries.length) {
+        return {
+          handled: true,
+          response: 'Nao encontrei admins listados no grupo no momento.'
+        };
+      }
+      return {
+        handled: true,
+        response: `Admins do grupo (${adminEntries.length}):\n${adminEntries.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}`
+      };
+    }
+
+    if (groupControlCmd.action === 'ephemeral_status') {
+      const ephemeralDuration = readGroupEphemeralDurationSeconds(chat);
+      return {
+        handled: true,
+        response:
+          ephemeralDuration === null
+            ? 'Nao consegui ler o timer atual de mensagens temporarias nesta sessao.'
+            : `Mensagens temporarias do grupo: ${formatGroupEphemeralDuration(ephemeralDuration)}.`
+      };
+    }
+
+    if (groupControlCmd.action === 'set_subject_missing') {
+      return {
+        handled: true,
+        response: 'Informe o novo nome do grupo. Exemplos:\n• renomear grupo "Time Operacoes"\n• mudar nome do grupo para Time Operacoes\n• nome do grupo: Team Dev'
+      };
+    }
+
+    if (groupControlCmd.action === 'set_description_missing') {
+      return {
+        handled: true,
+        response: 'Informe a nova descricao. Exemplo: descricao do grupo: regras e recados oficiais'
+      };
+    }
+
+    if (groupControlCmd.action === 'promote_admin_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para promover no grupo. Exemplo: adicionar admin do grupo 21 96486-6832'
+      };
+    }
+
+    if (groupControlCmd.action === 'demote_admin_missing') {
+      return {
+        handled: true,
+        response: 'Informe o numero para remover admin do grupo. Exemplo: remover admin do grupo 21 96486-6832'
+      };
+    }
+
+    if (groupControlCmd.action === 'ephemeral_on_missing') {
+      return {
+        handled: true,
+        response:
+          'Informe a duracao das mensagens temporarias. Opcoes suportadas: 24 horas, 7 dias ou 90 dias. Exemplo: ativar mensagens temporarias 24h'
+      };
+    }
+
+    const canManage = await requireManageCheck();
+    if (!canManage.ok) {
+      return {
+        handled: true,
+        response: canManage.message
+      };
+    }
+
+    try {
+      if (groupControlCmd.action === 'messages_admins_only_on') {
+        if (typeof chat.setMessagesAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setMessagesAdminsOnly(true);
+        return {
+          handled: true,
+          response: 'Grupo fechado com sucesso: somente admins podem enviar mensagens.'
+        };
+      }
+
+      if (groupControlCmd.action === 'messages_admins_only_off') {
+        if (typeof chat.setMessagesAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setMessagesAdminsOnly(false);
+        return {
+          handled: true,
+          response: 'Grupo aberto com sucesso: todos os participantes podem enviar mensagens.'
+        };
+      }
+
+      if (groupControlCmd.action === 'ephemeral_on') {
+        const changed = await setGroupEphemeralDuration(chat, groupControlCmd.durationSeconds, context);
+        if (!changed) {
+          return {
+            handled: true,
+            response: 'Nao consegui ativar mensagens temporarias. Verifique se o bot e admin do grupo e tente novamente.'
+          };
+        }
+        return {
+          handled: true,
+          response: `Mensagens temporarias ativadas para ${formatGroupEphemeralDuration(groupControlCmd.durationSeconds)}.`
+        };
+      }
+
+      if (groupControlCmd.action === 'ephemeral_off') {
+        const changed = await setGroupEphemeralDuration(chat, 0, context);
+        if (!changed) {
+          return {
+            handled: true,
+            response: 'Nao consegui desativar mensagens temporarias. Verifique se o bot e admin do grupo e tente novamente.'
+          };
+        }
+        return {
+          handled: true,
+          response: 'Mensagens temporarias desativadas com sucesso.'
+        };
+      }
+
+      if (groupControlCmd.action === 'info_admins_only_on') {
+        if (typeof chat.setInfoAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setInfoAdminsOnly(true);
+        return {
+          handled: true,
+          response: 'Edicao de nome/descricao agora esta restrita a admins.'
+        };
+      }
+
+      if (groupControlCmd.action === 'info_admins_only_off') {
+        if (typeof chat.setInfoAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setInfoAdminsOnly(false);
+        return {
+          handled: true,
+          response: 'Edicao de nome/descricao liberada para participantes.'
+        };
+      }
+
+      if (groupControlCmd.action === 'add_members_admins_only_on') {
+        if (typeof chat.setAddMembersAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setAddMembersAdminsOnly(true);
+        return {
+          handled: true,
+          response: 'Somente admins podem adicionar novos participantes no grupo.'
+        };
+      }
+
+      if (groupControlCmd.action === 'add_members_admins_only_off') {
+        if (typeof chat.setAddMembersAdminsOnly !== 'function') {
+          return {
+            handled: true,
+            response: 'Esse recurso nao esta disponivel nesta versao da biblioteca.'
+          };
+        }
+        await chat.setAddMembersAdminsOnly(false);
+        return {
+          handled: true,
+          response: 'Participantes tambem podem adicionar novos membros no grupo.'
+        };
+      }
+
+      if (groupControlCmd.action === 'set_subject') {
+        if (typeof chat.setSubject !== 'function') {
+          return {
+            handled: true,
+            response: 'Nao consegui alterar o nome do grupo nesta versao.'
+          };
+        }
+        await chat.setSubject(groupControlCmd.subject);
+        return {
+          handled: true,
+          response: `Nome do grupo atualizado para: ${groupControlCmd.subject}`
+        };
+      }
+
+      if (groupControlCmd.action === 'set_description') {
+        if (typeof chat.setDescription !== 'function') {
+          return {
+            handled: true,
+            response: 'Nao consegui alterar a descricao do grupo nesta versao.'
+          };
+        }
+        await chat.setDescription(groupControlCmd.description);
+        return {
+          handled: true,
+          response: 'Descricao do grupo atualizada com sucesso.'
+        };
+      }
+
+      if (groupControlCmd.action === 'get_invite_link') {
+        if (typeof chat.getInviteCode !== 'function') {
+          return {
+            handled: true,
+            response: 'Nao consegui obter o link de convite nesta versao.'
+          };
+        }
+        const inviteCode = String((await chat.getInviteCode()) || '').trim();
+        return {
+          handled: true,
+          response: inviteCode
+            ? `Link do grupo:\nhttps://chat.whatsapp.com/${inviteCode}`
+            : 'Nao foi possivel obter o link de convite agora.'
+        };
+      }
+
+      if (groupControlCmd.action === 'refresh_invite_link') {
+        if (typeof chat.revokeInvite !== 'function') {
+          return {
+            handled: true,
+            response: 'Nao consegui renovar o link nesta versao da biblioteca.'
+          };
+        }
+        await chat.revokeInvite();
+        let inviteCode = '';
+        if (typeof chat.getInviteCode === 'function') {
+          inviteCode = String((await chat.getInviteCode()) || '').trim();
+        }
+        return {
+          handled: true,
+          response: inviteCode
+            ? `Link renovado com sucesso:\nhttps://chat.whatsapp.com/${inviteCode}`
+            : 'Link de convite renovado com sucesso.'
+        };
+      }
+
+      if (groupControlCmd.action === 'membership_list') {
+        if (typeof client.getGroupMembershipRequests !== 'function') {
+          return {
+            handled: true,
+            response: 'Listagem de solicitacoes de entrada nao esta disponivel nesta versao.'
+          };
+        }
+        const requests = await client.getGroupMembershipRequests(groupId);
+        const items = Array.isArray(requests) ? requests : [];
+        if (!items.length) {
+          return {
+            handled: true,
+            response: 'Nao ha solicitacoes pendentes para entrar no grupo.'
+          };
+        }
+
+        const lines = items.map((item, idx) => {
+          const requesterRaw = extractSerializedWid(item?.id || item?.requester || item?.requesterId || item?.author || item?.participant);
+          const requester = normalizeDigits(String(requesterRaw || '').split('@')[0]) || requesterRaw || '-';
+          return `${idx + 1}. ${requester}`;
+        });
+        return {
+          handled: true,
+          response:
+            `Solicitacoes pendentes (${lines.length}):\n${lines.join('\n')}\n` +
+            'Para aprovar: aprovar solicitacoes de entrada (ou informe o numero).'
+        };
+      }
+
+      if (groupControlCmd.action === 'membership_approve') {
+        if (typeof client.approveGroupMembershipRequests !== 'function') {
+          return {
+            handled: true,
+            response: 'Aprovacao de solicitacoes nao esta disponivel nesta versao.'
+          };
+        }
+        const options =
+          Array.isArray(groupControlCmd.requesterIds) && groupControlCmd.requesterIds.length
+            ? { requesterIds: groupControlCmd.requesterIds }
+            : undefined;
+        await client.approveGroupMembershipRequests(groupId, options);
+        return {
+          handled: true,
+          response:
+            options && options.requesterIds.length
+              ? `Solicitacoes aprovadas para ${options.requesterIds.length} numero(s).`
+              : 'Solicitacoes pendentes aprovadas com sucesso.'
+        };
+      }
+
+      if (groupControlCmd.action === 'membership_reject') {
+        if (typeof client.rejectGroupMembershipRequests !== 'function') {
+          return {
+            handled: true,
+            response: 'Rejeicao de solicitacoes nao esta disponivel nesta versao.'
+          };
+        }
+        const options =
+          Array.isArray(groupControlCmd.requesterIds) && groupControlCmd.requesterIds.length
+            ? { requesterIds: groupControlCmd.requesterIds }
+            : undefined;
+        await client.rejectGroupMembershipRequests(groupId, options);
+        return {
+          handled: true,
+          response:
+            options && options.requesterIds.length
+              ? `Solicitacoes rejeitadas para ${options.requesterIds.length} numero(s).`
+              : 'Solicitacoes pendentes rejeitadas com sucesso.'
+        };
+      }
+
+      if (groupControlCmd.action === 'promote_admin') {
+        const result = await promoteNumberToGroupAdmin(context, { phoneDigits: groupControlCmd.phone });
+        return {
+          handled: true,
+          response: result.message
+        };
+      }
+
+      if (groupControlCmd.action === 'demote_admin') {
+        const result = await demoteNumberFromGroupAdmin(context, { phoneDigits: groupControlCmd.phone });
+        return {
+          handled: true,
+          response: result.message
+        };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/reading ['"]?evaluate['"]?|pupPage|page/i.test(message)) {
+        return {
+          handled: true,
+          response: 'Nao consegui alterar mensagens temporarias nesta sessao. Reinicie o bot e tente novamente.'
+        };
+      }
+      return {
+        handled: true,
+        response: `Falha no controle de grupo: ${message}`
+      };
+    }
+  }
+
+  let groupParticipant = parseGroupParticipantCommand(text);
+  if (!groupParticipant) {
+    const mentionTarget = pickMentionTarget(context);
+    const mentionNumber = pickMentionNumberFromRawText(rawText, context);
+    const mentionMappedPhone = mentionNumber
+      ? await resolvePhoneByAlias({ groupId: context.groupId, aliasRaw: mentionNumber })
+      : '';
+    const aliasFromAt = extractAliasAfterAt(rawText);
+    const aliasPhone = aliasFromAt
+      ? await resolvePhoneByAlias({ groupId: context.groupId, aliasRaw: aliasFromAt })
+      : '';
+    const folded = foldText(text);
+    const looksLikeAuthorizationIntent =
+      /(permiss|autoriz|acesso|interagir|falar com o bot|admin do bot|full)/.test(folded) ||
+      (/\badmin\b/.test(folded) && !/\bgrupo\b/.test(folded));
+
+    if (mentionNumber && /(remove|remover|tirar|expulsa|expulsar)\b/.test(folded) && !looksLikeAuthorizationIntent) {
+      groupParticipant = {
+        action: 'remove',
+        phone: mentionNumber,
+        mappedPhone: mentionMappedPhone || ''
+      };
+    } else if (mentionTarget && /(remove|remover|tirar|expulsa|expulsar)\b/.test(folded) && !looksLikeAuthorizationIntent) {
+      groupParticipant = { action: 'remove_missing_number' };
+    } else if (aliasPhone && /(remove|remover|tirar|expulsa|expulsar)\b/.test(folded) && !looksLikeAuthorizationIntent) {
+      groupParticipant = { action: 'remove', phone: aliasPhone };
+    } else if (mentionNumber && /(coloca|torna|deixa|promove|promover).*(admin)\b/.test(folded)) {
+      groupParticipant = {
+        action: 'promote',
+        phone: mentionNumber,
+        mappedPhone: mentionMappedPhone || ''
+      };
+    } else if (mentionTarget && /(coloca|torna|deixa|promove|promover).*(admin)\b/.test(folded)) {
+      groupParticipant = { action: 'promote_missing_target' };
+    } else if (aliasPhone && /(coloca|torna|deixa|promove|promover).*(admin)\b/.test(folded)) {
+      groupParticipant = { action: 'promote', phone: aliasPhone };
+    }
+  }
+
+  if (groupParticipant) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de grupo bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    if (groupParticipant.action === 'add_missing_number') {
+      return {
+        handled: true,
+        response: 'Informe o numero completo para adicionar. Exemplo: adiciona no grupo 21 96486-6832'
+      };
+    }
+
+    if (groupParticipant.action === 'remove_missing_number') {
+      const mentionTarget = pickMentionTarget(context);
+      if (mentionTarget && !isBotLikeTarget(context, mentionTarget, rawText)) {
+        try {
+          const canManage = await ensureBotCanManageGroup(context);
+          if (!canManage.ok) {
+            return {
+              handled: true,
+              response: canManage.message
+            };
+          }
+
+          const result = await removeTargetFromGroup(context, { mentionedId: mentionTarget });
+          return {
+            handled: true,
+            response: result.message
+          };
+        } catch (error) {
+          return {
+            handled: true,
+            response: `Erro ao remover participante mencionado: ${error instanceof Error ? error.message : String(error)}`
+          };
+        }
+      }
+
+      const aliasFromAt = extractAliasAfterAt(rawText);
+      if (aliasFromAt) {
+        const aliasPhone = await resolvePhoneByAlias({ groupId: context.groupId, aliasRaw: aliasFromAt });
+        if (aliasPhone) {
+          try {
+            const canManage = await ensureBotCanManageGroup(context);
+            if (!canManage.ok) {
+              return {
+                handled: true,
+                response: canManage.message
+              };
+            }
+
+            const result = await removeTargetFromGroup(context, { phoneDigits: aliasPhone });
+            return {
+              handled: true,
+              response: result.message
+            };
+          } catch (error) {
+            return {
+              handled: true,
+              response: `Erro ao remover participante por apelido: ${error instanceof Error ? error.message : String(error)}`
+            };
+          }
+        }
+      }
+
+      return {
+        handled: true,
+        response: 'Informe o numero completo para remover. Exemplo: remove do grupo 21 96486-6832'
+      };
+    }
+
+    if (groupParticipant.action === 'promote_missing_target') {
+      const mentionTarget = pickMentionTarget(context);
+      if (mentionTarget && !isBotLikeTarget(context, mentionTarget, rawText)) {
+        try {
+          const canManage = await ensureBotCanManageGroup(context);
+          if (!canManage.ok) {
+            return {
+              handled: true,
+              response: canManage.message
+            };
+          }
+
+          const result = await promoteNumberToGroupAdmin(context, { mentionedId: mentionTarget });
+          return {
+            handled: true,
+            response: result.message
+          };
+        } catch (error) {
+          return {
+            handled: true,
+            response: `Erro ao promover participante mencionado: ${error instanceof Error ? error.message : String(error)}`
+          };
+        }
+      }
+
+      const aliasFromAt = extractAliasAfterAt(rawText);
+      if (aliasFromAt) {
+        const aliasPhone = await resolvePhoneByAlias({ groupId: context.groupId, aliasRaw: aliasFromAt });
+        if (aliasPhone) {
+          try {
+            const canManage = await ensureBotCanManageGroup(context);
+            if (!canManage.ok) {
+              return {
+                handled: true,
+                response: canManage.message
+              };
+            }
+
+            const result = await promoteNumberToGroupAdmin(context, { phoneDigits: aliasPhone });
+            return {
+              handled: true,
+              response: result.message
+            };
+          } catch (error) {
+            return {
+              handled: true,
+              response: `Erro ao promover participante por apelido: ${error instanceof Error ? error.message : String(error)}`
+            };
+          }
+        }
+      }
+
+      return {
+        handled: true,
+        response: 'Informe o numero para promover a admin. Exemplo: coloca 21 96486-6832 como admin do grupo'
+      };
+    }
+
+    if (groupParticipant.action === 'add') {
+      try {
+        const canManage = await ensureBotCanManageGroup(context);
+        if (!canManage.ok) {
+          return {
+            handled: true,
+            response: canManage.message
+          };
+        }
+
+        const result = await addNumberToGroup(context, groupParticipant.phone);
+        return {
+          handled: true,
+          response: result.message
+        };
+      } catch (error) {
+        return {
+          handled: true,
+          response: `Erro ao adicionar numero no grupo: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+
+    if (groupParticipant.action === 'remove') {
+      try {
+        const canManage = await ensureBotCanManageGroup(context);
+        if (!canManage.ok) {
+          return {
+            handled: true,
+            response: canManage.message
+          };
+        }
+
+        const attempted = new Set();
+        const tryPhones = [];
+
+        if (groupParticipant.phone) tryPhones.push(groupParticipant.phone);
+        if (groupParticipant.mappedPhone && !numbersAreEquivalent(groupParticipant.phone, groupParticipant.mappedPhone)) {
+          tryPhones.push(groupParticipant.mappedPhone);
+        }
+
+        if (groupParticipant.phone) {
+          const aliasNumbers = await listAliasNumbersForPhone({
+            groupId: context.groupId,
+            phoneDigits: groupParticipant.phone
+          });
+          for (const aliasNumber of aliasNumbers) {
+            if (!numbersAreEquivalent(aliasNumber, groupParticipant.phone)) {
+              tryPhones.push(aliasNumber);
+            }
+          }
+        }
+
+        let result = {
+          ok: false,
+          message: 'Falha ao remover participante. Verifique se o bot e admin e se o alvo esta no grupo.'
+        };
+
+        for (const phoneCandidate of tryPhones) {
+          const normalized = normalizeDigits(phoneCandidate);
+          if (!normalized || attempted.has(normalized)) continue;
+          attempted.add(normalized);
+
+          result = await removeTargetFromGroup(context, { phoneDigits: phoneCandidate });
+          if (result.ok) break;
+        }
+
+        return {
+          handled: true,
+          response: result.message
+        };
+      } catch (error) {
+        return {
+          handled: true,
+          response: `Erro ao remover numero do grupo: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+
+    if (groupParticipant.action === 'promote') {
+      try {
+        const canManage = await ensureBotCanManageGroup(context);
+        if (!canManage.ok) {
+          return {
+            handled: true,
+            response: canManage.message
+          };
+        }
+
+        const attempted = new Set();
+        const tryPhones = [];
+
+        if (groupParticipant.phone) tryPhones.push(groupParticipant.phone);
+        if (groupParticipant.mappedPhone && !numbersAreEquivalent(groupParticipant.phone, groupParticipant.mappedPhone)) {
+          tryPhones.push(groupParticipant.mappedPhone);
+        }
+
+        if (groupParticipant.phone) {
+          const aliasNumbers = await listAliasNumbersForPhone({
+            groupId: context.groupId,
+            phoneDigits: groupParticipant.phone
+          });
+          for (const aliasNumber of aliasNumbers) {
+            if (!numbersAreEquivalent(aliasNumber, groupParticipant.phone)) {
+              tryPhones.push(aliasNumber);
+            }
+          }
+        }
+
+        let result = {
+          ok: false,
+          message: 'Falha ao promover participante. Verifique se o bot e admin.'
+        };
+
+        for (const phoneCandidate of tryPhones) {
+          const normalized = normalizeDigits(phoneCandidate);
+          if (!normalized || attempted.has(normalized)) continue;
+          attempted.add(normalized);
+
+          result = await promoteNumberToGroupAdmin(context, { phoneDigits: phoneCandidate });
+          if (result.ok) break;
+        }
+
+        return {
+          handled: true,
+          response: result.message
+        };
+      } catch (error) {
+        return {
+          handled: true,
+          response: `Erro ao promover admin do grupo: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  }
+
+  const terminal = parseTerminalCommand(text);
+  if (terminal) {
+    const senderIsAdmin = isAdminSender(context.senderNumber);
+    const senderIsFull = isFullSender(context.senderNumber);
+
+    if (!senderIsAdmin && !senderIsFull) {
+      return {
+        handled: true,
+        response: `Comando bloqueado: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    if (!runtimeSettings.enableTerminalExec) {
+      return {
+        handled: true,
+        response:
+          'Execucao de comandos Linux esta desativada. Ative ENABLE_TERMINAL_EXEC=true no .env para liberar.'
+      };
+    }
+
+    if (terminal.action === 'missing') {
+      return {
+        handled: true,
+        response: 'Comando vazio. Exemplo: cmd: ps -ef | rg node'
+      };
+    }
+
+    if (!senderIsFull && commandLooksDangerous(terminal.command)) {
+      return {
+        handled: true,
+        response: 'Comando bloqueado por politica de seguranca (padrao perigoso detectado).'
+      };
+    }
+
+    if (!senderIsFull && !commandStartsWithAllowedPrefix(terminal.command, runtimeSettings.terminalAllowlist)) {
+      return {
+        handled: true,
+        response: `Comando fora da allowlist. Prefixos permitidos: ${(runtimeSettings.terminalAllowlist || []).join(', ')}`
+      };
+    }
+
+    try {
+      const result = await runTerminalCommand(terminal.command);
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+      const status = result.timedOut
+        ? `timeout (${config.terminalTimeoutMs}ms)`
+        : `exit ${result.exitCode}`;
+      const body = clampText(output || '(sem saida)', config.terminalMaxOutputChars);
+
+      return {
+        handled: true,
+        response: `Comando executado (${status}, ${result.elapsedMs}ms): ${terminal.command}\n${body}`
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Falha ao executar comando: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const pingCmd = parsePingCommand(text);
+  if (pingCmd) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de rede bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+      };
+    }
+
+    if (pingCmd.action === 'ping_missing_target') {
+      return {
+        handled: true,
+        response: 'Informe o destino do ping. Exemplo: ping 8.8.8.8'
+      };
+    }
+
+    const target = String(pingCmd.target || '').trim();
+    const validTarget = isValidIpv4(target) || isValidHostname(target);
+    if (!validTarget) {
+      return {
+        handled: true,
+        response: `Destino invalido para ping: ${target || 'vazio'}`
+      };
+    }
+
+    try {
+      const ping = await runPingDiagnostic(target);
+      const outputText = [ping.stdout, ping.stderr].filter(Boolean).join('\n');
+
+      if (!ping.timedOut && ping.exitCode === 0) {
+        const avg = ping.stats.avgMs;
+        const loss = ping.stats.lossPercent;
+        const base = `Ping ${target} OK (${ping.elapsedMs}ms).`;
+        const details =
+          avg !== null || loss !== null
+            ? ` Media: ${avg !== null ? `${avg.toFixed(2)}ms` : 'n/d'} | Perda: ${loss !== null ? `${loss}%` : 'n/d'}.`
+            : '';
+        return {
+          handled: true,
+          response: `${base}${details}`
+        };
+      }
+
+      if (/operation not permitted|permissao negada|permission denied/i.test(outputText)) {
+        const probe = await runTcpProbe(target, [53, 443], 3500);
+        if (probe.ok) {
+          return {
+            handled: true,
+            response: `ICMP bloqueado no ambiente para ping (${target}), mas conectividade TCP OK na porta ${probe.port} (${probe.elapsedMs}ms).`
+          };
+        }
+
+        return {
+          handled: true,
+          response:
+            `Ping ICMP bloqueado por permissao no ambiente para ${target}. ` +
+            'Para liberar ICMP: sudo setcap cap_net_raw+ep $(which ping)'
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Falha no ping para ${target}. ` +
+          clampText(outputText || `exit ${ping.exitCode}`, 260)
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        response: `Erro ao executar ping: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  const serverOps = parseServerOpsCommand(text);
+  if (serverOps) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de servidor bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    if (serverOps.action === 'public_ip') {
+      try {
+        const panelInfo = await resolvePanelAccessInfo({ forceRefresh: true });
+        if (panelInfo.publicIp) {
+          return {
+            handled: true,
+            response: `IP publico do servidor: *${panelInfo.publicIp}*\nPainel interativo web: ${panelInfo.menuUrl}`
+          };
+        }
+
+        return {
+          handled: true,
+          response: `Nao foi possivel detectar um IP publico agora. Painel local: ${panelInfo.menuUrl}`
+        };
+      } catch (e) {
+        return { handled: true, response: `Erro ao consultar IP publico: ${e.message}` };
+      }
+    }
+
+    if (serverOps.action === 'process_list') {
+      if (!runtimeSettings.enableTerminalExec) {
+        return {
+          handled: true,
+          response: 'Nao posso listar processos porque ENABLE_TERMINAL_EXEC=false.'
+        };
+      }
+
+      const result = await runTerminalCommand('ps -eo pid,ppid,%cpu,%mem,comm --sort=-%cpu | head -n 15');
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+      return {
+        handled: true,
+        response: `Processos Linux (${result.elapsedMs}ms):\n${clampText(output || '(sem saida)', config.terminalMaxOutputChars)}`
+      };
+    }
+
+    if (serverOps.action === 'status' || serverOps.action === 'start_hint') {
+      const now = new Date();
+      const serverDateTime = formatLocalDateTime(now);
+      const tzOffset = now.getTimezoneOffset();
+      const tzSign = tzOffset <= 0 ? '+' : '-';
+      const tzHours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(2, '0');
+      const tzMins = String(Math.abs(tzOffset) % 60).padStart(2, '0');
+      const tzLabel = `UTC${tzSign}${tzHours}:${tzMins}`;
+      const panelUrl = await resolvePanelUrl();
+      return {
+        handled: true,
+        response: `Processo online no Linux. PID: ${process.pid}. Uptime: ${shortUptime()}. Data/hora do servidor: ${serverDateTime} (${tzLabel}). Painel: ${panelUrl}`
+      };
+    }
+
+    if (serverOps.action === 'restart') {
+      if (!config.enableSelfRestart) {
+        return {
+          handled: true,
+          response:
+            'Reinicio automatico desativado para seguranca. Para reiniciar manualmente: pkill -f "node src/index.js" && cd "/home/italo/Área de trabalho/chatbot" && npm start'
+        };
+      }
+
+      return {
+        handled: true,
+        response: 'Reiniciando o bot no servidor Linux agora. Volto em alguns segundos.',
+        afterSend: async () => {
+          await triggerSelfRestart();
+        }
+      };
+    }
+  }
+
+  const dailyBroadcast = parseDailyBroadcastCommand(text);
+  if (dailyBroadcast) {
+    if (!isAdminSender(context.senderNumber)) {
+      return {
+        handled: true,
+        response: `Acao de rotina diaria bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin.`
+      };
+    }
+
+    const groupId = String(context.groupId || '').trim();
+    if (!groupId) {
+      return {
+        handled: true,
+        response: 'Nao consegui identificar o grupo para configurar a rotina diaria.'
+      };
+    }
+
+    if (dailyBroadcast.action === 'set_missing_time') {
+      return {
+        handled: true,
+        response:
+          'Me passe o horario da rotina diaria. Exemplo: configurar bom dia todos os dias as 05:00'
+      };
+    }
+
+    if (dailyBroadcast.action === 'set') {
+      const result = await scheduledMessagesStore.upsertDailyForGroup({
+        groupId,
+        hour: dailyBroadcast.hour,
+        minute: dailyBroadcast.minute,
+        message: dailyBroadcast.message || 'Bom dia!',
+        actor: context.senderNumber || 'desconhecido'
+      });
+      if (!result.ok) {
+        return {
+          handled: true,
+          response: `Nao consegui salvar a rotina diaria: ${result.message || 'erro desconhecido'}`
+        };
+      }
+
+      return {
+        handled: true,
+        response:
+          `Pronto! Vou enviar uma mensagem diaria neste grupo as ${formatTwoDigits(dailyBroadcast.hour)}:${formatTwoDigits(dailyBroadcast.minute)}.\n` +
+          `Mensagem: "${dailyBroadcast.message || 'Bom dia!'}"`
+      };
+    }
+
+    if (dailyBroadcast.action === 'disable') {
+      const result = await scheduledMessagesStore.disableDailyForGroup(groupId);
+      return {
+        handled: true,
+        response:
+          result.ok && result.disabled > 0
+            ? 'Pronto! Desativei a mensagem diaria deste grupo.'
+            : 'Nao havia mensagem diaria ativa neste grupo.'
+      };
+    }
+
+    if (dailyBroadcast.action === 'list') {
+      const items = scheduledMessagesStore.listByGroup(groupId);
+      if (!items.length) {
+        return {
+          handled: true,
+          response: 'Nao ha mensagem diaria configurada neste grupo.'
+        };
+      }
+
+      const lines = items.map((item, index) => {
+        const when = `${formatTwoDigits(item.hour)}:${formatTwoDigits(item.minute)}`;
+        return `${index + 1}. ${when} - ${item.message}`;
+      });
+      return {
+        handled: true,
+        response: `Rotina diaria ativa neste grupo:\n${lines.join('\n')}`
+      };
+    }
+  }
+
+  const agendaManagement = parseNamedAgendaManagementCommand(text);
+  let namedAgendasCache = null;
+  const getNamedAgendas = async () => {
+    if (!namedAgendasCache) {
+      namedAgendasCache = await listNamedAgendaEntries(context);
+    }
+    return namedAgendasCache;
+  };
+  const agendaDeletion = parseNamedAgendaDeletionCommand(text, await getNamedAgendas());
+  const agenda = parseAgendaCommand(text);
+  const pendingAgendaSelection = await readAgendaSelectionState(context);
+
+  if (pendingAgendaSelection?.command && !(agendaManagement || agendaDeletion || agenda)) {
+    const agendas = await getNamedAgendas();
+    const selection = parseAgendaSelectionReply(text, agendas);
+
+    if (selection?.action === 'cancel') {
+      await clearAgendaSelectionState(context);
+      return {
+        handled: true,
+        response: 'Tudo bem. Cancelei a selecao da agenda.'
+      };
+    }
+
+    if (selection) {
+      let agendaEntry = selection.agenda || null;
+      let createdPrefix = '';
+
+      if (!agendaEntry && (selection.action === 'create' || selection.action === 'create_or_select')) {
+        const created = await botDatabase.createNamedAgenda(selection.name, buildDbOptionsFromContext(context));
+        if (created?.ok && created.agenda) {
+          agendaEntry = created.agenda;
+          createdPrefix = created.created ? `Agenda ${created.agenda.name} criada.\n` : '';
+          namedAgendasCache = null;
+        }
+      }
+
+      if (agendaEntry) {
+        await clearAgendaSelectionState(context);
+        const result = await executeNamedAgendaSelectionCommand(pendingAgendaSelection.command, agendaEntry, context);
+        return {
+          handled: true,
+          response: `${createdPrefix}${result.response}`.trim()
+        };
+      }
+    }
+  }
+
+  if (pendingAgendaSelection?.command && (agendaManagement || agendaDeletion || agenda)) {
+    await clearAgendaSelectionState(context);
+  }
+
+  if (agendaManagement) {
+    if (
+      agendaManagement.action === 'list_names' ||
+      agendaManagement.action === 'create' ||
+      agendaManagement.action === 'create_missing_name' ||
+      agendaManagement.action === 'create_invalid_name'
+    ) {
+      return {
+        handled: true,
+        response: buildSingleAgendaModeMessage()
+      };
+    }
+
+    const agendas = await getNamedAgendas();
+
+    if (agendaManagement.action === 'list_names') {
+      if (!agendas.length) {
+        return {
+          handled: true,
+          response: buildAgendaSelectionPrompt(agendas, { action: 'list' })
+        };
+      }
+      await writeAgendaSelectionState(context, { action: 'list' });
+      return {
+        handled: true,
+        response: buildAgendaSelectionPrompt(agendas, { action: 'list' })
+      };
+    }
+
+    if (agendaManagement.action === 'create_missing_name') {
+      return {
+        handled: true,
+        response: 'Informe o nome da nova agenda. Exemplo: criar agenda JOAO'
+      };
+    }
+
+    if (agendaManagement.action === 'create_invalid_name') {
+      return {
+        handled: true,
+        response: 'Use um nome curto para a agenda. Exemplo: criar agenda JOAO'
+      };
+    }
+
+    if (agendaManagement.action === 'create') {
+      const created = await botDatabase.createNamedAgenda(agendaManagement.name, buildDbOptionsFromContext(context));
+      namedAgendasCache = null;
+      const refreshedAgendas = await getNamedAgendas();
+      return {
+        handled: true,
+        response: created.created
+          ? `Agenda ${created.agenda.name} criada. Agendas existentes: ${formatNamedAgendaNames(refreshedAgendas)}`
+          : `A agenda ${created.agenda.name} ja existia. Agendas existentes: ${formatNamedAgendaNames(refreshedAgendas)}`
+      };
+    }
+  }
+
+  if (agendaDeletion) {
+    const agendas = await getNamedAgendas();
+
+    if (agendaDeletion.action === 'delete_missing_name') {
+      if (!agendas.length) {
+        return {
+          handled: true,
+          response: buildAgendaSelectionPrompt(agendas, { action: 'delete_named_agenda' })
+        };
+      }
+
+      await writeAgendaSelectionState(context, { action: 'delete_named_agenda' });
+      return {
+        handled: true,
+        response: buildAgendaSelectionPrompt(agendas, { action: 'delete_named_agenda' })
+      };
+    }
+
+    if (agendaDeletion.action === 'delete_unknown_name') {
+      return {
+        handled: true,
+        response: agendas.length
+          ? `Nao encontrei a agenda ${agendaDeletion.name}. Agendas existentes: ${formatNamedAgendaNames(agendas)}`
+          : buildAgendaSelectionPrompt(agendas, { action: 'delete_named_agenda' })
+      };
+    }
+
+    if (agendaDeletion.action === 'delete') {
+      const result = await executeNamedAgendaSelectionCommand({ action: 'delete_named_agenda' }, agendaDeletion.agenda, context);
+      namedAgendasCache = null;
+      return result;
+    }
+  }
+
+  if (agenda) {
+    const agendas = await getNamedAgendas();
+    const explicitAgenda = detectAgendaEntryReferenced(text, agendas);
+
+    if (agenda.action === 'remove_missing_index') {
+      return {
+        handled: true,
+        response: explicitAgenda
+          ? `Para apagar da agenda ${explicitAgenda.name}, informe o numero. Exemplo: apagar agenda ${explicitAgenda.name} 2`
+          : 'Para apagar agenda, informe a agenda e o numero. Exemplo: apagar agenda ITALO 2'
+      };
+    }
+
+    if (agenda.action === 'edit_missing_index') {
+      return {
+        handled: true,
+        response: explicitAgenda
+          ? `Para editar a agenda ${explicitAgenda.name}, informe o numero. Exemplo: editar agenda ${explicitAgenda.name} 1: dentista amanha 13h`
+          : 'Para editar agenda, informe a agenda e o numero. Exemplo: editar agenda ITALO 1: dentista amanha 13h'
+      };
+    }
+
+    if (agenda.action === 'edit_missing_text') {
+      return {
+        handled: true,
+        response: explicitAgenda
+          ? `Informe o novo texto do item ${agenda.index} da agenda ${explicitAgenda.name}. Exemplo: editar agenda ${explicitAgenda.name} ${agenda.index}: novo texto`
+          : `Informe a agenda e o novo texto do item ${agenda.index}. Exemplo: editar agenda ITALO ${agenda.index}: novo texto`
+      };
+    }
+
+    if (agenda.action === 'add_missing_text') {
+      return {
+        handled: true,
+        response: explicitAgenda
+          ? `Me passe o texto para a agenda ${explicitAgenda.name}. Exemplo: agenda ${explicitAgenda.name}: dentista amanha 13h em Campo Grande`
+          : 'Me passe o texto e a agenda. Exemplo: agenda ITALO: dentista amanha 13h em Campo Grande'
+      };
+    }
+
+    if (agenda.action === 'add_too_generic') {
+      return {
+        handled: true,
+        response: explicitAgenda
+          ? `Esse texto nao parece um compromisso valido para a agenda ${explicitAgenda.name}. Me diga o compromisso completo, por exemplo: agenda ${explicitAgenda.name}: dentista amanha 13h em Campo Grande`
+          : 'Esse texto nao parece um compromisso valido para agenda. Me diga o compromisso completo e a agenda, por exemplo: agenda ITALO: dentista amanha 13h em Campo Grande'
+      };
+    }
+
+    if (!explicitAgenda) {
+      if (agendas.length === 1) {
+        return executeNamedAgendaCommand(agenda, agendas[0], context);
+      }
+
+      if (!agendas.length) {
+        return executeNamedAgendaCommand(
+          agenda,
+          {
+            name: '',
+            key: 'agenda',
+            singleAgenda: true
+          },
+          context
+        );
+      }
+      await writeAgendaSelectionState(context, agenda);
+      return {
+        handled: true,
+        response: buildAgendaSelectionPrompt(agendas, agenda)
+      };
+    }
+
+    return executeNamedAgendaCommand(agenda, explicitAgenda, context);
+  }
+
+  const notes = parseNotesCommand(text);
+  if (notes) {
+    if (notes.action === 'list') {
+      const items = await listItems(config.notesFile, 20, buildDbOptionsFromContext(context));
+      if (!items.length) {
+        return {
+          handled: true,
+          response: 'Sem textos salvos ainda.'
+        };
+      }
+
+      const lines = items.map((item, index) => `${item.index || index + 1}. ${item.text}`);
+      return {
+        handled: true,
+        response: `Textos salvos (${items.length}):\n${lines.join('\n')}`
+      };
+    }
+
+    if (notes.action === 'add') {
+      const result = await addItem(config.notesFile, notes.text, buildDbOptionsFromContext(context));
+      return {
+        handled: true,
+        response: `Texto salvo com sucesso. Total atual: ${result.total}.`
+      };
+    }
+
+    if (notes.action === 'remove_missing_index') {
+      return {
+        handled: true,
+        response: 'Para apagar texto, informe o numero. Exemplo: apagar texto 2'
+      };
+    }
+
+    if (notes.action === 'remove') {
+      const result = await removeItemByIndex(config.notesFile, notes.index, buildDbOptionsFromContext(context));
+      if (!result) {
+        return {
+          handled: true,
+          response: `Nao encontrei texto ${notes.index}. Use "listar textos" para ver os indices.`
+        };
+      }
+
+      return {
+        handled: true,
+        response: `Feito. Texto ${notes.index} removido.`
+      };
+    }
+
+    if (notes.action === 'clear') {
+      const removedCount = await clearItems(config.notesFile, buildDbOptionsFromContext(context));
+      return {
+        handled: true,
+        response: `Feito. Textos limpos (${removedCount} itens removidos).`
+      };
+    }
+
+    if (notes.action === 'edit_missing_index') {
+      return {
+        handled: true,
+        response: 'Para editar texto, informe o numero. Exemplo: editar texto 1: novo texto'
+      };
+    }
+
+    if (notes.action === 'edit_missing_text') {
+      return {
+        handled: true,
+        response: `Informe o novo texto do item ${notes.index}.`
+      };
+    }
+
+    if (notes.action === 'edit') {
+      const result = await updateItemByIndex(config.notesFile, notes.index, notes.text, buildDbOptionsFromContext(context));
+      if (!result) {
+        return {
+          handled: true,
+          response: `Nao encontrei texto ${notes.index}. Use "listar textos" para ver os indices.`
+        };
+      }
+
+      return {
+        handled: true,
+        response: `Feito. Texto ${notes.index} atualizado.`
+      };
+    }
+
+    if (notes.action === 'add_missing_text') {
+      return {
+        handled: true,
+        response: 'Me passe o texto para salvar. Exemplo: salvar texto: comprar racao'
+      };
+    }
+  }
+
+  const conversation = parseConversationCommand(text);
+  if (conversation) {
+    const groupId = context.groupId || '';
+    if (!groupId) {
+      return {
+        handled: true,
+        response: 'Nao consegui identificar o grupo para historico.'
+      };
+    }
+
+    if (conversation.action === 'status') {
+      return {
+        handled: true,
+        response: `Historico automatico ativo. Pastas em ${getConversationGroupDir(groupId)}`
+      };
+    }
+
+    if (conversation.action === 'list') {
+      const entries = await listRecentConversationEntries(groupId, 12);
+      if (!entries.length) {
+        return {
+          handled: true,
+          response: `Ainda sem historico salvo para este grupo. Pasta: ${getConversationGroupDir(groupId)}`
+        };
+      }
+
+      const lines = entries.map((entry, index) => {
+        const side = entry.direction === 'outbound' ? 'Bot' : 'Usuario';
+        const hour = formatConversationClock(entry.ts);
+        const preview = compactSpaces(entry.text).slice(0, 120);
+        return `${index + 1}. [${hour}] ${side}: ${preview}`;
+      });
+
+      return {
+        handled: true,
+        response: `Historico recente (${entries.length}):\n${lines.join('\n')}\nPasta: ${getConversationGroupDir(groupId)}`
+      };
+    }
+
+    if (conversation.action === 'clear') {
+      if (!isAdminSender(context.senderNumber)) {
+        return {
+          handled: true,
+          response: `Acao de limpeza de historico bloqueada: remetente ${context.senderNumber || 'desconhecido'} nao admin do bot.`
+        };
+      }
+
+      const removed = await clearConversationGroupHistory(groupId);
+      return {
+        handled: true,
+        response:
+          `Historico local do grupo limpo com sucesso (${removed} arquivo(s)). ` +
+          'Obs: isso limpa os arquivos salvos no servidor, nao apaga mensagens ja enviadas no WhatsApp.'
+      };
+    }
+  }
+
+  if (isStatusQuestion(text)) {
+    return {
+      handled: true,
+      response: `Servico ativo no Linux. Uptime: ${shortUptime()}. Grupo autorizado: ${context.groupId || 'nao definido'}.`
+    };
+  }
+
+  // Roteamento de despesas por linguagem natural (ex: "apagar despesa id 2", "mostrar despesas")
+  const expenseCmd = parseExpenseCommand(text, context);
+  if (expenseCmd) {
+    return handleExpenseCommand(expenseCmd, { text, context });
+  }
+
+  // Modo silencioso / Backup (admin ou full)
+  if (isAdminSender || isFullSender) {
+    const silentCmd = parseSilentModeCommand(text);
+    if (silentCmd) return handleSilentModeCommand(silentCmd, context);
+
+    const backupCmd = parseBackupCommand(text);
+    if (backupCmd) return handleBackupCommand(backupCmd, context);
+  }
+
+  // Resumo do dia / semana (qualquer usuário autorizado)
+  const daySummaryCmd = parseDaySummaryCommand(text);
+  if (daySummaryCmd) return handleDaySummaryCommand(daySummaryCmd, context);
+
+  // Relay chat (encaminhar mensagens privadas de um contato para o grupo)
+  const relayCmd = parseRelayCommand(rawText) || parseRelayCommand(text);
+  if (relayCmd) {
+    return handleRelayCommand(relayCmd, context);
+  }
+
+  return null;
+}
+
+// ─── Modo Silencioso ────────────────────────────────────────────────────────
+
+function parseSilentModeCommand(text) {
+  const t = text.trim();
+  if (/^(status (modo )?silencioso|modo silencioso\?)$/i.test(t)) return { type: 'status' };
+  if (/modo silencioso|^!silencio|silencioso on|ativar modo silencioso/i.test(t)) return { type: 'on' };
+  if (/modo normal|silencioso off|desativar modo silencioso/i.test(t)) return { type: 'off' };
+  return null;
+}
+
+async function handleSilentModeCommand(cmd, _context) {
+  const current = settingsStore.get();
+  if (cmd.type === 'status') {
+    const status = current.silentMode ? 'ATIVADO' : 'DESATIVADO';
+    return { handled: true, response: `Modo silencioso: ${status}.` };
+  }
+  const newVal = cmd.type === 'on';
+  if (current.silentMode === newVal) {
+    return { handled: true, response: `Modo silencioso já está ${newVal ? 'ativado' : 'desativado'}.` };
+  }
+  await settingsStore.update({ silentMode: newVal });
+  return {
+    handled: true,
+    response: newVal
+      ? 'Modo silencioso ativado. Vou parar de responder com IA por enquanto.'
+      : 'Modo silencioso desativado. Voltei ao modo normal.'
+  };
+}
+
+// ─── Resumo do Dia ───────────────────────────────────────────────────────────
+
+function parseDaySummaryCommand(text) {
+  const t = text.trim();
+  if (/resumo do dia|o que perdi|o que aconteceu hoje/i.test(t)) return { type: 'day' };
+  if (/resumo da semana|o que aconteceu essa semana/i.test(t)) return { type: 'week' };
+  return null;
+}
+
+async function handleDaySummaryCommand(cmd, context) {
+  const groupId = context.groupId || context.chatId || 'desconhecido';
+  const limit = cmd.type === 'week' ? 200 : 60;
+  let entries = [];
+  try {
+    entries = await listRecentConversationEntries(groupId, limit);
+  } catch (_) {
+    entries = [];
+  }
+  if (!entries || entries.length === 0) {
+    return { handled: true, response: 'Não encontrei mensagens recentes para resumir.' };
+  }
+  const lines = entries.map((e) => {
+    const who = e.role === 'assistant' ? 'Bot' : (e.sender || 'User');
+    const msg = String(e.content || e.message || '').slice(0, 300);
+    return `[${who}]: ${msg}`;
+  });
+  const period = cmd.type === 'week' ? 'dessa semana' : 'de hoje';
+  const prompt = [
+    `Você é um assistente resumindo mensagens ${period} do grupo WhatsApp.`,
+    'Faça um resumo conciso em português: decisões tomadas, tarefas mencionadas, pontos importantes e pendências.',
+    'Máximo 400 palavras.',
+    '',
+    ...lines
+  ].join('\n');
+  let summary;
+  try {
+    summary = await askAI(prompt, { systemPrompt: 'Você é um assistente de resumo de conversas.' });
+  } catch (err) {
+    summary = `Erro ao gerar resumo: ${err?.message ?? err}`;
+  }
+  return { handled: true, response: summary };
+}
+
+// ─── Backup ──────────────────────────────────────────────────────────────────
+
+function parseBackupCommand(text) {
+  const t = text.trim();
+  if (/^!backup$|fazer backup|criar backup|backup agora/i.test(t)) return { type: 'create' };
+  if (/listar backups|ver backups|list backups/i.test(t)) return { type: 'list' };
+  return null;
+}
+
+async function handleBackupCommand(cmd, _context) {
+  if (cmd.type === 'list') {
+    const files = await listBackups();
+    if (files.length === 0) return { handled: true, response: 'Nenhum backup encontrado.' };
+    const list = files.map((f, i) => `${i + 1}. ${f}`).join('\n');
+    return { handled: true, response: `Backups disponíveis (${files.length}):\n${list}` };
+  }
+  // create
+  const result = await createBackup();
+  if (result.ok) {
+    const name = result.path.split('/').pop();
+    return { handled: true, response: `Backup criado com sucesso: ${name}` };
+  }
+  return { handled: true, response: `Erro ao criar backup: ${result.error}` };
+}
+
+// ─── Relay ───────────────────────────────────────────────────────────────────
+
+function parseRelayCommand(input) {
+  const text = String(input || '').trim();
+
+  // !relay <número> <mensagem>
+  const startMatch = text.match(/^!relay\s+(\d{8,15})\s+(.+)$/is);
+  if (startMatch) {
+    return { action: 'start', targetNumber: startMatch[1].trim(), message: startMatch[2].trim() };
+  }
+
+  // !relay-stop <número> or !relay stop <número>
+  const stopMatch = text.match(/^!relay[-\s]stop\s+(\d{8,15})$/i);
+  if (stopMatch) {
+    return { action: 'stop', targetNumber: stopMatch[1].trim() };
+  }
+
+  // !resp <número> <mensagem> — responder diretamente a um relay ativo
+  const respMatch = text.match(/^!resp(?:onder)?\s+(\d{8,15})\s+(.+)$/is);
+  if (respMatch) {
+    return { action: 'reply', targetNumber: respMatch[1].trim(), message: respMatch[2].trim() };
+  }
+
+  // !relays or "relays ativos"
+  if (/^!relays?$/.test(text) || /^relays?\s+ativo/i.test(text)) {
+    return { action: 'list' };
+  }
+
+  // Natural language sem número: "enviar mensagem", "manda mensagem", "quero enviar mensagem" → wizard
+  const wizardTrigger = /(?:envi[ao]r?|mand[ae]r?|quero\s+envi[ao]r?)\s+(?:uma\s+)?mensagem(?!\s+para\s+\d)/i.test(text);
+  if (wizardTrigger && !text.match(/\d{8,15}/)) {
+    return { action: 'wizard' };
+  }
+
+  // Natural language: "envia/enviar/manda/mandar mensagem para [esse número] XXXXXXXXXXX"
+  const nlMatch = text.match(
+    /(?:envi[ao]r?|mand[ae]r?)\s+(?:uma\s+)?mensagem\s+para\s+(?:esse\s+)?(?:[oa]?\s*n[uú]mero\s+)?(\d{8,15})/i
+  );
+  if (nlMatch) {
+    const targetNumber = nlMatch[1].trim();
+    // Extract message content from quotes or "Conteúdo da mensagem:"
+    const contentMatch =
+      text.match(/conte[uú]do\s+da\s+mensagem[:\s]*[""\u201C\u201D«](.+?)[""\u201C\u201D»]/is) ||
+      text.match(/mensagem[:\s]*[""\u201C\u201D«](.+?)[""\u201C\u201D»]/is) ||
+      text.match(/[""\u201C\u201D«](.+?)[""\u201C\u201D»]/is);
+    const msgContent = contentMatch ? contentMatch[1].trim() : '';
+    return { action: 'start', targetNumber, message: msgContent };
+  }
+
+  // NL direct reply: "responde/responder para <número> <mensagem>"
+  const nlReplyMatch = text.match(
+    /respond(?:e(?:r|ndo)?|a)\s+(?:para\s+)?(?:o\s+)?(?:n[uú]mero\s+)?(\d{8,15})[:\s]+(.+)$/is
+  );
+  if (nlReplyMatch) {
+    return { action: 'reply', targetNumber: nlReplyMatch[1].trim(), message: nlReplyMatch[2].trim() };
+  }
+
+  // "parar/cancelar/encerrar relay <número>"
+  const stopNlMatch = text.match(/(?:parar|cancelar|encerrar|stop)\s+relay\s+(\d{8,15})/i);
+  if (stopNlMatch) {
+    return { action: 'stop', targetNumber: stopNlMatch[1].trim() };
+  }
+
+  // "encerrar mensagem <número>" (alias NL para !relay-stop)
+  const stopMsgMatch = text.match(/encerrar\s+mensagem\s+(\d{8,15})/i);
+  if (stopMsgMatch) {
+    return { action: 'stop', targetNumber: stopMsgMatch[1].trim() };
+  }
+
+  return null;
+}
+
+function buildRelayHeader(senderName) {
+  const name = (senderName || '').trim();
+  if (name) {
+    return `_🤖 Conversa com apoio de IA, comigo no comando._\n> *${name}*:\n\n`;
+  }
+  return '_🤖 Conversa com apoio de IA, comigo no comando._\n\n';
+}
+
+async function resolveSenderName(messageObj, fallbackNumber) {
+  // notifyName is embedded in the raw message and is the most reliable source
+  const notifyName = String(messageObj?._data?.notifyName || '').trim();
+  if (notifyName && /\p{L}/u.test(notifyName)) return notifyName;
+
+  try {
+    const contact = await messageObj?.getContact?.();
+    const name = String(contact?.pushname || contact?.name || '').trim();
+    // Reject emoji-only strings (no letter characters) from contact resolution
+    if (name && /\p{L}/u.test(name)) return name;
+  } catch {}
+
+  // Accept notifyName even if emoji-only before falling back to phone number
+  if (notifyName) return notifyName;
+
+  return String(fallbackNumber || '').replace(/\D/g, '');
+}
+
+async function handleRelayCommand(cmd, context = {}) {
+  const { action, targetNumber, message: relayMessage } = cmd;
+  const clientRef = context.client;
+  const groupId = context.groupId || '';
+  const requestedBy = context.senderNumber || '';
+
+  if (action === 'wizard') {
+    // Sinaliza ao index.js que deve iniciar o wizard conversacional
+    return { handled: true, relayWizardStart: true, response: null };
+  }
+
+  if (action === 'list') {
+    await relayChatStore.ensureReady();
+    const actives = await relayChatStore.listActive(groupId);
+    if (!actives.length) {
+      return { handled: true, response: '📡 Nenhum relay ativo no momento.' };
+    }
+    const lines = actives.map(
+      (r) =>
+        `• 📲 ${r.targetNumber} (desde ${new Date(r.createdAt).toLocaleString('pt-BR')})`
+    );
+    return { handled: true, response: `📡 Relays ativos:\n${lines.join('\n')}` };
+  }
+
+  if (action === 'stop') {
+    await relayChatStore.ensureReady();
+    const stopped = await relayChatStore.stopRelay({ targetNumber, groupId });
+    return {
+      handled: true,
+      response: stopped
+        ? `✅ Relay com ${targetNumber} encerrado.`
+        : `ℹ️ Nenhum relay ativo com ${targetNumber}.`
+    };
+  }
+
+  if (action === 'reply') {
+    if (!clientRef) {
+      return { handled: true, response: '❌ Cliente WhatsApp não disponível.' };
+    }
+    if (!relayMessage) {
+      return { handled: true, response: '❌ Informe a mensagem a enviar.' };
+    }
+    await relayChatStore.ensureReady();
+    const relay = await relayChatStore.findActiveByTarget(targetNumber);
+    if (!relay) {
+      return { handled: true, response: `ℹ️ Nenhum relay ativo com ${targetNumber}. Inicie um com !relay ${targetNumber} <mensagem>.` };
+    }
+    try {
+      const _senderName = await resolveSenderName(context.message, context.senderNumber);
+      await clientRef.sendMessage(`${targetNumber}@c.us`, buildRelayHeader(_senderName) + relayMessage);
+      return { handled: true, response: `✅ Mensagem enviada para *${targetNumber}*.` };
+    } catch (err) {
+      return { handled: true, response: `❌ Falha ao enviar para ${targetNumber}: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  if (action === 'start') {
+    if (!clientRef) {
+      return { handled: true, response: '❌ Cliente WhatsApp não disponível para enviar mensagem.' };
+    }
+
+    const targetJid = `${targetNumber}@c.us`;
+
+    // Send the initial message if content was provided
+    let sendOk = false;
+    let sendErr = '';
+    if (relayMessage) {
+      try {
+        const _senderName = await resolveSenderName(context.message, context.senderNumber);
+        await clientRef.sendMessage(targetJid, buildRelayHeader(_senderName) + relayMessage);
+        sendOk = true;
+      } catch (err) {
+        sendErr = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    // Register relay
+    await relayChatStore.ensureReady();
+    await relayChatStore.addRelay({ targetNumber, targetJid, groupId, requestedBy });
+
+    let resp;
+    if (relayMessage && sendOk) {
+      resp = `✅ Mensagem enviada para *${targetNumber}*.\n📡 *Relay ativo* — toda resposta será encaminhada aqui.`;
+    } else if (relayMessage && sendErr) {
+      resp = `⚠️ Relay registrado, mas erro ao enviar: ${sendErr}`;
+    } else {
+      resp = `📡 *Relay ativo* com ${targetNumber}. Aguardando mensagens.`;
+    }
+    resp += `\n\n💡 *Para responder:* cite (quote) a mensagem encaminhada *ou* use:\n  !resp ${targetNumber} <sua mensagem>\n\n🛑 *Encerrar:* @ encerrar mensagem ${targetNumber}`;
+
+    return { handled: true, response: resp };
+  }
+
+  return null;
+}

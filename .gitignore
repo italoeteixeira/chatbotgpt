@@ -1,0 +1,28 @@
+node_modules/
+
+# Ambiente e segredos
+.env
+.env.*
+!.env.example
+
+# Sessão/cache do WhatsApp
+.wwebjs_auth/
+.wwebjs_auth_validacao/
+.wwebjs_cache/
+
+# Artefatos de execução
+logs/
+sync/
+.sync_backups/
+*.syncbak-*
+
+# Dados locais/runtime (não versionar)
+data/*
+!data/.gitkeep
+
+# Bancos e binários locais
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.tar.gz
