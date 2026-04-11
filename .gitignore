@@ -26,3 +26,6 @@ data/*
 *.sqlite-wal
 *.db
 *.tar.gz
+
+# Sub-repositório local (não versionar no repo principal)
+tools/whisper.cpp/
