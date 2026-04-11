@@ -743,9 +743,6 @@ function renderBackupStatusBlock(payload = {}) {
   const commitInfo = payload.commitCreated
     ? `${String(payload.commitHash || '').trim() || '(hash indisponivel)'}`
     : 'sem alteracoes pendentes';
-  const readmeCommitInfo = payload.readmeCommitCreated
-    ? `${String(payload.readmeCommitHash || '').trim() || '(hash indisponivel)'}`
-    : 'nao houve commit exclusivo do README';
   const pushTarget = String(payload.pushTarget || '-');
   const pushStatus = String(payload.pushStatus || 'N/D');
   const rollback = payload.rollbackApplied ? 'sim (rollback local aplicado)' : 'nao';
@@ -763,7 +760,7 @@ function renderBackupStatusBlock(payload = {}) {
     `- Backup \`data/\`: \`${backupFile}\``,
     `- Bundle git: \`${gitBundleFile}\``,
     `- Commit principal: \`${commitInfo}\``,
-    `- Commit README: \`${readmeCommitInfo}\``,
+    `- Commit README dedicado: veja \`git log\` (quando houver mudanca de status final).`,
     `- Destino push: \`${pushTarget}\``,
     `- Branches: \`${branches}\``,
     `- Push: **${pushStatus}**`,
