@@ -11095,13 +11095,18 @@ async function handleBackupCommand(cmd, context) {
     const lines = [
       'Plano de backup validado concluido com sucesso.',
       `- Validacao: OK (npm run check)`,
+      `- Suite funcional: ${result.steps?.some((step) => step.name === 'test_suite' && step.ok) ? 'OK (node scripts/test-suite.js)' : 'desativada ou nao executada'}`,
       result.backupFile ? `- Backup data: ${result.backupFile}` : '',
       result.gitBundleFile ? `- Bundle git: ${result.gitBundleFile}` : '',
       result.commitCreated
         ? `- Commit: criado${result.commitHash ? ` (${result.commitHash})` : ''}`
         : '- Commit: sem alteracoes pendentes',
+      result.readmeCommitCreated
+        ? `- Commit README: ${result.readmeCommitHash || '(hash indisponivel)'}`
+        : '- Commit README: sem novo commit dedicado',
       result.pushTarget ? `- Destino push: ${result.pushTarget}` : '',
-      '- Branches enviadas: main, homologacao'
+      `- Branches enviadas: ${(result.branches || ['main', 'homologacao']).join(', ')}`,
+      '- README: atualizado automaticamente e publicado no GitHub'
     ].filter(Boolean);
 
     return {

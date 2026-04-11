@@ -46,6 +46,7 @@ LOCAL_TARGET="${LOCAL_DIR%/}/"
 
 # Excludes padrao para evitar artefatos volateis/sessao
 EXCLUDES=(
+  ".git/"
   "node_modules/"
   ".wwebjs_auth/"
   ".wwebjs_auth_validacao/"

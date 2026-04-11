@@ -1,4 +1,4 @@
-import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
@@ -9,8 +9,12 @@ const MAX_BACKUPS = 7;
 const BACKUP_TIMEOUT_MS = 120_000; // 2 min
 const CMD_OUTPUT_LIMIT = 12_000;
 const VALIDATION_TIMEOUT_MS = 20 * 60_000; // 20 min
+const TEST_SUITE_TIMEOUT_MS = 25 * 60_000; // 25 min
 const GIT_TIMEOUT_MS = 3 * 60_000; // 3 min
 const GIT_PUSH_TIMEOUT_MS = 5 * 60_000; // 5 min
+const README_FILE = join(process.cwd(), 'README.md');
+const BACKUP_STATUS_START = '<!-- BACKUP_STATUS:START -->';
+const BACKUP_STATUS_END = '<!-- BACKUP_STATUS:END -->';
 
 /**
  * Cria um backup comprimido da pasta data/ (excluindo subpasta backups).
@@ -83,13 +87,19 @@ export async function listBackups(backupDir = BACKUP_DIR) {
  * Primeiro backup 1h após o start; depois a cada intervalHours.
  * @param {number} [intervalHours]
  */
-export function startBackupScheduler(intervalHours = 24) {
+export function startBackupScheduler(intervalHours = 24, mode = 'data_only') {
   const intervalMs = intervalHours * 3_600_000;
   const firstRunMs = 3_600_000; // 1h
 
   const run = async () => {
-    const result = await createBackup();
-    console.info(JSON.stringify({ event: 'auto_backup', ...result }));
+    let result;
+    if (String(mode || '').toLowerCase() === 'validated_github') {
+      result = await runValidatedGithubBackupPlan({ trigger: 'scheduler' });
+      console.info(JSON.stringify({ event: 'auto_backup_validated', ...result }));
+    } else {
+      result = await createBackup();
+      console.info(JSON.stringify({ event: 'auto_backup', ...result }));
+    }
     setTimeout(run, intervalMs);
   };
 
@@ -120,10 +130,83 @@ export function startBackupScheduler(intervalHours = 24) {
 export async function runValidatedGithubBackupPlan(options = {}) {
   const steps = [];
   const branches = normalizeBranches(options.branches || config.githubBackupBranches || ['main', 'homologacao']);
+  const trigger = String(options.trigger || 'manual').trim() || 'manual';
+  const startedAtIso = new Date().toISOString();
+  const startedAtLabel = toSaoPauloLabel(startedAtIso);
+  const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const runSummary = {
+    runId,
+    trigger,
+    startedAtIso,
+    startedAtLabel,
+    status: 'INICIADO',
+    branches,
+    validation: 'PENDENTE',
+    testSuite: config.githubBackupRunTestSuite ? 'PENDENTE' : 'DESATIVADA',
+    backupFile: '-',
+    gitBundleFile: '-',
+    commitHash: '',
+    commitCreated: false,
+    readmeCommitHash: '',
+    readmeCommitCreated: false,
+    pushTarget: '-',
+    pushStatus: 'PENDENTE',
+    rollbackApplied: false,
+    note: 'Execucao em andamento.'
+  };
+  let originalHead = '';
+  let primaryCommitCreated = false;
+  let primaryCommitHash = '';
+  let readmeCommitCreated = false;
+  let readmeCommitHash = '';
+  let pushSucceededCount = 0;
+
+  const failWithRollback = async (stepName, message) => {
+    const result = failPlan(steps, stepName, message);
+    runSummary.status = 'FALHA';
+    runSummary.note = message;
+
+    if (config.githubBackupAutoRollback && primaryCommitCreated && originalHead && pushSucceededCount === 0) {
+      const rollbackResult = await runCommand('git', ['reset', '--mixed', originalHead], {
+        timeoutMs: GIT_TIMEOUT_MS
+      });
+      const rollbackOk = rollbackResult.ok;
+      runSummary.rollbackApplied = rollbackOk;
+      steps.push({
+        name: 'rollback_local',
+        ok: rollbackOk,
+        detail: rollbackOk
+          ? `Rollback local aplicado para ${String(originalHead).slice(0, 12)}.`
+          : summarizeCommandFailure(rollbackResult, 'Falha ao aplicar rollback local apos erro do plano.')
+      });
+    }
+
+    const readmeStatus = await updateReadmeBackupStatus({
+      ...runSummary,
+      status: 'FALHA',
+      finishedAtIso: new Date().toISOString(),
+      note: message
+    });
+    steps.push({
+      name: 'readme_status',
+      ok: readmeStatus.ok,
+      detail: readmeStatus.ok
+        ? 'README atualizado com status de falha.'
+        : `README nao foi atualizado: ${readmeStatus.error || 'erro desconhecido'}`
+    });
+
+    result.rollbackApplied = runSummary.rollbackApplied;
+    result.commitCreated = primaryCommitCreated;
+    result.commitHash = primaryCommitHash;
+    result.readmeCommitCreated = readmeCommitCreated;
+    result.readmeCommitHash = readmeCommitHash;
+    result.branches = branches;
+    result.pushTarget = runSummary.pushTarget;
+    return result;
+  };
 
   if (!config.githubBackupEnabled) {
-    return failPlan(
-      steps,
+    return await failWithRollback(
       'backup_plan_disabled',
       'Plano de backup GitHub desativado (GITHUB_BACKUP_ENABLED=false).'
     );
@@ -133,24 +216,56 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     timeoutMs: GIT_TIMEOUT_MS
   });
   if (!gitRepoCheck.ok || !/true/i.test(gitRepoCheck.stdout || '')) {
-    return failPlan(steps, 'precheck_git', 'Diretorio atual nao e um repositorio git.');
+    return await failWithRollback('precheck_git', 'Diretorio atual nao e um repositorio git.');
   }
   steps.push({ name: 'precheck_git', ok: true, detail: 'Repositorio Git detectado.' });
+
+  const originalHeadResult = await runCommand('git', ['rev-parse', 'HEAD'], { timeoutMs: GIT_TIMEOUT_MS });
+  if (!originalHeadResult.ok) {
+    return await failWithRollback(
+      'precheck_head',
+      summarizeCommandFailure(originalHeadResult, 'Falha ao identificar HEAD atual para rollback.')
+    );
+  }
+  originalHead = String(originalHeadResult.stdout || '').trim();
+  steps.push({ name: 'precheck_head', ok: true, detail: `HEAD base: ${originalHead.slice(0, 12)}.` });
 
   const validation = await runCommand('npm', ['run', 'check'], {
     timeoutMs: VALIDATION_TIMEOUT_MS
   });
   if (!validation.ok) {
     const detail = summarizeCommandFailure(validation, 'Falha na validacao do codigo (npm run check).');
-    return failPlan(steps, 'validacao', detail);
+    runSummary.validation = 'FALHA';
+    return await failWithRollback('validacao', detail);
   }
+  runSummary.validation = 'OK';
   steps.push({ name: 'validacao', ok: true, detail: 'npm run check concluido com sucesso.' });
+
+  if (config.githubBackupRunTestSuite) {
+    const testSuiteResult = await runCommand('node', ['scripts/test-suite.js'], {
+      timeoutMs: TEST_SUITE_TIMEOUT_MS
+    });
+    if (!testSuiteResult.ok) {
+      const detail = summarizeCommandFailure(
+        testSuiteResult,
+        'Falha na bateria funcional (node scripts/test-suite.js).'
+      );
+      runSummary.testSuite = 'FALHA';
+      return await failWithRollback('test_suite', detail);
+    }
+    runSummary.testSuite = 'OK';
+    steps.push({ name: 'test_suite', ok: true, detail: 'Bateria funcional concluida com sucesso.' });
+  }
 
   const backupResult = await createBackup();
   if (!backupResult.ok) {
-    return failPlan(steps, 'backup_data', `Falha ao criar backup de data/: ${backupResult.error || 'erro desconhecido'}`);
+    return await failWithRollback(
+      'backup_data',
+      `Falha ao criar backup de data/: ${backupResult.error || 'erro desconhecido'}`
+    );
   }
   const backupFile = String(backupResult.path || '').split('/').pop() || backupResult.path;
+  runSummary.backupFile = backupFile;
   steps.push({ name: 'backup_data', ok: true, detail: `Backup data criado: ${backupFile}` });
 
   const bundleTs = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -160,40 +275,59 @@ export async function runValidatedGithubBackupPlan(options = {}) {
   });
   if (!bundleResult.ok) {
     const detail = summarizeCommandFailure(bundleResult, 'Falha ao gerar bundle git.');
-    return failPlan(steps, 'backup_git_bundle', detail);
+    return await failWithRollback('backup_git_bundle', detail);
   }
   const gitBundleFile = gitBundlePath.split('/').pop() || gitBundlePath;
+  runSummary.gitBundleFile = gitBundleFile;
   steps.push({ name: 'backup_git_bundle', ok: true, detail: `Bundle git criado: ${gitBundleFile}` });
+
+  const readmeLocalStatus = await updateReadmeBackupStatus({
+    ...runSummary,
+    status: 'VALIDADO_LOCAL',
+    finishedAtIso: new Date().toISOString(),
+    note: 'Validacao e backup concluidos localmente. Push em andamento.'
+  });
+  if (!readmeLocalStatus.ok) {
+    return await failWithRollback(
+      'readme_status_local',
+      `Falha ao atualizar README antes do push: ${readmeLocalStatus.error || 'erro desconhecido'}`
+    );
+  }
+  steps.push({
+    name: 'readme_status_local',
+    ok: true,
+    detail: 'README atualizado com status local (pre-push).'
+  });
 
   const stageResult = await runCommand('git', ['add', '-A'], { timeoutMs: GIT_TIMEOUT_MS });
   if (!stageResult.ok) {
     const detail = summarizeCommandFailure(stageResult, 'Falha ao preparar arquivos para commit.');
-    return failPlan(steps, 'git_add', detail);
+    return await failWithRollback('git_add', detail);
   }
   steps.push({ name: 'git_add', ok: true, detail: 'Arquivos preparados para commit.' });
 
   const statusResult = await runCommand('git', ['status', '--porcelain'], { timeoutMs: GIT_TIMEOUT_MS });
   if (!statusResult.ok) {
     const detail = summarizeCommandFailure(statusResult, 'Falha ao verificar status do git.');
-    return failPlan(steps, 'git_status', detail);
+    return await failWithRollback('git_status', detail);
   }
 
-  let commitCreated = false;
-  let commitHash = '';
   if ((statusResult.stdout || '').trim()) {
-    const commitMsg = `Backup validado ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    const commitMsg = `Backup validado ${startedAtLabel}`;
     const commitResult = await runCommand('git', ['commit', '-m', commitMsg], { timeoutMs: GIT_TIMEOUT_MS });
     if (!commitResult.ok) {
       const detail = summarizeCommandFailure(commitResult, 'Falha ao criar commit de backup.');
-      return failPlan(steps, 'git_commit', detail);
+      return await failWithRollback('git_commit', detail);
     }
     const hashResult = await runCommand('git', ['rev-parse', '--short', 'HEAD'], { timeoutMs: GIT_TIMEOUT_MS });
-    commitCreated = true;
-    commitHash = hashResult.ok ? (hashResult.stdout || '').trim() : '';
+    primaryCommitCreated = true;
+    primaryCommitHash = hashResult.ok ? (hashResult.stdout || '').trim() : '';
+    runSummary.commitCreated = primaryCommitCreated;
+    runSummary.commitHash = primaryCommitHash;
     steps.push({
       name: 'git_commit',
       ok: true,
-      detail: `Commit de backup criado${commitHash ? ` (${commitHash})` : ''}.`
+      detail: `Commit de backup criado${primaryCommitHash ? ` (${primaryCommitHash})` : ''}.`
     });
   } else {
     steps.push({ name: 'git_commit', ok: true, detail: 'Sem alteracoes pendentes para commit.' });
@@ -201,25 +335,125 @@ export async function runValidatedGithubBackupPlan(options = {}) {
 
   const branchEnsuring = await ensureLocalBranches(branches);
   if (!branchEnsuring.ok) {
-    return failPlan(steps, 'git_branches', branchEnsuring.message || 'Falha ao preparar branches de backup.');
+    return await failWithRollback(
+      'git_branches',
+      branchEnsuring.message || 'Falha ao preparar branches de backup.'
+    );
   }
   steps.push({ name: 'git_branches', ok: true, detail: branchEnsuring.message });
 
   const pushTarget = await resolvePushTarget();
   if (!pushTarget.ok) {
-    return failPlan(steps, 'git_push_target', pushTarget.message || 'Nao foi possivel resolver destino de push.');
+    return await failWithRollback(
+      'git_push_target',
+      pushTarget.message || 'Nao foi possivel resolver destino de push.'
+    );
   }
+  runSummary.pushTarget = pushTarget.display;
   steps.push({ name: 'git_push_target', ok: true, detail: `Destino: ${pushTarget.display}` });
 
   for (const branch of branches) {
-    const pushResult = await runCommand('git', ['push', pushTarget.target, branch], {
-      timeoutMs: GIT_PUSH_TIMEOUT_MS
-    });
+    const pushResult = await pushBranchWithRetry(pushTarget.target, branch);
     if (!pushResult.ok) {
       const detail = summarizeCommandFailure(pushResult, `Falha no push da branch ${branch}.`);
-      return failPlan(steps, `git_push_${branch}`, detail);
+      runSummary.pushStatus = 'FALHA';
+      return await failWithRollback(`git_push_${branch}`, detail);
     }
-    steps.push({ name: `git_push_${branch}`, ok: true, detail: `Branch ${branch} enviada com sucesso.` });
+    pushSucceededCount += 1;
+    steps.push({
+      name: `git_push_${branch}`,
+      ok: true,
+      detail: `Branch ${branch} enviada com sucesso${pushResult.attempts > 1 ? ` (tentativa ${pushResult.attempts})` : ''}.`
+    });
+  }
+
+  runSummary.pushStatus = 'OK';
+
+  const postPushHead = await runCommand('git', ['rev-parse', '--short', 'HEAD'], { timeoutMs: GIT_TIMEOUT_MS });
+  const postPushHeadHash = postPushHead.ok ? String(postPushHead.stdout || '').trim() : primaryCommitHash;
+  const readmePublishedStatus = await updateReadmeBackupStatus({
+    ...runSummary,
+    status: 'PUBLICADO_GITHUB',
+    finishedAtIso: new Date().toISOString(),
+    note: `Backup validado publicado no GitHub (${branches.join(', ')}).`,
+    commitHash: postPushHeadHash || primaryCommitHash,
+    commitCreated: primaryCommitCreated
+  });
+  if (!readmePublishedStatus.ok) {
+    return await failWithRollback(
+      'readme_status_final',
+      `Falha ao atualizar README final: ${readmePublishedStatus.error || 'erro desconhecido'}`
+    );
+  }
+  steps.push({
+    name: 'readme_status_final',
+    ok: true,
+    detail: 'README atualizado com status final publicado.'
+  });
+
+  const readmeStage = await runCommand('git', ['add', 'README.md'], { timeoutMs: GIT_TIMEOUT_MS });
+  if (!readmeStage.ok) {
+    return await failWithRollback(
+      'git_add_readme',
+      summarizeCommandFailure(readmeStage, 'Falha ao preparar commit do README.')
+    );
+  }
+
+  const readmeStatusPorcelain = await runCommand('git', ['status', '--porcelain', 'README.md'], {
+    timeoutMs: GIT_TIMEOUT_MS
+  });
+  if (!readmeStatusPorcelain.ok) {
+    return await failWithRollback(
+      'git_status_readme',
+      summarizeCommandFailure(readmeStatusPorcelain, 'Falha ao verificar alteracao do README.')
+    );
+  }
+
+  if ((readmeStatusPorcelain.stdout || '').trim()) {
+    const readmeCommit = await runCommand(
+      'git',
+      ['commit', '-m', `Atualiza README de backup ${toSaoPauloLabel(new Date().toISOString())}`],
+      { timeoutMs: GIT_TIMEOUT_MS }
+    );
+    if (!readmeCommit.ok) {
+      return await failWithRollback(
+        'git_commit_readme',
+        summarizeCommandFailure(readmeCommit, 'Falha ao criar commit de status do README.')
+      );
+    }
+
+    const readmeHead = await runCommand('git', ['rev-parse', '--short', 'HEAD'], { timeoutMs: GIT_TIMEOUT_MS });
+    readmeCommitCreated = true;
+    readmeCommitHash = readmeHead.ok ? String(readmeHead.stdout || '').trim() : '';
+    runSummary.readmeCommitCreated = readmeCommitCreated;
+    runSummary.readmeCommitHash = readmeCommitHash;
+    steps.push({
+      name: 'git_commit_readme',
+      ok: true,
+      detail: `Commit de status README criado${readmeCommitHash ? ` (${readmeCommitHash})` : ''}.`
+    });
+
+    for (const branch of branches) {
+      const pushReadme = await pushBranchWithRetry(pushTarget.target, branch);
+      if (!pushReadme.ok) {
+        const detail = summarizeCommandFailure(
+          pushReadme,
+          `Falha ao publicar commit de status README na branch ${branch}.`
+        );
+        return await failWithRollback(`git_push_readme_${branch}`, detail);
+      }
+      steps.push({
+        name: `git_push_readme_${branch}`,
+        ok: true,
+        detail: `README publicado na branch ${branch}${pushReadme.attempts > 1 ? ` (tentativa ${pushReadme.attempts})` : ''}.`
+      });
+    }
+  } else {
+    steps.push({
+      name: 'git_commit_readme',
+      ok: true,
+      detail: 'README sem alteracoes apos atualizacao final.'
+    });
   }
 
   return {
@@ -228,8 +462,11 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     message: `Plano de backup concluido. Validacao OK e push realizado em ${branches.join(', ')}.`,
     backupFile,
     gitBundleFile,
-    commitCreated,
-    commitHash,
+    commitCreated: primaryCommitCreated,
+    commitHash: primaryCommitHash,
+    readmeCommitCreated,
+    readmeCommitHash,
+    branches,
     pushTarget: pushTarget.display
   };
 }
@@ -304,6 +541,35 @@ async function runCommand(command, args, options = {}) {
       });
     });
   });
+}
+
+async function pushBranchWithRetry(target, branch, maxAttempts = 2) {
+  let lastResult = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const pushResult = await runCommand('git', ['push', target, branch], {
+      timeoutMs: GIT_PUSH_TIMEOUT_MS
+    });
+    if (pushResult.ok) {
+      return { ...pushResult, attempts: attempt, ok: true };
+    }
+    lastResult = { ...pushResult, attempts: attempt, ok: false };
+
+    // tenta autocorrecao simples para non-fast-forward
+    const failureText = `${pushResult.stderr || ''}\n${pushResult.stdout || ''}`.toLowerCase();
+    const canRebase = /non-fast-forward|fetch first|rejected/.test(failureText);
+    if (canRebase && attempt < maxAttempts) {
+      const rebase = await runCommand('git', ['pull', '--rebase', target, branch], {
+        timeoutMs: GIT_PUSH_TIMEOUT_MS
+      });
+      if (rebase.ok) continue;
+      lastResult = {
+        ...lastResult,
+        stderr: `${lastResult.stderr || ''}\n${rebase.stderr || rebase.stdout || ''}`.trim()
+      };
+      break;
+    }
+  }
+  return lastResult || { ok: false, attempts: 1, stderr: 'Falha de push sem detalhe.' };
 }
 
 async function ensureLocalBranches(branches) {
@@ -404,4 +670,99 @@ function summarizeCommandFailure(result, fallback) {
 function failPlan(steps, stepName, message) {
   steps.push({ name: stepName, ok: false, detail: message });
   return { ok: false, steps, message };
+}
+
+async function updateReadmeBackupStatus(payload = {}) {
+  if (!config.githubBackupUpdateReadme) {
+    return { ok: true, skipped: true };
+  }
+
+  try {
+    const current = await readFile(README_FILE, 'utf8');
+    const block = renderBackupStatusBlock(payload);
+    const next = upsertBackupStatusBlock(current, block);
+    if (next !== current) {
+      await writeFile(README_FILE, next, 'utf8');
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
+function upsertBackupStatusBlock(readmeText, statusBlock) {
+  const src = String(readmeText || '');
+  const start = src.indexOf(BACKUP_STATUS_START);
+  const end = src.indexOf(BACKUP_STATUS_END);
+
+  if (start >= 0 && end > start) {
+    const before = src.slice(0, start);
+    const after = src.slice(end + BACKUP_STATUS_END.length);
+    return `${before}${statusBlock}${after}`.replace(/\n{3,}/g, '\n\n');
+  }
+
+  const section = `\n## Status do Backup Validado (Auto)\n\n${statusBlock}`;
+  if (!src.endsWith('\n')) return `${src}\n${section}\n`;
+  return `${src}${section}\n`;
+}
+
+function renderBackupStatusBlock(payload = {}) {
+  const status = String(payload.status || 'INDEFINIDO').trim();
+  const icon = status.includes('FALHA')
+    ? '❌'
+    : status.includes('PUBLICADO')
+      ? '✅'
+      : '🟡';
+  const finishedAtIso = String(payload.finishedAtIso || '');
+  const finishedAtLabel = finishedAtIso ? toSaoPauloLabel(finishedAtIso) : toSaoPauloLabel(new Date().toISOString());
+  const startedAtLabel = payload.startedAtIso
+    ? toSaoPauloLabel(payload.startedAtIso)
+    : String(payload.startedAtLabel || '-');
+  const runId = String(payload.runId || '-');
+  const trigger = String(payload.trigger || 'manual');
+  const branches = Array.isArray(payload.branches) && payload.branches.length
+    ? payload.branches.join(', ')
+    : 'main, homologacao';
+  const note = String(payload.note || '').trim() || '-';
+  const validation = String(payload.validation || 'N/D');
+  const testSuite = String(payload.testSuite || 'N/D');
+  const backupFile = String(payload.backupFile || '-');
+  const gitBundleFile = String(payload.gitBundleFile || '-');
+  const commitInfo = payload.commitCreated
+    ? `${String(payload.commitHash || '').trim() || '(hash indisponivel)'}`
+    : 'sem alteracoes pendentes';
+  const readmeCommitInfo = payload.readmeCommitCreated
+    ? `${String(payload.readmeCommitHash || '').trim() || '(hash indisponivel)'}`
+    : 'nao houve commit exclusivo do README';
+  const pushTarget = String(payload.pushTarget || '-');
+  const pushStatus = String(payload.pushStatus || 'N/D');
+  const rollback = payload.rollbackApplied ? 'sim (rollback local aplicado)' : 'nao';
+
+  return [
+    `${BACKUP_STATUS_START}`,
+    `> Bloco atualizado automaticamente pelo plano de backup validado.`,
+    `- Run ID: \`${runId}\``,
+    `- Trigger: \`${trigger}\``,
+    `- Inicio: ${startedAtLabel} (America/Sao_Paulo)`,
+    `- Fim: ${finishedAtLabel} (America/Sao_Paulo)`,
+    `- Status: ${icon} **${status}**`,
+    `- Validacao (\`npm run check\`): **${validation}**`,
+    `- Suite funcional (\`node scripts/test-suite.js\`): **${testSuite}**`,
+    `- Backup \`data/\`: \`${backupFile}\``,
+    `- Bundle git: \`${gitBundleFile}\``,
+    `- Commit principal: \`${commitInfo}\``,
+    `- Commit README: \`${readmeCommitInfo}\``,
+    `- Destino push: \`${pushTarget}\``,
+    `- Branches: \`${branches}\``,
+    `- Push: **${pushStatus}**`,
+    `- Rollback automatico: **${rollback}**`,
+    `- Observacao: ${note}`,
+    `${BACKUP_STATUS_END}`
+  ].join('\n');
+}
+
+function toSaoPauloLabel(isoLike) {
+  const date = isoLike ? new Date(isoLike) : new Date();
+  if (Number.isNaN(date.getTime())) return String(isoLike || '-');
+  return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }

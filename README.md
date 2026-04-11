@@ -54,7 +54,7 @@ O projeto saiu da fase de prova de conceito. O diferencial agora esta em governa
 
 **Operacional**
 - Backup automatico diario de `data/` (`fazer backup` / `listar backups`)
-- Plano de backup validado para GitHub (somente FULL): validacao completa + backup + push (`plano de backup github`)
+- Plano de backup validado para GitHub (somente FULL): validacao completa + suite funcional + backup + push + atualizacao automatica do README (`plano de backup github`)
 - Busca web e geracao de imagem
 - Configuracao dinamica com auditoria
 
@@ -131,6 +131,12 @@ cp .env.example .env
 - `AUTHORIZED_SENDER_NUMBERS=...` para controlar quem fala com o bot
 - `ADMIN_SENDER_NUMBERS=...` para comandos sensiveis (grupo/servidor)
 - `FULL_SENDER_NUMBERS=...` para acesso total (inclui admin + autorizado)
+- `GITHUB_BACKUP_ENABLED=true` para habilitar backup validado com push
+- `GITHUB_BACKUP_UPDATE_README=true` para atualizar automaticamente o README a cada backup validado
+- `GITHUB_BACKUP_RUN_TEST_SUITE=true` para rodar bateria funcional (`node scripts/test-suite.js`) antes do push
+- `GITHUB_BACKUP_AUTO_ROLLBACK=true` para rollback local seguro caso falhe apos commit
+- `BACKUP_SCHEDULER_MODE=validated_github` para agendador executar o plano completo (ou `data_only`)
+- `BACKUP_SCHEDULER_INTERVAL_HOURS=24` para periodicidade do agendador
 - `CODEX_REASONING_EFFORT=low` para reduzir latencia de resposta
 - `AI_PROVIDER=codex` ou `AI_PROVIDER=copilot` para escolher o motor de IA padrao
 - `COPILOT_BIN=copilot` (auto-detectado se instalado)
@@ -794,3 +800,25 @@ O script envia arquivos locais, recebe alteracoes remotas e faz merge bidirecion
 | `src/panelAuth.js` | Autenticacao do painel web |
 | `src/webPanel.js` | Servidor Express com 51 endpoints REST |
 | `src/listGroups.js` | Enumeracao de grupos WhatsApp |
+
+## Status do Backup Validado (Auto)
+
+<!-- BACKUP_STATUS:START -->
+> Bloco atualizado automaticamente pelo plano de backup validado.
+- Run ID: `mnuisysh-faj6o3`
+- Trigger: `manual`
+- Inicio: 11/04/2026, 12:59:33 (America/Sao_Paulo)
+- Fim: 11/04/2026, 12:59:37 (America/Sao_Paulo)
+- Status: 🟡 **VALIDADO_LOCAL**
+- Validacao (`npm run check`): **OK**
+- Suite funcional (`node scripts/test-suite.js`): **OK**
+- Backup `data/`: `backup-2026-04-11T15-59-37.tar.gz`
+- Bundle git: `git-bundle-2026-04-11T15-59-37.bundle`
+- Commit principal: `sem alteracoes pendentes`
+- Commit README: `nao houve commit exclusivo do README`
+- Destino push: `-`
+- Branches: `main, homologacao`
+- Push: **PENDENTE**
+- Rollback automatico: **nao**
+- Observacao: Validacao e backup concluidos localmente. Push em andamento.
+<!-- BACKUP_STATUS:END -->

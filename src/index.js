@@ -1020,7 +1020,7 @@ client = createWhatsappClient({
       await discoverNotificationGroupFromChats(client);
       await notifyServiceReady(client, 'on_ready');
       selfHealingService.startWatchdog(client, askAI, getNotificationGroupJid);
-      startBackupScheduler();
+      startBackupScheduler(config.backupSchedulerIntervalHours, config.backupSchedulerMode);
     })();
   },
   onAuthenticated: () => {

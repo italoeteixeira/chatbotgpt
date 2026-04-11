@@ -22,6 +22,9 @@ if (result.backupFile) lines.push(`Backup data: ${result.backupFile}`);
 if (result.gitBundleFile) lines.push(`Bundle git: ${result.gitBundleFile}`);
 if (result.pushTarget) lines.push(`Destino push: ${result.pushTarget}`);
 if (result.commitCreated) lines.push(`Commit criado: ${result.commitHash || '(hash indisponivel)'}`);
+if (result.readmeCommitCreated) lines.push(`Commit README: ${result.readmeCommitHash || '(hash indisponivel)'}`);
+if (Array.isArray(result.branches)) lines.push(`Branches: ${result.branches.join(', ')}`);
+if (result.rollbackApplied) lines.push('Rollback local aplicado: sim');
 
 console.log(lines.join('\n'));
 

@@ -9,16 +9,7 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-git add -A
+echo "Iniciando plano de backup validado (com README auto e push GitHub)..."
+npm run backup:validated
 
-if git diff --cached --quiet; then
-  echo "Sem alteracoes para backup."
-  exit 0
-fi
-
-STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
-git commit -m "Backup diario ${STAMP}"
-git push origin main
-
-echo "Backup diario enviado com sucesso."
-
+echo "Plano de backup validado concluido."
