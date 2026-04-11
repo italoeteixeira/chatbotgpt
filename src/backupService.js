@@ -558,10 +558,22 @@ async function pushBranchWithRetry(target, branch, maxAttempts = 2) {
     const failureText = `${pushResult.stderr || ''}\n${pushResult.stdout || ''}`.toLowerCase();
     const canRebase = /non-fast-forward|fetch first|rejected/.test(failureText);
     if (canRebase && attempt < maxAttempts) {
-      const rebase = await runCommand('git', ['pull', '--rebase', target, branch], {
+      const fetch = await runCommand('git', ['fetch', target, branch], {
+        timeoutMs: GIT_PUSH_TIMEOUT_MS
+      });
+      if (!fetch.ok) {
+        lastResult = {
+          ...lastResult,
+          stderr: `${lastResult.stderr || ''}\n${fetch.stderr || fetch.stdout || ''}`.trim()
+        };
+        break;
+      }
+
+      const rebase = await runCommand('git', ['rebase', 'FETCH_HEAD'], {
         timeoutMs: GIT_PUSH_TIMEOUT_MS
       });
       if (rebase.ok) continue;
+      await runCommand('git', ['rebase', '--abort'], { timeoutMs: GIT_TIMEOUT_MS }).catch(() => {});
       lastResult = {
         ...lastResult,
         stderr: `${lastResult.stderr || ''}\n${rebase.stderr || rebase.stdout || ''}`.trim()
