@@ -88,6 +88,20 @@ full: refatorar o sistema de moderação para suportar regex
 - Timeout no Copilot FULL: **6 min** (`copilotFullTimeoutMs`)
 - Jobs presos são detectados pelo watchdog a cada 5 min
 
+### Plano de backup validado (FULL)
+
+| Comando | Descrição |
+|---|---|
+| `plano de backup github` | Roda `npm run check`, cria backup de `data/`, gera bundle git e faz push de `main` + `homologacao` |
+| `backup validado` | Alias para o mesmo fluxo |
+| `backup no github` | Alias para o mesmo fluxo |
+
+**Requisitos:**
+- Permissão **FULL**
+- `GITHUB_BACKUP_ENABLED=true`
+- `GITHUB_BACKUP_REPO` configurado
+- `GITHUB_BACKUP_TOKEN` (ou push por `origin` com SSH já autenticado)
+
 ---
 
 ## 💻 Terminal Linux

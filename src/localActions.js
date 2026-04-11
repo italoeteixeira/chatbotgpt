@@ -26,7 +26,7 @@ import { scheduledMessagesStore } from './scheduledMessagesStore.js';
 import { reminderStore } from './reminderStore.js';
 import { handleExpenseCommand, parseExpenseCommand } from './expenseService.js';
 import { relayChatStore } from './relayChatStore.js';
-import { createBackup, listBackups } from './backupService.js';
+import { createBackup, listBackups, runValidatedGithubBackupPlan } from './backupService.js';
 import {
   createFullAutoJob,
   getFullAutoJobById,
@@ -10954,7 +10954,7 @@ export async function tryHandleLocalAction(rawText, context = {}) {
   }
 
   // Modo silencioso / Backup (admin ou full)
-  if (isAdminSender || isFullSender) {
+  if (isAdminSender(context.senderNumber) || isFullSender(context.senderNumber)) {
     const silentCmd = parseSilentModeCommand(text);
     if (silentCmd) return handleSilentModeCommand(silentCmd, context);
 
@@ -11051,18 +11051,65 @@ async function handleDaySummaryCommand(cmd, context) {
 
 function parseBackupCommand(text) {
   const t = text.trim();
+  if (
+    /(plano de backup|backup validado|backup para github|backup no github|backup github|backup de homologacao|backup de homologação)/i.test(t) ||
+    /(rodar|executar|fazer).*(bateria de testes|validacao|validação).*(backup|github)/i.test(t)
+  ) {
+    return { type: 'plan' };
+  }
   if (/^!backup$|fazer backup|criar backup|backup agora/i.test(t)) return { type: 'create' };
   if (/listar backups|ver backups|list backups/i.test(t)) return { type: 'list' };
   return null;
 }
 
-async function handleBackupCommand(cmd, _context) {
+async function handleBackupCommand(cmd, context) {
   if (cmd.type === 'list') {
     const files = await listBackups();
     if (files.length === 0) return { handled: true, response: 'Nenhum backup encontrado.' };
     const list = files.map((f, i) => `${i + 1}. ${f}`).join('\n');
     return { handled: true, response: `Backups disponíveis (${files.length}):\n${list}` };
   }
+
+  if (cmd.type === 'plan') {
+    if (!isFullSender(context?.senderNumber)) {
+      return {
+        handled: true,
+        response:
+          `Plano de backup validado bloqueado: remetente ${context?.senderNumber || 'desconhecido'} nao FULL. ` +
+          'Esse fluxo executa validacao completa + push GitHub e exige permissao FULL.'
+      };
+    }
+
+    const result = await runValidatedGithubBackupPlan();
+    if (!result.ok) {
+      const failed = result.steps?.find((step) => !step.ok);
+      return {
+        handled: true,
+        response:
+          'Plano de backup falhou.\n' +
+          `Etapa: ${failed?.name || 'desconhecida'}\n` +
+          `Detalhe: ${failed?.detail || result.message || 'erro nao identificado'}`
+      };
+    }
+
+    const lines = [
+      'Plano de backup validado concluido com sucesso.',
+      `- Validacao: OK (npm run check)`,
+      result.backupFile ? `- Backup data: ${result.backupFile}` : '',
+      result.gitBundleFile ? `- Bundle git: ${result.gitBundleFile}` : '',
+      result.commitCreated
+        ? `- Commit: criado${result.commitHash ? ` (${result.commitHash})` : ''}`
+        : '- Commit: sem alteracoes pendentes',
+      result.pushTarget ? `- Destino push: ${result.pushTarget}` : '',
+      '- Branches enviadas: main, homologacao'
+    ].filter(Boolean);
+
+    return {
+      handled: true,
+      response: lines.join('\n')
+    };
+  }
+
   // create
   const result = await createBackup();
   if (result.ok) {

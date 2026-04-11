@@ -54,6 +54,7 @@ O projeto saiu da fase de prova de conceito. O diferencial agora esta em governa
 
 **Operacional**
 - Backup automatico diario de `data/` (`fazer backup` / `listar backups`)
+- Plano de backup validado para GitHub (somente FULL): validacao completa + backup + push (`plano de backup github`)
 - Busca web e geracao de imagem
 - Configuracao dinamica com auditoria
 
