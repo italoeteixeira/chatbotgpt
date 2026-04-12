@@ -463,6 +463,16 @@ export function createWhatsappClient(handlers) {
           repliedToBot,
           mentionBypassForStatus
         });
+        if (typeof handlers.onMentionRequiredMessage === 'function') {
+          try {
+            await handlers.onMentionRequiredMessage(message, eligibleContext, {
+              mentionedByIds,
+              mentionedByBody,
+              repliedToBot,
+              mentionBypassForStatus
+            });
+          } catch {}
+        }
         return;
       }
     }

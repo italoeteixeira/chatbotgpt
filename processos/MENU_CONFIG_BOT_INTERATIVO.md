@@ -1,6 +1,6 @@
 # Menu de Configuracao do Bot (Chat + Web)
 
-Atualizado em: 2026-04-10
+Atualizado em: 2026-04-11
 
 ## Objetivo
 
@@ -15,6 +15,7 @@ Comportamento esperado:
 - comandos prontos para copiar e executar
 - valores reais do runtime exibidos no painel
 - mesma autenticacao do portal WhatsApp (cookie/sessao)
+- cada acao interativa gera log tecnico em arquivo e retorno de verificacao (aplicado/não aplicado)
 
 ## Comandos no WhatsApp
 
@@ -59,6 +60,12 @@ Dados carregados na tela:
 - `GET /api/ai-providers`
 - `GET /api/settings/audit?limit=8`
 - `GET /api/access-control`
+- `GET /api/panel-actions/logs?limit=40`
+
+Logs de acoes do painel:
+
+- arquivo: `data/panel-interactive-actions.jsonl`
+- inclui actor, rota, status HTTP, tempo e `verification` quando aplicavel
 
 ## Mapeamento de configuracoes
 

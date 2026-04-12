@@ -120,6 +120,9 @@ const PENDING_TXT_TTL_MS = 10 * 60 * 1000; // 10 minutos
 // Wizard de envio de mensagem relay: key = `${groupId}::${senderNumber}`
 const pendingRelayWizards = new Map();
 const PENDING_RELAY_WIZARD_TTL_MS = 3 * 60 * 1000; // 3 minutos
+const mentionRequirementNotices = new Map();
+const MENTION_REQUIREMENT_NOTICE_TTL_MS = 2 * 60 * 1000; // 2 minutos
+
 function buildRelayHeader(senderName) {
   const name = (senderName || '').trim();
   if (name) {
@@ -169,6 +172,22 @@ function hasPendingRelayWizard(groupId, senderNumber) {
   const w = pendingRelayWizards.get(key);
   if (!w) return false;
   if (Date.now() > w.expiresAt) { pendingRelayWizards.delete(key); return false; }
+  return true;
+}
+
+function shouldSendMentionRequirementNotice(groupId, senderNumber) {
+  const gid = String(groupId || '').trim();
+  const sender = normalizePhoneNumber(senderNumber);
+  if (!gid || !sender) return false;
+
+  const key = `${gid}::${sender}`;
+  const now = Date.now();
+  const lastSentAt = mentionRequirementNotices.get(key) || 0;
+  if (now - lastSentAt < MENTION_REQUIREMENT_NOTICE_TTL_MS) {
+    return false;
+  }
+
+  mentionRequirementNotices.set(key, now);
   return true;
 }
 
@@ -1044,6 +1063,37 @@ client = createWhatsappClient({
   },
   onForeignGroupMessage: (message) => {
     void maybeCaptureNotificationGroupFromForeignMessage(message);
+  },
+  onMentionRequiredMessage: async (_message, context) => {
+    try {
+      if (!client) return;
+
+      await settingsStore.ensureReady();
+      const currentSettings = settingsStore.get();
+      if (!currentSettings.requireMention || currentSettings.silentMode) {
+        return;
+      }
+
+      const groupId = String(context?.groupId || _message?.from || '').trim();
+      const senderNumber = senderDigitsFromContext(context);
+      if (!shouldSendMentionRequirementNotice(groupId, senderNumber)) {
+        return;
+      }
+
+      const reply = `${mentionFromContext(context)} mencao obrigatoria esta ativa neste grupo. Use @ no inicio da mensagem para eu responder.`;
+      await client.sendMessage(groupId, reply);
+      await appendConversationEntry({
+        groupId,
+        direction: 'outbound',
+        text: reply,
+        senderJid: null,
+        senderNumber: null
+      });
+    } catch (error) {
+      logger.warn('Falha ao enviar aviso de mencao obrigatoria', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
   },
   onGroupMessage: (message, context) => {
     const groupId = message.from;

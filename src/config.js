@@ -366,6 +366,9 @@ export const config = Object.freeze({
   moderationIgnoreAdmins: toBoolean(process.env.MODERATION_IGNORE_ADMINS, true),
   settingsFile: (process.env.SETTINGS_FILE || 'data/bot-settings.json').trim(),
   settingsAuditFile: (process.env.SETTINGS_AUDIT_FILE || 'data/bot-settings-audit.jsonl').trim(),
+  panelInteractiveActionsLogFile: (
+    process.env.PANEL_INTERACTIVE_ACTIONS_LOG_FILE || 'data/panel-interactive-actions.jsonl'
+  ).trim(),
   mediaIngestEnabled: toBoolean(process.env.MEDIA_INGEST_ENABLED, true),
   mediaRootDir: (process.env.MEDIA_ROOT_DIR || 'data/midias').trim(),
   mediaIndexFile: (process.env.MEDIA_INDEX_FILE || 'data/media-index.json').trim(),

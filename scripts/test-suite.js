@@ -18,6 +18,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -499,6 +501,43 @@ for (const [mod, exp] of checks) {
   }
   const ok = exp === 'default' ? m.default != null : typeof m[exp] !== 'undefined';
   assert(`${mod} exporta ${exp}`, ok);
+}
+
+// ─── 9.1. settingsStore — persistência de timeouts/flags Copilot ───────────
+
+section('9.1. settingsStore — persistencia de configuracoes Copilot');
+
+const { SettingsStore } = loaded['src/settingsStore.js'] || {};
+
+if (!SettingsStore) {
+  assert('SettingsStore exportado', false, 'classe não encontrada');
+} else {
+  try {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'chatbot-settings-store-'));
+    const filePath = join(tempRoot, 'bot-settings.json');
+    const auditFilePath = join(tempRoot, 'bot-settings-audit.jsonl');
+    const store = new SettingsStore({ filePath, auditFilePath });
+    await store.ensureReady();
+
+    await store.update({
+      requireMention: false,
+      copilotFullTimeoutMs: 0,
+      copilotFallbackOnTimeout: true
+    }, {
+      actor: 'test-suite',
+      source: 'test'
+    });
+
+    const current = store.get();
+    const persisted = JSON.parse(readFileSync(filePath, 'utf8'));
+
+    assertEq('settingsStore persiste copilotFullTimeoutMs=0', current.copilotFullTimeoutMs, 0);
+    assertEq('settingsStore persiste copilotFallbackOnTimeout=true', current.copilotFallbackOnTimeout, true);
+    assertEq('arquivo persiste copilotFullTimeoutMs=0', persisted.copilotFullTimeoutMs, 0);
+    assertEq('arquivo persiste copilotFallbackOnTimeout=true', persisted.copilotFallbackOnTimeout, true);
+  } catch (e) {
+    assert('settingsStore persiste configuracoes Copilot', false, e.message.slice(0, 160));
+  }
 }
 
 // ─── 10. mediaTypeUtils — testes funcionais ─────────────────────────────────

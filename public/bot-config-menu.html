@@ -1093,6 +1093,10 @@
                     </div>
 
                     <div class="status-box" id="groupActionOutput">Nenhuma acao executada nesta secao.</div>
+                    <div class="cta-row">
+                      <button class="cmd-btn secondary" id="btnReloadPanelActionLogs" type="button">Atualizar log do painel</button>
+                    </div>
+                    <div class="status-box" id="panelActionLogOutput">Log interativo aguardando carregamento.</div>
 
                     <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
                       <table>
@@ -1422,6 +1426,8 @@
         routingDiagnostics: null,
         groupControl: null,
         recentSenders: [],
+        panelActionLogs: [],
+        panelActionLogFilePath: '',
         mediaItems: [],
         backupRuntime: null,
         backupFiles: []
@@ -1504,6 +1510,25 @@
         } catch (error) {
           return { ok: false, error: String(error?.message || error) };
         }
+      }
+
+      function summarizeVerification(verification) {
+        if (!verification || typeof verification !== 'object') return '';
+        const lines = [];
+        lines.push(
+          `Verificacao: ${verification.ok ? 'OK' : 'FALHA'} | alvo: ${verification.target || '-'} | tentativas: ${verification.attempts || 1}`
+        );
+        if (typeof verification.expected !== 'undefined') lines.push(`Esperado: ${String(verification.expected || '(vazio)')}`);
+        if (typeof verification.actual !== 'undefined') lines.push(`Atual: ${String(verification.actual || '(vazio)')}`);
+        if (verification.reason) lines.push(`Detalhe: ${String(verification.reason)}`);
+        if (verification.autoFixed) lines.push('Autoajuste: aplicado automaticamente pelo servidor.');
+        return lines.join('\n');
+      }
+
+      function composeActionSummary(data, fallbackText) {
+        const base = String(data?.detail || data?.message || fallbackText || '').trim() || 'Acao executada.';
+        const verificationText = summarizeVerification(data?.verification);
+        return verificationText ? `${base}\n${verificationText}` : base;
       }
 
       function showToast(text) {
@@ -1852,6 +1877,37 @@
         }).join('');
       }
 
+      function renderPanelActionLogs() {
+        const root = document.getElementById('panelActionLogOutput');
+        if (!root) return;
+
+        const items = safeArray(state.panelActionLogs);
+        const filePath = String(state.panelActionLogFilePath || '').trim();
+        if (!items.length) {
+          root.textContent = filePath
+            ? `Sem logs de acao registrados ainda.\nArquivo: ${filePath}`
+            : 'Sem logs de acao registrados ainda.';
+          return;
+        }
+
+        const lines = [];
+        if (filePath) lines.push(`Arquivo de log: ${filePath}`);
+        lines.push(`Ultimas acoes registradas: ${items.length}`);
+        lines.push('');
+
+        items.slice(0, 8).forEach((item, idx) => {
+          const verify = item?.verification;
+          const verifyTag = verify ? ` | verify ${verify.ok ? 'OK' : 'FALHA'}` : '';
+          lines.push(
+            `${idx + 1}. [${fmtTs(item?.ts)}] ${item?.method || '-'} ${item?.path || '-'} -> ${item?.statusCode || '-'} | ${item?.ok ? 'OK' : 'FALHA'}${verifyTag}`
+          );
+          if (item?.message) lines.push(`   detalhe: ${item.message}`);
+          if (verify?.reason) lines.push(`   verificacao: ${verify.reason}`);
+        });
+
+        root.textContent = lines.join('\n');
+      }
+
       function renderMultiGroupSummary() {
         const root = document.getElementById('multiGroupSummary');
         if (!root) return;
@@ -2134,6 +2190,7 @@
         hydrateForms();
         renderAuditTable();
         renderGroupControl();
+        renderPanelActionLogs();
         renderMultiGroupSummary();
         renderAclTables();
         renderPrivateRoutesTable();
@@ -2186,7 +2243,8 @@
           routingData,
           groupData,
           recentSendersData,
-          backupRuntimeData
+          backupRuntimeData,
+          panelActionLogsData
         ] = await Promise.all([
           fetchMaybe('/api/settings'),
           fetchMaybe('/api/ai-providers'),
@@ -2196,7 +2254,8 @@
           fetchMaybe('/api/response-routing/diagnostics'),
           fetchMaybe('/api/group/control?includeInvite=true&includeRequests=true'),
           fetchMaybe('/api/access-control/recent-senders?limit=120'),
-          fetchMaybe('/api/backup/runtime')
+          fetchMaybe('/api/backup/runtime'),
+          fetchMaybe('/api/panel-actions/logs?limit=40')
         ]);
 
         state.settings = settingsData.ok ? settingsData.settings || {} : {};
@@ -2211,6 +2270,8 @@
         state.recentSenders = recentSendersData.ok ? recentSendersData.items || [] : [];
         state.backupRuntime = backupRuntimeData.ok ? backupRuntimeData.runtime || null : null;
         state.backupFiles = backupRuntimeData.ok ? backupRuntimeData.backups || [] : [];
+        state.panelActionLogs = panelActionLogsData.ok ? panelActionLogsData.items || [] : [];
+        state.panelActionLogFilePath = panelActionLogsData.ok ? panelActionLogsData.filePath || '' : '';
 
         await loadMediaList();
         applyAllRenders();
@@ -2248,6 +2309,7 @@
         });
         state.settings = data.settings || state.settings;
         showToast('Configuracao salva com sucesso.');
+        return data;
       }
 
       async function updateBackupRuntime(patch, reason) {
@@ -2263,6 +2325,7 @@
         state.settings = data.settings || state.settings;
         state.backupRuntime = data.runtime || state.backupRuntime;
         showToast('Configuracao de backup salva com sucesso.');
+        return data;
       }
 
       function buildBackupActionSummary(resultData = {}) {
@@ -2337,7 +2400,9 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action, ...(payload || {}) })
         });
-        setText('groupActionOutput', data.detail || 'Acao executada com sucesso.');
+        setText('groupActionOutput', composeActionSummary(data, 'Acao executada com sucesso.'));
+        renderPanelActionLogs();
+        return data;
       }
 
       async function applyPermissionForNumber(number, desiredFlags) {
@@ -2383,15 +2448,21 @@
         ensure(desired.private, privateSet.has(normalized), '/api/response-routing/private', `/api/response-routing/private/${normalized}`);
 
         for (const call of calls) {
-          await fetchJson(call.url, {
+          const data = await fetchJson(call.url, {
             method: call.method,
             headers: { 'Content-Type': 'application/json' },
             body: call.body ? JSON.stringify(call.body) : undefined
           });
+          call.response = data;
         }
 
         if (!calls.length) showToast('Nenhuma alteracao necessaria para esse numero.');
         else showToast(`Permissoes aplicadas para ${normalized}.`);
+        return {
+          normalized,
+          callsExecuted: calls.length,
+          lastData: calls.length ? calls[calls.length - 1].response || null : null
+        };
       }
 
       function bindCopyButtons() {
@@ -2576,6 +2647,14 @@
       }
 
       function bindGroupButtons() {
+        document.getElementById('btnReloadPanelActionLogs').addEventListener('click', async () => {
+          const data = await fetchMaybe('/api/panel-actions/logs?limit=40');
+          state.panelActionLogs = data.ok ? data.items || [] : [];
+          state.panelActionLogFilePath = data.ok ? data.filePath || '' : '';
+          renderPanelActionLogs();
+          showToast('Log do painel atualizado.');
+        });
+
         document.getElementById('btnSaveGroupSubject').addEventListener('click', async () => {
           await runGroupAction('set_subject', { subject: document.getElementById('groupSubject').value.trim() });
           await loadAll();
@@ -2627,9 +2706,11 @@
       }
 
       function bindPermissionButtons() {
-        const setPermOutput = (id, message) => {
-          setText(id, message);
-          setText('multiGroupActionOutput', message);
+        const setPermOutput = (id, message, data = null) => {
+          const text = composeActionSummary(data, message);
+          setText(id, text);
+          setText('multiGroupActionOutput', text);
+          renderPanelActionLogs();
         };
 
         document.getElementById('btnApplyPermNumber').addEventListener('click', async () => {
@@ -2641,8 +2722,8 @@
             private: document.getElementById('permPrivate').checked
           };
 
-          await applyPermissionForNumber(number, desired);
-          setPermOutput('aclOutput', `Permissoes aplicadas para ${normalizePhone(number)}.`);
+          const result = await applyPermissionForNumber(number, desired);
+          setPermOutput('aclOutput', `Permissoes aplicadas para ${normalizePhone(number)}.`, result?.lastData || null);
           await loadAll();
         });
 
@@ -2666,12 +2747,12 @@
             showToast('Escolha somente um modo de resposta.');
             return;
           }
-          await updateSettings(
+          const data = await updateSettings(
             { requireMention: mention },
             mention ? 'menu_html_modo_mencao_on' : 'menu_html_modo_mencao_off'
           );
           await loadAll();
-          setPermOutput('modeFlagsOutput', mention ? 'Modo salvo: responder se mencionar.' : 'Modo salvo: responder sem mencionar.');
+          setPermOutput('modeFlagsOutput', mention ? 'Modo salvo: responder se mencionar.' : 'Modo salvo: responder sem mencionar.', data);
           showToast('Modo de resposta atualizado.');
         });
 
@@ -2693,12 +2774,12 @@
             showToast('Informe um grupo para adicionar na rota.');
             return;
           }
-          await fetchJson('/api/response-routing/groups', {
+          const data = await fetchJson('/api/response-routing/groups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ groupId })
           });
-          setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`);
+          setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`, data);
           showToast('Grupo adicionado ao mapa de resposta.');
           await loadAll();
         });
@@ -2709,10 +2790,10 @@
             showToast('Informe um grupo para remover da rota.');
             return;
           }
-          await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+          const data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
             method: 'DELETE'
           });
-          setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`);
+          setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`, data);
           showToast('Grupo removido do mapa de resposta.');
           await loadAll();
         });
@@ -2726,15 +2807,16 @@
             return;
           }
           let removed = 0;
+          let lastData = null;
           for (const groupId of selected) {
             try {
-              await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
+              lastData = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
               removed += 1;
             } catch {
               // segue removendo os demais
             }
           }
-          setPermOutput('routeGroupsOutput', `Remocao em lote concluida. Grupos removidos: ${removed}.`);
+          setPermOutput('routeGroupsOutput', `Remocao em lote concluida. Grupos removidos: ${removed}.`, lastData);
           showToast('Remocao em lote finalizada.');
           await loadAll();
         });
@@ -2751,12 +2833,12 @@
             showToast('Informe um numero valido para liberar privado.');
             return;
           }
-          await fetchJson('/api/response-routing/private', {
+          const data = await fetchJson('/api/response-routing/private', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ number })
           });
-          setPermOutput('privateRoutesOutput', `Privado liberado para ${number}.`);
+          setPermOutput('privateRoutesOutput', `Privado liberado para ${number}.`, data);
           showToast(`Privado liberado para ${number}.`);
           await loadAll();
         });
@@ -2767,10 +2849,10 @@
             showToast('Informe um numero valido para bloquear privado.');
             return;
           }
-          await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
+          const data = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
             method: 'DELETE'
           });
-          setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`);
+          setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`, data);
           showToast(`Privado bloqueado para ${number}.`);
           await loadAll();
         });
@@ -2784,15 +2866,16 @@
             return;
           }
           let removed = 0;
+          let lastData = null;
           for (const number of selected) {
             try {
-              await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, { method: 'DELETE' });
+              lastData = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, { method: 'DELETE' });
               removed += 1;
             } catch {
               // segue removendo os demais
             }
           }
-          setPermOutput('privateRoutesOutput', `Bloqueio em lote concluido. Numeros removidos: ${removed}.`);
+          setPermOutput('privateRoutesOutput', `Bloqueio em lote concluido. Numeros removidos: ${removed}.`, lastData);
           showToast('Bloqueio de privado concluido.');
           await loadAll();
         });
@@ -2820,26 +2903,27 @@
           }
 
           let count = 0;
+          let lastData = null;
           for (const number of selectedFull) {
             try {
-              await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
+              lastData = await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
               count += 1;
             } catch {}
           }
           for (const number of selectedAdmins) {
             try {
-              await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
+              lastData = await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
               count += 1;
             } catch {}
           }
           for (const number of selectedAuthorized) {
             try {
-              await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
+              lastData = await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
               count += 1;
             } catch {}
           }
 
-          setPermOutput('aclOutput', `Bloqueio em lote concluido. Acoes executadas: ${count}.`);
+          setPermOutput('aclOutput', `Bloqueio em lote concluido. Acoes executadas: ${count}.`, lastData);
           showToast('Bloqueio ACL concluido.');
           await loadAll();
         });
@@ -2894,8 +2978,8 @@
               full: Boolean(document.getElementById(`row-full-${idx}`)?.checked),
               private: Boolean(document.getElementById(`row-private-${idx}`)?.checked)
             };
-            await applyPermissionForNumber(number, desired);
-            setPermOutput('recentSendersOutput', `Permissoes aplicadas para ${number}.`);
+            const result = await applyPermissionForNumber(number, desired);
+            setPermOutput('recentSendersOutput', `Permissoes aplicadas para ${number}.`, result?.lastData || null);
             await loadAll();
             return;
           }
@@ -2903,12 +2987,12 @@
           const addGroupBtn = event.target.closest('[data-add-group]');
           if (addGroupBtn) {
             const groupId = addGroupBtn.getAttribute('data-add-group') || '';
-            await fetchJson('/api/response-routing/groups', {
+            const data = await fetchJson('/api/response-routing/groups', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ groupId })
             });
-            setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`);
+            setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`, data);
             showToast('Grupo adicionado ao mapa de resposta.');
             await loadAll();
             return;
@@ -2917,10 +3001,10 @@
           const removeGroupBtn = event.target.closest('[data-remove-group]');
           if (removeGroupBtn) {
             const groupId = removeGroupBtn.getAttribute('data-remove-group') || '';
-            await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+            const data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
               method: 'DELETE'
             });
-            setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`);
+            setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`, data);
             showToast('Grupo removido do mapa de resposta.');
             await loadAll();
             return;
@@ -2932,18 +3016,19 @@
             const checked = Boolean(routeFlagToggle.checked);
             if (!groupId) return;
             try {
+              let data;
               if (checked) {
-                await fetchJson('/api/response-routing/groups', {
+                data = await fetchJson('/api/response-routing/groups', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ groupId })
                 });
               } else {
-                await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+                data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
                   method: 'DELETE'
                 });
               }
-              setPermOutput('routeGroupsOutput', `Flag de resposta atualizada para ${groupId}.`);
+              setPermOutput('routeGroupsOutput', `Flag de resposta atualizada para ${groupId}.`, data);
               await loadAll();
             } catch (error) {
               setPermOutput('routeGroupsOutput', `Falha ao atualizar flag de grupo: ${String(error?.message || error)}.`);
@@ -2956,10 +3041,10 @@
           if (removePrivateBtn) {
             const number = normalizePhone(removePrivateBtn.getAttribute('data-remove-private') || '');
             if (!number) return;
-            await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
+            const data = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
               method: 'DELETE'
             });
-            setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`);
+            setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`, data);
             await loadAll();
             return;
           }
@@ -2968,8 +3053,8 @@
           if (removeAuthorizedBtn) {
             const number = normalizePhone(removeAuthorizedBtn.getAttribute('data-remove-authorized') || '');
             if (!number) return;
-            await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `Numero bloqueado: ${number}.`);
+            const data = await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
+            setPermOutput('aclOutput', `Numero bloqueado: ${number}.`, data);
             await loadAll();
             return;
           }
@@ -2978,8 +3063,8 @@
           if (removeAdminBtn) {
             const number = normalizePhone(removeAdminBtn.getAttribute('data-remove-admin') || '');
             if (!number) return;
-            await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `Admin removido: ${number}.`);
+            const data = await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
+            setPermOutput('aclOutput', `Admin removido: ${number}.`, data);
             await loadAll();
             return;
           }
@@ -2988,8 +3073,8 @@
           if (removeFullBtn) {
             const number = normalizePhone(removeFullBtn.getAttribute('data-remove-full') || '');
             if (!number) return;
-            await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `FULL removido: ${number}.`);
+            const data = await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
+            setPermOutput('aclOutput', `FULL removido: ${number}.`, data);
             await loadAll();
           }
         });
