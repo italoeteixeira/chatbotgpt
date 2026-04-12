@@ -128,6 +128,12 @@ try {
     combinedOutput += result.stdout + result.stderr;
   }
 
+  phase = 'workflow de backup';
+  {
+    const result = runNodeCommand([join(process.cwd(), 'scripts', 'validate-backup-workflow.js')]);
+    combinedOutput += result.stdout + result.stderr;
+  }
+
   emitStdout(`Validacao de sintaxe concluida: ${files.length} arquivo(s) JavaScript verificado(s).`);
 
   // ─── Suíte de testes funcionais ────────────────────────────────────────────

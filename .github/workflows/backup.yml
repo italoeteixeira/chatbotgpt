@@ -8,7 +8,6 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    if: ${{ secrets.BACKUP_TOKEN != '' && secrets.BACKUP_REPO != '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,7 +19,21 @@ jobs:
           git config user.name "backup-bot"
           git config user.email "backup-bot@users.noreply.github.com"
 
+      - name: Check backup configuration
+        id: backup_config
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+        run: |
+          if [ -n "$BACKUP_TOKEN" ] && [ -n "$BACKUP_REPO" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping mirror because BACKUP_TOKEN or BACKUP_REPO is not configured."
+          fi
+
       - name: Mirror to backup repo
+        if: steps.backup_config.outputs.enabled == 'true'
         env:
           BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
           BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
@@ -28,4 +41,3 @@ jobs:
           git remote remove backup 2>/dev/null || true
           git remote add backup "https://x-access-token:${BACKUP_TOKEN}@github.com/${BACKUP_REPO}.git"
           git push --prune backup "+refs/heads/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
-
