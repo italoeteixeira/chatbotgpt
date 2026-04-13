@@ -808,17 +808,17 @@ O script envia arquivos locais, recebe alteracoes remotas e faz merge bidirecion
 - Run ID: `mnwjgaza-95ysnu`
 - Trigger: `scheduler`
 - Inicio: 12/04/2026, 22:53:14 (America/Sao_Paulo)
-- Fim: 12/04/2026, 22:53:28 (America/Sao_Paulo)
-- Status: 🟡 **VALIDADO_LOCAL**
+- Fim: 12/04/2026, 22:53:30 (America/Sao_Paulo)
+- Status: ✅ **PUBLICADO_GITHUB**
 - Validacao (`npm run check`): **OK**
 - Suite funcional (`node scripts/test-suite.js`): **OK**
 - Backup `data/`: `backup-2026-04-13T01-53-26.tar.gz`
 - Bundle git: `git-bundle-2026-04-13T01-53-27.bundle`
-- Commit principal: `sem alteracoes pendentes`
+- Commit principal: `6e4f301`
 - Commit README dedicado: veja `git log` (quando houver mudanca de status final).
-- Destino push: `-`
+- Destino push: `https://github.com/italoeteixeira/chatbotgpt.git`
 - Branches: `main, homologacao`
-- Push: **PENDENTE**
+- Push: **OK**
 - Rollback automatico: **nao**
-- Observacao: Validacao e backup concluidos localmente. Push em andamento.
+- Observacao: Backup validado publicado no GitHub (main, homologacao).
 <!-- BACKUP_STATUS:END -->
