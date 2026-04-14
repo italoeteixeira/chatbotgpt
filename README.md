@@ -805,15 +805,15 @@ O script envia arquivos locais, recebe alteracoes remotas e faz merge bidirecion
 
 <!-- BACKUP_STATUS:START -->
 > Bloco atualizado automaticamente pelo plano de backup validado.
-- Run ID: `mnxvoppg-fk09go`
+- Run ID: `mnxvp2q6-zi7nz2`
 - Trigger: `scheduler`
-- Inicio: 13/04/2026, 21:23:28 (America/Sao_Paulo)
-- Fim: 13/04/2026, 21:23:32 (America/Sao_Paulo)
+- Inicio: 13/04/2026, 21:23:45 (America/Sao_Paulo)
+- Fim: 13/04/2026, 21:23:50 (America/Sao_Paulo)
 - Status: 🟡 **VALIDADO_LOCAL**
 - Validacao (`npm run check`): **OK**
 - Suite funcional (`node scripts/test-suite.js`): **OK**
-- Backup `data/`: `backup-2026-04-14T00-23-31.tar.gz`
-- Bundle git: `git-bundle-2026-04-14T00-23-32.bundle`
+- Backup `data/`: `backup-2026-04-14T00-23-49.tar.gz`
+- Bundle git: `git-bundle-2026-04-14T00-23-50.bundle`
 - Commit principal: `sem alteracoes pendentes`
 - Commit README dedicado: veja `git log` (quando houver mudanca de status final).
 - Destino push: `-`
