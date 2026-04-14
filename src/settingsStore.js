@@ -56,12 +56,6 @@ function normalizeAiProvider(value, fallback) {
   return fallback || 'codex';
 }
 
-function normalizeBackupSchedulerMode(value, fallback) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (['validated_github', 'data_only'].includes(normalized)) return normalized;
-  return fallback || 'validated_github';
-}
-
 function defaultSettings() {
   return {
     systemPrompt: config.systemPrompt,
@@ -84,10 +78,8 @@ function defaultSettings() {
     copilotReasoningEffort: config.copilotReasoningEffort,
     copilotFullReasoningEffort: 'high',
     copilotTimeoutMs: config.copilotTimeoutMs,
-    copilotFullTimeoutMs: config.copilotFullTimeoutMs,
     copilotFallbackModel: config.copilotFallbackModel,
     copilotFallbackTimeoutMs: config.copilotFallbackTimeoutMs,
-    copilotFallbackOnTimeout: config.copilotFallbackOnTimeout,
     copilotFullModel: config.copilotFullModel,
     enableTerminalExec: config.enableTerminalExec,
     terminalAllowlist: [...config.terminalAllowlist],
@@ -97,14 +89,6 @@ function defaultSettings() {
     mediaRetentionDays: config.mediaRetentionDays,
     mediaAllowedMimePrefixes: [...config.mediaAllowedMimePrefixes],
     fullAutoDevTimeoutMs: config.fullAutoDevTimeoutMs || 0,
-    githubBackupEnabled: config.githubBackupEnabled,
-    githubBackupRepo: config.githubBackupRepo,
-    githubBackupBranches: [...config.githubBackupBranches],
-    githubBackupUpdateReadme: config.githubBackupUpdateReadme,
-    githubBackupRunTestSuite: config.githubBackupRunTestSuite,
-    githubBackupAutoRollback: config.githubBackupAutoRollback,
-    backupSchedulerMode: config.backupSchedulerMode,
-    backupSchedulerIntervalHours: config.backupSchedulerIntervalHours,
     relaySenderName: '',
     silentMode: false,
     updatedAt: new Date().toISOString()
@@ -136,10 +120,8 @@ function sanitizeSettings(input) {
     copilotReasoningEffort: normalizeReasoningEffort(value.copilotReasoningEffort, base.copilotReasoningEffort),
     copilotFullReasoningEffort: normalizeReasoningEffort(value.copilotFullReasoningEffort, base.copilotFullReasoningEffort),
     copilotTimeoutMs: clampInt(value.copilotTimeoutMs, base.copilotTimeoutMs, 4000, 3600000),
-    copilotFullTimeoutMs: clampInt(value.copilotFullTimeoutMs, base.copilotFullTimeoutMs, 0, 3600000),
     copilotFallbackModel: clampText(value.copilotFallbackModel ?? base.copilotFallbackModel, 120),
     copilotFallbackTimeoutMs: clampInt(value.copilotFallbackTimeoutMs, base.copilotFallbackTimeoutMs, 4000, 3600000),
-    copilotFallbackOnTimeout: toBoolean(value.copilotFallbackOnTimeout, base.copilotFallbackOnTimeout),
     copilotFullModel: clampText(value.copilotFullModel ?? base.copilotFullModel, 120),
     enableTerminalExec: toBoolean(value.enableTerminalExec, base.enableTerminalExec),
     terminalAllowlist: normalizeList(value.terminalAllowlist, base.terminalAllowlist).slice(0, 500),
@@ -149,14 +131,6 @@ function sanitizeSettings(input) {
     mediaRetentionDays: clampInt(value.mediaRetentionDays, base.mediaRetentionDays, 1, 3650),
     mediaAllowedMimePrefixes: normalizeList(value.mediaAllowedMimePrefixes, base.mediaAllowedMimePrefixes).slice(0, 64),
     fullAutoDevTimeoutMs: clampInt(value.fullAutoDevTimeoutMs, base.fullAutoDevTimeoutMs, 0, 1800000),
-    githubBackupEnabled: toBoolean(value.githubBackupEnabled, base.githubBackupEnabled),
-    githubBackupRepo: clampText(value.githubBackupRepo ?? base.githubBackupRepo, 180) || base.githubBackupRepo,
-    githubBackupBranches: normalizeList(value.githubBackupBranches, base.githubBackupBranches).slice(0, 10),
-    githubBackupUpdateReadme: toBoolean(value.githubBackupUpdateReadme, base.githubBackupUpdateReadme),
-    githubBackupRunTestSuite: toBoolean(value.githubBackupRunTestSuite, base.githubBackupRunTestSuite),
-    githubBackupAutoRollback: toBoolean(value.githubBackupAutoRollback, base.githubBackupAutoRollback),
-    backupSchedulerMode: normalizeBackupSchedulerMode(value.backupSchedulerMode, base.backupSchedulerMode),
-    backupSchedulerIntervalHours: clampInt(value.backupSchedulerIntervalHours, base.backupSchedulerIntervalHours, 1, 168),
     relaySenderName: clampText(value.relaySenderName ?? base.relaySenderName, 120),
     silentMode: toBoolean(value.silentMode, base.silentMode),
     updatedAt: new Date().toISOString()

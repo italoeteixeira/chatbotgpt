@@ -190,7 +190,7 @@ Paginas disponiveis:
 |---|---|---|
 | Dashboard | `/` | Status, IA, configuracao, midia, moderacao, logs |
 | Processos | `/processos.html` | Jobs automatizados e tarefas em andamento |
-| Multi-Grupo | `/bot-config-menu.html` | Mapa de grupos, roteamento, permissoes |
+| Multi-Grupo | `/multi-grupos.html` | Mapa de grupos, roteamento, permissoes |
 | Config Bot | `/bot-config-menu.html` | Menu didatico de configuracao (espelho do comando no WhatsApp) |
 | Usuarios | `/usuarios.html` | Gerenciamento de usuarios do painel |
 | Login | `/login.html` | Autenticacao do painel |
@@ -440,7 +440,7 @@ Via painel/API:
 
 Janela dedicada no painel:
 
-- `Multi-Grupo` (botao no topo do portal) abre `/bot-config-menu.html` para gerenciar:
+- `Multi-Grupo` (botao no topo do portal) abre `/multi-grupos.html` para gerenciar:
   - mapa de grupos com flags de resposta (mencao, roteamento, bot admin, pode responder ou nao)
   - flags do modo global de resposta (`se mencionar` ou `sem mencionar`)
   - grupos extras de resposta
@@ -805,20 +805,20 @@ O script envia arquivos locais, recebe alteracoes remotas e faz merge bidirecion
 
 <!-- BACKUP_STATUS:START -->
 > Bloco atualizado automaticamente pelo plano de backup validado.
-- Run ID: `mnwjgaza-95ysnu`
+- Run ID: `mnxvoppg-fk09go`
 - Trigger: `scheduler`
-- Inicio: 12/04/2026, 22:53:14 (America/Sao_Paulo)
-- Fim: 12/04/2026, 22:53:30 (America/Sao_Paulo)
-- Status: ✅ **PUBLICADO_GITHUB**
+- Inicio: 13/04/2026, 21:23:28 (America/Sao_Paulo)
+- Fim: 13/04/2026, 21:23:32 (America/Sao_Paulo)
+- Status: 🟡 **VALIDADO_LOCAL**
 - Validacao (`npm run check`): **OK**
 - Suite funcional (`node scripts/test-suite.js`): **OK**
-- Backup `data/`: `backup-2026-04-13T01-53-26.tar.gz`
-- Bundle git: `git-bundle-2026-04-13T01-53-27.bundle`
-- Commit principal: `6e4f301`
+- Backup `data/`: `backup-2026-04-14T00-23-31.tar.gz`
+- Bundle git: `git-bundle-2026-04-14T00-23-32.bundle`
+- Commit principal: `sem alteracoes pendentes`
 - Commit README dedicado: veja `git log` (quando houver mudanca de status final).
-- Destino push: `https://github.com/italoeteixeira/chatbotgpt.git`
+- Destino push: `-`
 - Branches: `main, homologacao`
-- Push: **OK**
+- Push: **PENDENTE**
 - Rollback automatico: **nao**
-- Observacao: Backup validado publicado no GitHub (main, homologacao).
+- Observacao: Validacao e backup concluidos localmente. Push em andamento.
 <!-- BACKUP_STATUS:END -->

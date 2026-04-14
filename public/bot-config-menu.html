@@ -714,6 +714,7 @@
     <nav class="nav-bar">
       <a href="/">Dashboard</a>
       <a href="/processos.html">Processos</a>
+      <a href="/multi-grupos.html">Multi-Grupo</a>
       <a href="/bot-config-menu.html" class="active">Config Bot</a>
       <a href="/usuarios.html">Usuarios</a>
       <span class="spacer"></span>
@@ -744,7 +745,6 @@
               <button data-screen="audit">7 Auditoria</button>
               <button data-screen="status">8 Status/Grupo</button>
               <button data-screen="perm">9 Permissoes</button>
-              <button data-screen="github">10 GitHub</button>
             </div>
 
             <div class="sim-body">
@@ -752,7 +752,7 @@
                 <div class="bubble user mono">@ configurar bot</div>
                 <div class="bubble bot">
                   <div><strong>Menu de Configuracao do Bot</strong></div>
-                  <div class="label-muted">Escolha uma secao aqui nas abas ou pelo comando: <code class="mono">configurar bot menu 1..10</code></div>
+                  <div class="label-muted">Escolha uma secao aqui nas abas ou pelo comando: <code class="mono">configurar bot menu 1..9</code></div>
                   <div class="menu-list" id="menuListMain"></div>
                   <div class="cta-row">
                     <button class="cmd-btn" data-copy="@ configurar bot">copiar comando menu</button>
@@ -1093,10 +1093,6 @@
                     </div>
 
                     <div class="status-box" id="groupActionOutput">Nenhuma acao executada nesta secao.</div>
-                    <div class="cta-row">
-                      <button class="cmd-btn secondary" id="btnReloadPanelActionLogs" type="button">Atualizar log do painel</button>
-                    </div>
-                    <div class="status-box" id="panelActionLogOutput">Log interativo aguardando carregamento.</div>
 
                     <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
                       <table>
@@ -1123,37 +1119,15 @@
 
                   <div class="section-grid" style="margin-top: 0.45rem;">
                     <div class="status-box" id="multiGroupSummary">Carregando resumo multi-grupo...</div>
-                    <div class="status-box" id="multiGroupActionOutput">Nenhuma acao executada nesta secao.</div>
-
-                    <div class="cta-row">
-                      <button class="cmd-btn secondary" id="btnReloadMultiAll" type="button">Atualizar tudo</button>
-                    </div>
-
-                    <div class="split-2">
-                      <label class="toggle"><input id="modeMentionFlag" type="checkbox" /><span>Responder se mencionar</span></label>
-                      <label class="toggle"><input id="modeNoMentionFlag" type="checkbox" /><span>Responder sem mencionar</span></label>
-                    </div>
-                    <div class="cta-row">
-                      <button class="cmd-btn secondary" id="btnSaveModeFlags" type="button">Salvar flags de resposta</button>
-                    </div>
-                    <div class="status-box" id="modeFlagsOutput">Modo atual aguardando carregamento.</div>
 
                     <div class="form-row">
-                      <label for="routingGroupFilter">Filtro de grupos (nome ou ID)</label>
-                      <input id="routingGroupFilter" type="text" placeholder="filtrar grupos..." />
-                    </div>
-
-                    <div class="form-row">
-                      <label for="routeGroupId">Adicionar grupo manualmente (JID)</label>
+                      <label for="routeGroupId">Adicionar/remover grupo manualmente (JID)</label>
                       <input id="routeGroupId" type="text" placeholder="120363400000000000@g.us" />
                     </div>
                     <div class="cta-row">
                       <button class="cmd-btn secondary" id="btnAddRouteGroup" type="button">Adicionar grupo na rota</button>
                       <button class="cmd-btn warn" id="btnRemoveRouteGroup" type="button">Remover grupo da rota</button>
-                      <button class="cmd-btn warn" id="btnRemoveSelectedRouteGroups" type="button">Remover selecionados</button>
-                      <button class="cmd-btn secondary" id="btnReloadRoutingGroups" type="button">Atualizar grupos</button>
                     </div>
-                    <div class="status-box" id="routeGroupsOutput">Mapa de resposta aguardando carregamento.</div>
 
                     <div class="form-row">
                       <label for="privateRouteNumber">Liberar/bloquear chat privado por numero</label>
@@ -1162,25 +1136,11 @@
                     <div class="cta-row">
                       <button class="cmd-btn secondary" id="btnAddPrivateRoute" type="button">Liberar privado</button>
                       <button class="cmd-btn warn" id="btnRemovePrivateRoute" type="button">Bloquear privado</button>
-                      <button class="cmd-btn warn" id="btnRemoveSelectedPrivateRoutes" type="button">Bloquear selecionados</button>
-                      <button class="cmd-btn secondary" id="btnReloadPrivateRoutes" type="button">Atualizar privados</button>
                     </div>
-                    <div class="status-box" id="privateRoutesOutput">Privado aguardando carregamento.</div>
 
-                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th><input id="selectAllPrivateRoutes" type="checkbox" /></th>
-                            <th>Numero</th>
-                            <th>Origem</th>
-                            <th>Acoes</th>
-                          </tr>
-                        </thead>
-                        <tbody id="privateRoutesBody">
-                          <tr><td colspan="4" class="label-muted">Carregando privados...</td></tr>
-                        </tbody>
-                      </table>
+                    <div class="cta-row">
+                      <button class="cmd-btn secondary" id="btnSetMentionRequiredOn" type="button">Responder so com @</button>
+                      <button class="cmd-btn secondary" id="btnSetMentionRequiredOff" type="button">Responder sem @</button>
                     </div>
 
                     <div class="form-row">
@@ -1200,54 +1160,6 @@
                     <div class="cta-row">
                       <button class="cmd-btn" id="btnApplyPermNumber" type="button">Aplicar no numero</button>
                       <button class="cmd-btn secondary" id="btnReloadAcl" type="button">Atualizar permissoes</button>
-                      <button class="cmd-btn warn" id="btnBulkRemoveAcl" type="button">Bloquear selecionados ACL</button>
-                    </div>
-                    <div class="status-box" id="aclOutput">ACL aguardando carregamento.</div>
-
-                    <div class="split-2">
-                      <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th><input id="selectAllAclAuthorized" type="checkbox" /></th>
-                              <th>Autorizados efetivos</th>
-                              <th>Acoes</th>
-                            </tr>
-                          </thead>
-                          <tbody id="aclAuthorizedBody">
-                            <tr><td colspan="3" class="label-muted">Carregando autorizados...</td></tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th><input id="selectAllAclAdmins" type="checkbox" /></th>
-                              <th>Admins efetivos</th>
-                              <th>Acoes</th>
-                            </tr>
-                          </thead>
-                          <tbody id="aclAdminsBody">
-                            <tr><td colspan="3" class="label-muted">Carregando admins...</td></tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th><input id="selectAllAclFull" type="checkbox" /></th>
-                            <th>FULL efetivos</th>
-                            <th>Acoes</th>
-                          </tr>
-                        </thead>
-                        <tbody id="aclFullBody">
-                          <tr><td colspan="3" class="label-muted">Carregando FULL...</td></tr>
-                        </tbody>
-                      </table>
                     </div>
 
                     <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
@@ -1255,7 +1167,6 @@
                         <thead>
                           <tr>
                             <th>Numero</th>
-                            <th>Ultima msg</th>
                             <th>Interagir</th>
                             <th>Admin</th>
                             <th>FULL</th>
@@ -1264,20 +1175,18 @@
                           </tr>
                         </thead>
                         <tbody id="recentSendersBody">
-                          <tr><td colspan="7" class="label-muted">Carregando remetentes recentes...</td></tr>
+                          <tr><td colspan="6" class="label-muted">Carregando remetentes recentes...</td></tr>
                         </tbody>
                       </table>
                     </div>
-                    <div class="status-box" id="recentSendersOutput">Recentes aguardando carregamento.</div>
 
                     <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
                       <table>
                         <thead>
                           <tr>
-                            <th><input id="selectAllRouteGroups" type="checkbox" /></th>
                             <th>Grupo</th>
                             <th>Principal</th>
-                            <th>Flag rota</th>
+                            <th>Rota</th>
                             <th>Req @</th>
                             <th>Mencao</th>
                             <th>Sem mencao</th>
@@ -1287,95 +1196,7 @@
                           </tr>
                         </thead>
                         <tbody id="routingGroupsBody">
-                          <tr><td colspan="10" class="label-muted">Carregando diagnostico de grupos...</td></tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="screen" data-screen="github" style="display: none;">
-                <div class="bubble user mono">configurar bot menu 10</div>
-                <div class="bubble bot">
-                  <strong>Secao 10 - GitHub e backup validado</strong>
-
-                  <div class="section-grid" style="margin-top: 0.45rem;">
-                    <div class="status-box" id="backupRuntimeSummary">Carregando status de backup...</div>
-
-                    <label class="toggle">
-                      <input id="githubBackupEnabled" type="checkbox" />
-                      <span>Ativar plano de backup validado para GitHub</span>
-                    </label>
-
-                    <div class="form-row">
-                      <label for="githubBackupRepo">Repositorio de backup no GitHub (owner/repo)</label>
-                      <input id="githubBackupRepo" type="text" placeholder="italoeteixeira/chatbotgpt" />
-                    </div>
-
-                    <div class="form-row">
-                      <label for="githubBackupBranches">Branches para publicar (comma ou nova linha)</label>
-                      <textarea id="githubBackupBranches" placeholder="main, homologacao"></textarea>
-                    </div>
-
-                    <div class="split-2">
-                      <label class="toggle"><input id="githubBackupUpdateReadme" type="checkbox" /><span>Atualizar README a cada backup</span></label>
-                      <label class="toggle"><input id="githubBackupRunTestSuite" type="checkbox" /><span>Rodar suite funcional antes de publicar</span></label>
-                    </div>
-                    <label class="toggle">
-                      <input id="githubBackupAutoRollback" type="checkbox" />
-                      <span>Aplicar rollback automatico em falhas de push</span>
-                    </label>
-
-                    <div class="row-inline">
-                      <div class="form-row">
-                        <label for="backupSchedulerMode">Modo do agendador automatico</label>
-                        <select id="backupSchedulerMode">
-                          <option value="validated_github">validated_github (valida + publica)</option>
-                          <option value="data_only">data_only (backup local)</option>
-                        </select>
-                      </div>
-                      <div class="form-row">
-                        <label for="backupSchedulerIntervalHours">Intervalo do agendador (horas)</label>
-                        <input id="backupSchedulerIntervalHours" type="number" min="1" max="168" step="1" />
-                      </div>
-                    </div>
-
-                    <div class="cta-row">
-                      <button class="cmd-btn" id="btnSaveBackupRuntime" type="button">Salvar secao GitHub</button>
-                      <button class="cmd-btn secondary" id="btnRunDataBackup" type="button">Executar backup local</button>
-                      <button class="cmd-btn secondary" id="btnRunValidatedBackup" type="button">Executar backup validado</button>
-                      <button class="cmd-btn secondary" id="btnReloadBackupRuntime" type="button">Atualizar status</button>
-                    </div>
-
-                    <div class="status-box" id="backupActionOutput">Nenhuma acao de backup executada nesta secao.</div>
-
-                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>#</th>
-                            <th>Arquivo de backup</th>
-                          </tr>
-                        </thead>
-                        <tbody id="backupFilesBody">
-                          <tr><td colspan="2" class="label-muted">Carregando lista de backups...</td></tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div class="label-muted">Mapeamento util de configuracoes do projeto (baseado no backend atual).</div>
-                    <div style="overflow: auto; border: 1px solid #dbe2ea; border-radius: 8px;">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Categoria</th>
-                            <th>Chave</th>
-                            <th>Valor atual</th>
-                          </tr>
-                        </thead>
-                        <tbody id="settingsMapBody">
-                          <tr><td colspan="3" class="label-muted">Carregando mapa de configuracoes...</td></tr>
+                          <tr><td colspan="9" class="label-muted">Carregando diagnostico de grupos...</td></tr>
                         </tbody>
                       </table>
                     </div>
@@ -1400,19 +1221,8 @@
         '6. Modo silencioso',
         '7. Auditoria e rollback',
         '8. Controle do grupo principal',
-        '9. Permissoes e multi-grupo',
-        '10. GitHub e backup validado'
+        '9. Permissoes e multi-grupo'
       ];
-
-      const USEFUL_SETTINGS_MAP = Object.freeze([
-        { category: 'IA', keys: ['aiProvider', 'copilotModel', 'copilotFullModel', 'copilotFallbackModel', 'codexModel', 'codexFallbackModel'] },
-        { category: 'Tempos IA', keys: ['copilotTimeoutMs', 'copilotFullTimeoutMs', 'codexTimeoutMs', 'fullAutoDevTimeoutMs'] },
-        { category: 'Resposta', keys: ['requireMention', 'showThinkingMessage', 'thinkingMessageText', 'maxInputChars', 'maxOutputChars', 'fallbackMessage'] },
-        { category: 'Execucao local', keys: ['enableTerminalExec', 'terminalAllowlist', 'silentMode'] },
-        { category: 'Midia', keys: ['mediaIngestEnabled', 'mediaRootDir', 'mediaMaxBytes', 'mediaRetentionDays', 'mediaAllowedMimePrefixes'] },
-        { category: 'Relay', keys: ['relaySenderName'] },
-        { category: 'Backup GitHub', keys: ['githubBackupEnabled', 'githubBackupRepo', 'githubBackupBranches', 'githubBackupUpdateReadme', 'githubBackupRunTestSuite', 'githubBackupAutoRollback', 'backupSchedulerMode', 'backupSchedulerIntervalHours'] }
-      ]);
 
       const state = {
         settings: {},
@@ -1422,15 +1232,10 @@
         aiProbeLoading: false,
         audit: [],
         accessControl: null,
-        routing: null,
         routingDiagnostics: null,
         groupControl: null,
         recentSenders: [],
-        panelActionLogs: [],
-        panelActionLogFilePath: '',
-        mediaItems: [],
-        backupRuntime: null,
-        backupFiles: []
+        mediaItems: []
       };
 
       function esc(value) {
@@ -1479,17 +1284,6 @@
         return Array.isArray(value) ? value : [];
       }
 
-      function formatSettingValue(value) {
-        if (Array.isArray(value)) {
-          const normalized = value.map((item) => String(item || '').trim()).filter(Boolean);
-          return normalized.length ? normalized.join(', ') : '(vazio)';
-        }
-        if (typeof value === 'boolean') return value ? 'sim' : 'nao';
-        if (value === null || value === undefined) return '(vazio)';
-        const text = String(value).trim();
-        return text ? text : '(vazio)';
-      }
-
       async function fetchJson(url, options) {
         const response = await fetch(url, options);
         let data = {};
@@ -1510,25 +1304,6 @@
         } catch (error) {
           return { ok: false, error: String(error?.message || error) };
         }
-      }
-
-      function summarizeVerification(verification) {
-        if (!verification || typeof verification !== 'object') return '';
-        const lines = [];
-        lines.push(
-          `Verificacao: ${verification.ok ? 'OK' : 'FALHA'} | alvo: ${verification.target || '-'} | tentativas: ${verification.attempts || 1}`
-        );
-        if (typeof verification.expected !== 'undefined') lines.push(`Esperado: ${String(verification.expected || '(vazio)')}`);
-        if (typeof verification.actual !== 'undefined') lines.push(`Atual: ${String(verification.actual || '(vazio)')}`);
-        if (verification.reason) lines.push(`Detalhe: ${String(verification.reason)}`);
-        if (verification.autoFixed) lines.push('Autoajuste: aplicado automaticamente pelo servidor.');
-        return lines.join('\n');
-      }
-
-      function composeActionSummary(data, fallbackText) {
-        const base = String(data?.detail || data?.message || fallbackText || '').trim() || 'Acao executada.';
-        const verificationText = summarizeVerification(data?.verification);
-        return verificationText ? `${base}\n${verificationText}` : base;
       }
 
       function showToast(text) {
@@ -1796,15 +1571,6 @@
         setValue('relaySenderName', s.relaySenderName || '');
         setValue('fullAutoDevTimeoutMs', s.fullAutoDevTimeoutMs || 0);
         setChecked('silentMode', s.silentMode);
-
-        setChecked('githubBackupEnabled', s.githubBackupEnabled);
-        setValue('githubBackupRepo', s.githubBackupRepo || '');
-        setValue('githubBackupBranches', safeArray(s.githubBackupBranches).join(', '));
-        setChecked('githubBackupUpdateReadme', s.githubBackupUpdateReadme);
-        setChecked('githubBackupRunTestSuite', s.githubBackupRunTestSuite);
-        setChecked('githubBackupAutoRollback', s.githubBackupAutoRollback);
-        setValue('backupSchedulerMode', s.backupSchedulerMode || 'validated_github');
-        setValue('backupSchedulerIntervalHours', s.backupSchedulerIntervalHours || 24);
         renderAiPanels();
       }
 
@@ -1877,65 +1643,24 @@
         }).join('');
       }
 
-      function renderPanelActionLogs() {
-        const root = document.getElementById('panelActionLogOutput');
-        if (!root) return;
-
-        const items = safeArray(state.panelActionLogs);
-        const filePath = String(state.panelActionLogFilePath || '').trim();
-        if (!items.length) {
-          root.textContent = filePath
-            ? `Sem logs de acao registrados ainda.\nArquivo: ${filePath}`
-            : 'Sem logs de acao registrados ainda.';
-          return;
-        }
-
-        const lines = [];
-        if (filePath) lines.push(`Arquivo de log: ${filePath}`);
-        lines.push(`Ultimas acoes registradas: ${items.length}`);
-        lines.push('');
-
-        items.slice(0, 8).forEach((item, idx) => {
-          const verify = item?.verification;
-          const verifyTag = verify ? ` | verify ${verify.ok ? 'OK' : 'FALHA'}` : '';
-          lines.push(
-            `${idx + 1}. [${fmtTs(item?.ts)}] ${item?.method || '-'} ${item?.path || '-'} -> ${item?.statusCode || '-'} | ${item?.ok ? 'OK' : 'FALHA'}${verifyTag}`
-          );
-          if (item?.message) lines.push(`   detalhe: ${item.message}`);
-          if (verify?.reason) lines.push(`   verificacao: ${verify.reason}`);
-        });
-
-        root.textContent = lines.join('\n');
-      }
-
       function renderMultiGroupSummary() {
         const root = document.getElementById('multiGroupSummary');
         if (!root) return;
         const ac = state.accessControl || {};
         const diag = state.routingDiagnostics || {};
         const counts = diag.counts || {};
-        const routing = state.routing || diag.routing || {};
-        const requireMention = Boolean(diag.requireMention);
-
-        const mentionFlag = document.getElementById('modeMentionFlag');
-        const noMentionFlag = document.getElementById('modeNoMentionFlag');
-        if (mentionFlag && noMentionFlag) {
-          mentionFlag.checked = requireMention;
-          noMentionFlag.checked = !requireMention;
-        }
-        setText('modeFlagsOutput', requireMention ? 'Modo atual: responder se mencionar.' : 'Modo atual: responder sem mencionar.');
+        const routing = diag.routing || {};
 
         root.textContent = [
           `Status WhatsApp: ${diag.runtimeStatus || '-'}`,
-          `Modo de mencao: ${requireMention ? 'somente com @' : 'com ou sem @'}`,
+          `Modo de mencao: ${diag.requireMention ? 'somente com @' : 'com ou sem @'}`,
           `Grupos conhecidos: ${counts.totalKnownGroups || 0}`,
           `Grupos na rota: ${counts.groupsInRouting || 0}`,
           `Respondendo quando mencionado: ${counts.groupsRespondingWhenMentioned || 0}`,
           `Respondendo sem mencao: ${counts.groupsRespondingWithoutMention || 0}`,
-          `Privado liberado: ${safeArray(routing.effectivePrivate || ac.effectivePrivate).length}`,
+          `Privado liberado: ${safeArray(ac.effectivePrivate).length}`,
           `Autorizados: ${safeArray(ac.effectiveAuthorized).length} | Admins: ${safeArray(ac.effectiveAdmins).length} | FULL: ${safeArray(ac.effectiveFulls).length}`,
-          `Grupos de resposta efetivos: ${safeArray(routing.effectiveResponseGroups).length}`,
-          `Ultima atualizacao ACL: ${ac.updatedAt ? fmtTs(ac.updatedAt) : '-'}`
+          `Grupos de resposta efetivos: ${safeArray(routing.effectiveResponseGroups).length}`
         ].join('\n');
       }
 
@@ -1943,26 +1668,19 @@
         const body = document.getElementById('recentSendersBody');
         const items = safeArray(state.recentSenders);
         if (!items.length) {
-          body.innerHTML = '<tr><td colspan="7" class="label-muted">Sem remetentes recentes para este grupo.</td></tr>';
+          body.innerHTML = '<tr><td colspan="6" class="label-muted">Sem remetentes recentes para este grupo.</td></tr>';
           return;
         }
 
         body.innerHTML = items.slice(0, 80).map((item, index) => {
           const number = String(item.number || '');
           const suffix = String(index);
-          const fixed = [
-            item.flags?.fixedAuthorized ? 'fixo:autorizado' : '',
-            item.flags?.fixedAdmin ? 'fixo:admin' : '',
-            item.flags?.fixedFull ? 'fixo:full' : ''
-          ].filter(Boolean).join(' | ');
           return `
             <tr>
               <td>
                 <div><code>${esc(number)}</code></div>
                 <div class="label-muted">msgs: ${item.messages || 0} | ultimo: ${esc(fmtTs(item.lastAt))}</div>
-                ${fixed ? `<div class="label-muted">${esc(fixed)}</div>` : ''}
               </td>
-              <td>${esc(item.lastPreview || '(sem preview)')}</td>
               <td><input id="row-auth-${suffix}" type="checkbox" ${item.flags?.authorized ? 'checked' : ''} /></td>
               <td><input id="row-admin-${suffix}" type="checkbox" ${item.flags?.admin ? 'checked' : ''} /></td>
               <td><input id="row-full-${suffix}" type="checkbox" ${item.flags?.full ? 'checked' : ''} /></td>
@@ -1978,42 +1696,30 @@
       function renderRoutingGroups() {
         const body = document.getElementById('routingGroupsBody');
         const groups = safeArray(state.routingDiagnostics?.groups);
-        const requireMention = Boolean(state.routingDiagnostics?.requireMention);
-        const filter = String(document.getElementById('routingGroupFilter')?.value || '').trim().toLowerCase();
-        const filteredGroups = filter
-          ? groups.filter((group) => {
-            const hay = `${group.subject || ''} ${group.groupId || ''}`.toLowerCase();
-            return hay.includes(filter);
-          })
-          : groups;
+        const requireMention = Boolean(state.settings?.requireMention);
 
-        if (!filteredGroups.length) {
-          body.innerHTML = '<tr><td colspan="10" class="label-muted">Sem grupos conhecidos no diagnostico.</td></tr>';
-          const selectAll = document.getElementById('selectAllRouteGroups');
-          if (selectAll) selectAll.checked = false;
+        if (!groups.length) {
+          body.innerHTML = '<tr><td colspan="9" class="label-muted">Sem grupos conhecidos no diagnostico.</td></tr>';
           return;
         }
 
-        body.innerHTML = filteredGroups.map((group) => {
+        body.innerHTML = groups.map((group) => {
           const flags = group.flags || {};
           const groupId = String(group.groupId || '');
           const inRouting = Boolean(flags.inRouting);
           const canMention = Boolean(flags.canRespondWhenMentioned);
           const canNoMention = Boolean(flags.canRespondWithoutMention);
           const primary = Boolean(flags.isPrimary);
-          const isDynamic = Boolean(flags.isDynamic);
-          const selectable = !primary && isDynamic;
 
           return `
             <tr>
-              <td>${selectable ? `<input class="route-group-check" type="checkbox" value="${esc(groupId)}" />` : '-'}</td>
               <td>
                 <div><strong>${esc(group.subject || 'Grupo sem nome')}</strong></div>
                 <div class="label-muted mono">${esc(groupId)}</div>
                 <div class="label-muted">${esc(group.responseReason || '-')}</div>
               </td>
               <td>${primary ? '<span class="pill ok">SIM</span>' : '<span class="pill bad">NAO</span>'}</td>
-              <td><input class="route-flag-toggle" type="checkbox" data-group-id="${esc(groupId)}" ${inRouting ? 'checked' : ''} ${primary ? 'disabled' : ''} /></td>
+              <td>${inRouting ? '<span class="pill ok">ON</span>' : '<span class="pill bad">OFF</span>'}</td>
               <td>${flags.requireMention ? '<span class="pill bad">SIM</span>' : '<span class="pill ok">NAO</span>'}</td>
               <td>${canMention ? '<span class="pill ok">SIM</span>' : '<span class="pill bad">NAO</span>'}</td>
               <td>${canNoMention ? '<span class="pill ok">SIM</span>' : `<span class="pill ${requireMention ? 'bad' : 'ok'}">${requireMention ? 'REQ @' : 'NAO'}</span>`}</td>
@@ -2027,74 +1733,6 @@
             </tr>
           `;
         }).join('');
-        const selectAll = document.getElementById('selectAllRouteGroups');
-        if (selectAll) selectAll.checked = false;
-      }
-
-      function renderPrivateRoutesTable() {
-        const body = document.getElementById('privateRoutesBody');
-        const routing = state.routing || {};
-        const dynamic = new Set(safeArray(routing.dynamicPrivate));
-        const effective = safeArray(routing.effectivePrivate);
-        if (!body) return;
-
-        if (!effective.length) {
-          body.innerHTML = '<tr><td colspan="4" class="label-muted">Nenhum numero liberado no privado.</td></tr>';
-          const selectAll = document.getElementById('selectAllPrivateRoutes');
-          if (selectAll) selectAll.checked = false;
-          return;
-        }
-
-        body.innerHTML = effective.map((number) => {
-          const isDynamic = dynamic.has(number);
-          return `
-            <tr>
-              <td>${isDynamic ? `<input class="private-route-check" type="checkbox" value="${esc(number)}" />` : '-'}</td>
-              <td><code>${esc(number)}</code></td>
-              <td>${isDynamic ? 'dinamico' : 'fixo'}</td>
-              <td>${isDynamic ? `<button class="cmd-btn warn" data-remove-private="${esc(number)}" type="button">Bloquear</button>` : '<span class="label-muted">Fixo</span>'}</td>
-            </tr>
-          `;
-        }).join('');
-        const selectAll = document.getElementById('selectAllPrivateRoutes');
-        if (selectAll) selectAll.checked = false;
-      }
-
-      function renderAclTables() {
-        const ac = state.accessControl || {};
-        const dynamicAuthorized = new Set(safeArray(ac.dynamicAuthorized));
-        const dynamicAdmins = new Set(safeArray(ac.dynamicAdmins));
-        const dynamicFulls = new Set(safeArray(ac.dynamicFulls));
-
-        const renderBody = (targetId, list, dynamicSet, emptyMessage, actionAttr, actionLabel) => {
-          const body = document.getElementById(targetId);
-          if (!body) return;
-          const items = safeArray(list);
-          if (!items.length) {
-            body.innerHTML = `<tr><td colspan="3" class="label-muted">${emptyMessage}</td></tr>`;
-            return;
-          }
-          body.innerHTML = items.map((number) => {
-            const isDynamic = dynamicSet.has(number);
-            return `
-              <tr>
-                <td>${isDynamic ? `<input class="${esc(actionAttr)}-check" type="checkbox" value="${esc(number)}" />` : '-'}</td>
-                <td><code>${esc(number)}</code></td>
-                <td>${isDynamic ? `<button class="cmd-btn warn" data-${esc(actionAttr)}="${esc(number)}" type="button">${esc(actionLabel)}</button>` : '<span class="label-muted">Fixo (.env)</span>'}</td>
-              </tr>
-            `;
-          }).join('');
-        };
-
-        renderBody('aclAuthorizedBody', ac.effectiveAuthorized, dynamicAuthorized, 'Sem autorizados efetivos.', 'remove-authorized', 'Bloquear');
-        renderBody('aclAdminsBody', ac.effectiveAdmins, dynamicAdmins, 'Sem admins efetivos.', 'remove-admin', 'Remover');
-        renderBody('aclFullBody', ac.effectiveFulls, dynamicFulls, 'Sem FULL efetivos.', 'remove-full', 'Remover FULL');
-        const selectAllAuthorized = document.getElementById('selectAllAclAuthorized');
-        const selectAllAdmins = document.getElementById('selectAllAclAdmins');
-        const selectAllFull = document.getElementById('selectAllAclFull');
-        if (selectAllAuthorized) selectAllAuthorized.checked = false;
-        if (selectAllAdmins) selectAllAdmins.checked = false;
-        if (selectAllFull) selectAllFull.checked = false;
       }
 
       function renderMediaTable() {
@@ -2124,82 +1762,14 @@
         }).join('');
       }
 
-      function renderBackupRuntime() {
-        const summary = document.getElementById('backupRuntimeSummary');
-        const runtime = state.backupRuntime || {};
-        if (!summary) return;
-
-        const branches = safeArray(runtime.githubBackupBranches);
-        summary.textContent = [
-          `Plano GitHub ativo: ${runtime.githubBackupEnabled ? 'SIM' : 'NAO'}`,
-          `Repositorio: ${runtime.githubBackupRepo || '(vazio)'}`,
-          `Branches: ${branches.length ? branches.join(', ') : '(vazio)'}`,
-          `Atualiza README: ${runtime.githubBackupUpdateReadme ? 'SIM' : 'NAO'}`,
-          `Roda suite: ${runtime.githubBackupRunTestSuite ? 'SIM' : 'NAO'}`,
-          `Auto rollback: ${runtime.githubBackupAutoRollback ? 'SIM' : 'NAO'}`,
-          `Agendador: ${runtime.backupSchedulerMode || 'validated_github'} a cada ${runtime.backupSchedulerIntervalHours || 24}h`,
-          `Token GitHub configurado: ${runtime.githubTokenConfigured ? 'SIM' : 'NAO'}`
-        ].join('\n');
-      }
-
-      function renderBackupFiles() {
-        const body = document.getElementById('backupFilesBody');
-        const files = safeArray(state.backupFiles);
-        if (!body) return;
-        if (!files.length) {
-          body.innerHTML = '<tr><td colspan="2" class="label-muted">Nenhum backup encontrado em data/backups.</td></tr>';
-          return;
-        }
-
-        body.innerHTML = files
-          .slice()
-          .reverse()
-          .map((file, index) => `
-            <tr>
-              <td>${index + 1}</td>
-              <td><code>${esc(file)}</code></td>
-            </tr>
-          `)
-          .join('');
-      }
-
-      function renderUsefulSettingsMap() {
-        const body = document.getElementById('settingsMapBody');
-        if (!body) return;
-        const settings = state.settings || {};
-
-        const rows = [];
-        USEFUL_SETTINGS_MAP.forEach((group) => {
-          safeArray(group.keys).forEach((key, idx) => {
-            rows.push(`
-              <tr>
-                <td>${idx === 0 ? esc(group.category) : ''}</td>
-                <td><code>${esc(key)}</code></td>
-                <td>${esc(formatSettingValue(settings[key]))}</td>
-              </tr>
-            `);
-          });
-        });
-
-        body.innerHTML = rows.length
-          ? rows.join('')
-          : '<tr><td colspan="3" class="label-muted">Nenhuma configuracao mapeada.</td></tr>';
-      }
-
       function applyAllRenders() {
         hydrateForms();
         renderAuditTable();
         renderGroupControl();
-        renderPanelActionLogs();
         renderMultiGroupSummary();
-        renderAclTables();
-        renderPrivateRoutesTable();
         renderRecentSenders();
         renderRoutingGroups();
         renderMediaTable();
-        renderBackupRuntime();
-        renderBackupFiles();
-        renderUsefulSettingsMap();
       }
 
       function setupTabs() {
@@ -2239,23 +1809,17 @@
           providersData,
           auditData,
           aclData,
-          routingSnapshotData,
           routingData,
           groupData,
-          recentSendersData,
-          backupRuntimeData,
-          panelActionLogsData
+          recentSendersData
         ] = await Promise.all([
           fetchMaybe('/api/settings'),
           fetchMaybe('/api/ai-providers'),
           fetchMaybe('/api/settings/audit?limit=30'),
           fetchMaybe('/api/access-control'),
-          fetchMaybe('/api/response-routing'),
           fetchMaybe('/api/response-routing/diagnostics'),
           fetchMaybe('/api/group/control?includeInvite=true&includeRequests=true'),
-          fetchMaybe('/api/access-control/recent-senders?limit=120'),
-          fetchMaybe('/api/backup/runtime'),
-          fetchMaybe('/api/panel-actions/logs?limit=40')
+          fetchMaybe('/api/access-control/recent-senders?limit=120')
         ]);
 
         state.settings = settingsData.ok ? settingsData.settings || {} : {};
@@ -2264,14 +1828,9 @@
         state.aiProbe = providersData.ok ? providersData.probe || {} : {};
         state.audit = auditData.ok ? auditData.items || [] : [];
         state.accessControl = aclData.ok ? aclData.accessControl || null : null;
-        state.routing = routingSnapshotData.ok ? routingSnapshotData.routing || null : null;
         state.routingDiagnostics = routingData.ok ? routingData.diagnostics || null : null;
         state.groupControl = groupData.ok ? groupData : null;
         state.recentSenders = recentSendersData.ok ? recentSendersData.items || [] : [];
-        state.backupRuntime = backupRuntimeData.ok ? backupRuntimeData.runtime || null : null;
-        state.backupFiles = backupRuntimeData.ok ? backupRuntimeData.backups || [] : [];
-        state.panelActionLogs = panelActionLogsData.ok ? panelActionLogsData.items || [] : [];
-        state.panelActionLogFilePath = panelActionLogsData.ok ? panelActionLogsData.filePath || '' : '';
 
         await loadMediaList();
         applyAllRenders();
@@ -2309,45 +1868,6 @@
         });
         state.settings = data.settings || state.settings;
         showToast('Configuracao salva com sucesso.');
-        return data;
-      }
-
-      async function updateBackupRuntime(patch, reason) {
-        const payload = {
-          ...(patch || {}),
-          reason: reason || 'menu_html_secao_github_backup'
-        };
-        const data = await fetchJson('/api/backup/runtime', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        state.settings = data.settings || state.settings;
-        state.backupRuntime = data.runtime || state.backupRuntime;
-        showToast('Configuracao de backup salva com sucesso.');
-        return data;
-      }
-
-      function buildBackupActionSummary(resultData = {}) {
-        const result = resultData.result || {};
-        const lines = [];
-        lines.push(`Status: ${result.ok ? 'OK' : 'FALHA'}`);
-        if (result.message) lines.push(`Mensagem: ${result.message}`);
-        if (result.path) lines.push(`Arquivo: ${result.path}`);
-        if (result.commitHash) lines.push(`Commit: ${result.commitHash}`);
-        if (result.pushTarget) lines.push(`Push target: ${result.pushTarget}`);
-
-        const steps = safeArray(result.steps);
-        if (steps.length) {
-          lines.push('');
-          lines.push('Etapas:');
-          steps.forEach((step, idx) => {
-            const marker = step?.ok ? 'OK' : 'FALHA';
-            lines.push(`${idx + 1}. ${step?.name || 'etapa'} | ${marker} | ${step?.detail || '-'}`);
-          });
-        }
-
-        return lines.join('\n');
       }
 
       async function runProviderTest(provider, mode, model) {
@@ -2400,32 +1920,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action, ...(payload || {}) })
         });
-        setText('groupActionOutput', composeActionSummary(data, 'Acao executada com sucesso.'));
-        renderPanelActionLogs();
-        return data;
+        setText('groupActionOutput', data.detail || 'Acao executada com sucesso.');
       }
 
       async function applyPermissionForNumber(number, desiredFlags) {
         const normalized = normalizePhone(number);
         if (!normalized) throw new Error('Numero invalido.');
-
-        const desired = {
-          interact: Boolean(desiredFlags?.interact),
-          admin: Boolean(desiredFlags?.admin),
-          full: Boolean(desiredFlags?.full),
-          private: Boolean(desiredFlags?.private)
-        };
-        if (desired.full) {
-          desired.admin = true;
-          desired.interact = true;
-        }
-        if (desired.admin) {
-          desired.interact = true;
-        }
-        if (!desired.interact) {
-          desired.admin = false;
-          desired.full = false;
-        }
 
         const ac = state.accessControl || {};
         const authSet = new Set(safeArray(ac.effectiveAuthorized));
@@ -2442,27 +1942,21 @@
           }
         };
 
-        ensure(desired.interact, authSet.has(normalized), '/api/access-control/authorized', `/api/access-control/authorized/${normalized}`);
-        ensure(desired.admin, adminSet.has(normalized), '/api/access-control/admins', `/api/access-control/admins/${normalized}`);
-        ensure(desired.full, fullSet.has(normalized), '/api/access-control/full', `/api/access-control/full/${normalized}`);
-        ensure(desired.private, privateSet.has(normalized), '/api/response-routing/private', `/api/response-routing/private/${normalized}`);
+        ensure(Boolean(desiredFlags.interact), authSet.has(normalized), '/api/access-control/authorized', `/api/access-control/authorized/${normalized}`);
+        ensure(Boolean(desiredFlags.admin), adminSet.has(normalized), '/api/access-control/admins', `/api/access-control/admins/${normalized}`);
+        ensure(Boolean(desiredFlags.full), fullSet.has(normalized), '/api/access-control/full', `/api/access-control/full/${normalized}`);
+        ensure(Boolean(desiredFlags.private), privateSet.has(normalized), '/api/response-routing/private', `/api/response-routing/private/${normalized}`);
 
         for (const call of calls) {
-          const data = await fetchJson(call.url, {
+          await fetchJson(call.url, {
             method: call.method,
             headers: { 'Content-Type': 'application/json' },
             body: call.body ? JSON.stringify(call.body) : undefined
           });
-          call.response = data;
         }
 
         if (!calls.length) showToast('Nenhuma alteracao necessaria para esse numero.');
         else showToast(`Permissoes aplicadas para ${normalized}.`);
-        return {
-          normalized,
-          callsExecuted: calls.length,
-          lastData: calls.length ? calls[calls.length - 1].response || null : null
-        };
       }
 
       function bindCopyButtons() {
@@ -2647,14 +2141,6 @@
       }
 
       function bindGroupButtons() {
-        document.getElementById('btnReloadPanelActionLogs').addEventListener('click', async () => {
-          const data = await fetchMaybe('/api/panel-actions/logs?limit=40');
-          state.panelActionLogs = data.ok ? data.items || [] : [];
-          state.panelActionLogFilePath = data.ok ? data.filePath || '' : '';
-          renderPanelActionLogs();
-          showToast('Log do painel atualizado.');
-        });
-
         document.getElementById('btnSaveGroupSubject').addEventListener('click', async () => {
           await runGroupAction('set_subject', { subject: document.getElementById('groupSubject').value.trim() });
           await loadAll();
@@ -2706,13 +2192,6 @@
       }
 
       function bindPermissionButtons() {
-        const setPermOutput = (id, message, data = null) => {
-          const text = composeActionSummary(data, message);
-          setText(id, text);
-          setText('multiGroupActionOutput', text);
-          renderPanelActionLogs();
-        };
-
         document.getElementById('btnApplyPermNumber').addEventListener('click', async () => {
           const number = document.getElementById('permNumber').value;
           const desired = {
@@ -2722,50 +2201,13 @@
             private: document.getElementById('permPrivate').checked
           };
 
-          const result = await applyPermissionForNumber(number, desired);
-          setPermOutput('aclOutput', `Permissoes aplicadas para ${normalizePhone(number)}.`, result?.lastData || null);
+          await applyPermissionForNumber(number, desired);
           await loadAll();
         });
 
         document.getElementById('btnReloadAcl').addEventListener('click', async () => {
           await loadAll();
-          setPermOutput('aclOutput', 'Permissoes atualizadas.');
           showToast('Permissoes atualizadas.');
-        });
-
-        document.getElementById('btnReloadMultiAll').addEventListener('click', async () => {
-          await loadAll();
-          setPermOutput('multiGroupActionOutput', 'Dados de multi-grupo e permissoes atualizados.');
-          showToast('Dados de multi-grupo atualizados.');
-        });
-
-        document.getElementById('btnSaveModeFlags').addEventListener('click', async () => {
-          const mention = Boolean(document.getElementById('modeMentionFlag')?.checked);
-          const noMention = Boolean(document.getElementById('modeNoMentionFlag')?.checked);
-          if (mention === noMention) {
-            setPermOutput('modeFlagsOutput', 'Marque apenas 1 modo: com mencao ou sem mencao.');
-            showToast('Escolha somente um modo de resposta.');
-            return;
-          }
-          const data = await updateSettings(
-            { requireMention: mention },
-            mention ? 'menu_html_modo_mencao_on' : 'menu_html_modo_mencao_off'
-          );
-          await loadAll();
-          setPermOutput('modeFlagsOutput', mention ? 'Modo salvo: responder se mencionar.' : 'Modo salvo: responder sem mencionar.', data);
-          showToast('Modo de resposta atualizado.');
-        });
-
-        document.getElementById('modeMentionFlag').addEventListener('change', () => {
-          if (document.getElementById('modeMentionFlag').checked) {
-            document.getElementById('modeNoMentionFlag').checked = false;
-          }
-        });
-
-        document.getElementById('modeNoMentionFlag').addEventListener('change', () => {
-          if (document.getElementById('modeNoMentionFlag').checked) {
-            document.getElementById('modeMentionFlag').checked = false;
-          }
         });
 
         document.getElementById('btnAddRouteGroup').addEventListener('click', async () => {
@@ -2774,12 +2216,11 @@
             showToast('Informe um grupo para adicionar na rota.');
             return;
           }
-          const data = await fetchJson('/api/response-routing/groups', {
+          await fetchJson('/api/response-routing/groups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ groupId })
           });
-          setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`, data);
           showToast('Grupo adicionado ao mapa de resposta.');
           await loadAll();
         });
@@ -2790,41 +2231,11 @@
             showToast('Informe um grupo para remover da rota.');
             return;
           }
-          const data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+          await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
             method: 'DELETE'
           });
-          setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`, data);
           showToast('Grupo removido do mapa de resposta.');
           await loadAll();
-        });
-
-        document.getElementById('btnRemoveSelectedRouteGroups').addEventListener('click', async () => {
-          const selected = Array.from(document.querySelectorAll('.route-group-check:checked'))
-            .map((el) => String(el.value || '').trim())
-            .filter(Boolean);
-          if (!selected.length) {
-            showToast('Selecione ao menos um grupo dinamico para remover.');
-            return;
-          }
-          let removed = 0;
-          let lastData = null;
-          for (const groupId of selected) {
-            try {
-              lastData = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
-              removed += 1;
-            } catch {
-              // segue removendo os demais
-            }
-          }
-          setPermOutput('routeGroupsOutput', `Remocao em lote concluida. Grupos removidos: ${removed}.`, lastData);
-          showToast('Remocao em lote finalizada.');
-          await loadAll();
-        });
-
-        document.getElementById('btnReloadRoutingGroups').addEventListener('click', async () => {
-          await loadAll();
-          setPermOutput('routeGroupsOutput', 'Mapa de resposta atualizado.');
-          showToast('Grupos atualizados.');
         });
 
         document.getElementById('btnAddPrivateRoute').addEventListener('click', async () => {
@@ -2833,12 +2244,11 @@
             showToast('Informe um numero valido para liberar privado.');
             return;
           }
-          const data = await fetchJson('/api/response-routing/private', {
+          await fetchJson('/api/response-routing/private', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ number })
           });
-          setPermOutput('privateRoutesOutput', `Privado liberado para ${number}.`, data);
           showToast(`Privado liberado para ${number}.`);
           await loadAll();
         });
@@ -2849,122 +2259,23 @@
             showToast('Informe um numero valido para bloquear privado.');
             return;
           }
-          const data = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
+          await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
             method: 'DELETE'
           });
-          setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`, data);
           showToast(`Privado bloqueado para ${number}.`);
           await loadAll();
         });
 
-        document.getElementById('btnRemoveSelectedPrivateRoutes').addEventListener('click', async () => {
-          const selected = Array.from(document.querySelectorAll('.private-route-check:checked'))
-            .map((el) => normalizePhone(el.value))
-            .filter(Boolean);
-          if (!selected.length) {
-            showToast('Selecione ao menos um numero para bloquear no privado.');
-            return;
-          }
-          let removed = 0;
-          let lastData = null;
-          for (const number of selected) {
-            try {
-              lastData = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, { method: 'DELETE' });
-              removed += 1;
-            } catch {
-              // segue removendo os demais
-            }
-          }
-          setPermOutput('privateRoutesOutput', `Bloqueio em lote concluido. Numeros removidos: ${removed}.`, lastData);
-          showToast('Bloqueio de privado concluido.');
+        document.getElementById('btnSetMentionRequiredOn').addEventListener('click', async () => {
+          await updateSettings({ requireMention: true }, 'menu_html_modo_mencao_on');
           await loadAll();
+          showToast('Modo atualizado: responder so com mencao.');
         });
 
-        document.getElementById('btnReloadPrivateRoutes').addEventListener('click', async () => {
+        document.getElementById('btnSetMentionRequiredOff').addEventListener('click', async () => {
+          await updateSettings({ requireMention: false }, 'menu_html_modo_mencao_off');
           await loadAll();
-          setPermOutput('privateRoutesOutput', 'Lista de privado atualizada.');
-          showToast('Privados atualizados.');
-        });
-
-        document.getElementById('btnBulkRemoveAcl').addEventListener('click', async () => {
-          const selectedAuthorized = Array.from(document.querySelectorAll('.remove-authorized-check:checked'))
-            .map((el) => normalizePhone(el.value))
-            .filter(Boolean);
-          const selectedAdmins = Array.from(document.querySelectorAll('.remove-admin-check:checked'))
-            .map((el) => normalizePhone(el.value))
-            .filter(Boolean);
-          const selectedFull = Array.from(document.querySelectorAll('.remove-full-check:checked'))
-            .map((el) => normalizePhone(el.value))
-            .filter(Boolean);
-
-          if (!selectedAuthorized.length && !selectedAdmins.length && !selectedFull.length) {
-            showToast('Selecione itens de ACL para bloquear/remover.');
-            return;
-          }
-
-          let count = 0;
-          let lastData = null;
-          for (const number of selectedFull) {
-            try {
-              lastData = await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
-              count += 1;
-            } catch {}
-          }
-          for (const number of selectedAdmins) {
-            try {
-              lastData = await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
-              count += 1;
-            } catch {}
-          }
-          for (const number of selectedAuthorized) {
-            try {
-              lastData = await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
-              count += 1;
-            } catch {}
-          }
-
-          setPermOutput('aclOutput', `Bloqueio em lote concluido. Acoes executadas: ${count}.`, lastData);
-          showToast('Bloqueio ACL concluido.');
-          await loadAll();
-        });
-
-        document.getElementById('selectAllRouteGroups').addEventListener('change', (event) => {
-          const checked = Boolean(event.target?.checked);
-          document.querySelectorAll('.route-group-check').forEach((el) => {
-            el.checked = checked;
-          });
-        });
-
-        document.getElementById('selectAllPrivateRoutes').addEventListener('change', (event) => {
-          const checked = Boolean(event.target?.checked);
-          document.querySelectorAll('.private-route-check').forEach((el) => {
-            el.checked = checked;
-          });
-        });
-
-        document.getElementById('selectAllAclAuthorized').addEventListener('change', (event) => {
-          const checked = Boolean(event.target?.checked);
-          document.querySelectorAll('.remove-authorized-check').forEach((el) => {
-            el.checked = checked;
-          });
-        });
-
-        document.getElementById('selectAllAclAdmins').addEventListener('change', (event) => {
-          const checked = Boolean(event.target?.checked);
-          document.querySelectorAll('.remove-admin-check').forEach((el) => {
-            el.checked = checked;
-          });
-        });
-
-        document.getElementById('selectAllAclFull').addEventListener('change', (event) => {
-          const checked = Boolean(event.target?.checked);
-          document.querySelectorAll('.remove-full-check').forEach((el) => {
-            el.checked = checked;
-          });
-        });
-
-        document.getElementById('routingGroupFilter').addEventListener('input', () => {
-          renderRoutingGroups();
+          showToast('Modo atualizado: responder com ou sem mencao.');
         });
 
         document.addEventListener('click', async (event) => {
@@ -2978,8 +2289,7 @@
               full: Boolean(document.getElementById(`row-full-${idx}`)?.checked),
               private: Boolean(document.getElementById(`row-private-${idx}`)?.checked)
             };
-            const result = await applyPermissionForNumber(number, desired);
-            setPermOutput('recentSendersOutput', `Permissoes aplicadas para ${number}.`, result?.lastData || null);
+            await applyPermissionForNumber(number, desired);
             await loadAll();
             return;
           }
@@ -2987,12 +2297,11 @@
           const addGroupBtn = event.target.closest('[data-add-group]');
           if (addGroupBtn) {
             const groupId = addGroupBtn.getAttribute('data-add-group') || '';
-            const data = await fetchJson('/api/response-routing/groups', {
+            await fetchJson('/api/response-routing/groups', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ groupId })
             });
-            setPermOutput('routeGroupsOutput', `Grupo ${groupId} adicionado ao mapa de resposta.`, data);
             showToast('Grupo adicionado ao mapa de resposta.');
             await loadAll();
             return;
@@ -3001,80 +2310,10 @@
           const removeGroupBtn = event.target.closest('[data-remove-group]');
           if (removeGroupBtn) {
             const groupId = removeGroupBtn.getAttribute('data-remove-group') || '';
-            const data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
+            await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
               method: 'DELETE'
             });
-            setPermOutput('routeGroupsOutput', `Grupo ${groupId} removido do mapa de resposta.`, data);
             showToast('Grupo removido do mapa de resposta.');
-            await loadAll();
-            return;
-          }
-
-          const routeFlagToggle = event.target.closest('.route-flag-toggle');
-          if (routeFlagToggle) {
-            const groupId = String(routeFlagToggle.getAttribute('data-group-id') || '').trim();
-            const checked = Boolean(routeFlagToggle.checked);
-            if (!groupId) return;
-            try {
-              let data;
-              if (checked) {
-                data = await fetchJson('/api/response-routing/groups', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ groupId })
-                });
-              } else {
-                data = await fetchJson(`/api/response-routing/groups/${encodeURIComponent(groupId)}`, {
-                  method: 'DELETE'
-                });
-              }
-              setPermOutput('routeGroupsOutput', `Flag de resposta atualizada para ${groupId}.`, data);
-              await loadAll();
-            } catch (error) {
-              setPermOutput('routeGroupsOutput', `Falha ao atualizar flag de grupo: ${String(error?.message || error)}.`);
-              await loadAll();
-            }
-            return;
-          }
-
-          const removePrivateBtn = event.target.closest('[data-remove-private]');
-          if (removePrivateBtn) {
-            const number = normalizePhone(removePrivateBtn.getAttribute('data-remove-private') || '');
-            if (!number) return;
-            const data = await fetchJson(`/api/response-routing/private/${encodeURIComponent(number)}`, {
-              method: 'DELETE'
-            });
-            setPermOutput('privateRoutesOutput', `Privado bloqueado para ${number}.`, data);
-            await loadAll();
-            return;
-          }
-
-          const removeAuthorizedBtn = event.target.closest('[data-remove-authorized]');
-          if (removeAuthorizedBtn) {
-            const number = normalizePhone(removeAuthorizedBtn.getAttribute('data-remove-authorized') || '');
-            if (!number) return;
-            const data = await fetchJson(`/api/access-control/authorized/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `Numero bloqueado: ${number}.`, data);
-            await loadAll();
-            return;
-          }
-
-          const removeAdminBtn = event.target.closest('[data-remove-admin]');
-          if (removeAdminBtn) {
-            const number = normalizePhone(removeAdminBtn.getAttribute('data-remove-admin') || '');
-            if (!number) return;
-            const data = await fetchJson(`/api/access-control/admins/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `Admin removido: ${number}.`, data);
-            await loadAll();
-            return;
-          }
-
-          const removeFullBtn = event.target.closest('[data-remove-full]');
-          if (removeFullBtn) {
-            const number = normalizePhone(removeFullBtn.getAttribute('data-remove-full') || '');
-            if (!number) return;
-            const data = await fetchJson(`/api/access-control/full/${encodeURIComponent(number)}`, { method: 'DELETE' });
-            setPermOutput('aclOutput', `FULL removido: ${number}.`, data);
             await loadAll();
           }
         });
@@ -3146,71 +2385,6 @@
         });
       }
 
-      function collectBackupFormPatch() {
-        return {
-          githubBackupEnabled: document.getElementById('githubBackupEnabled').checked,
-          githubBackupRepo: document.getElementById('githubBackupRepo').value.trim(),
-          githubBackupBranches: listFromText(document.getElementById('githubBackupBranches').value),
-          githubBackupUpdateReadme: document.getElementById('githubBackupUpdateReadme').checked,
-          githubBackupRunTestSuite: document.getElementById('githubBackupRunTestSuite').checked,
-          githubBackupAutoRollback: document.getElementById('githubBackupAutoRollback').checked,
-          backupSchedulerMode: document.getElementById('backupSchedulerMode').value,
-          backupSchedulerIntervalHours: Number(document.getElementById('backupSchedulerIntervalHours').value || 24)
-        };
-      }
-
-      async function runBackupAction(url, payload, startText) {
-        setText('backupActionOutput', startText || 'Executando acao de backup...');
-        try {
-          const data = await fetchJson(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: payload ? JSON.stringify(payload) : undefined
-          });
-          state.backupFiles = data.backups || state.backupFiles;
-          setText('backupActionOutput', buildBackupActionSummary(data));
-          showToast(data.ok ? 'Acao de backup concluida.' : 'Acao de backup retornou falha.');
-          await loadAll();
-        } catch (error) {
-          const message = String(error?.message || error);
-          setText('backupActionOutput', `Falha ao executar backup: ${message}`);
-          showToast(`Erro no backup: ${message}`);
-        }
-      }
-
-      function bindBackupButtons() {
-        document.getElementById('btnSaveBackupRuntime').addEventListener('click', async () => {
-          const patch = collectBackupFormPatch();
-          await updateBackupRuntime(patch, 'menu_html_secao_github_backup');
-          await loadAll();
-        });
-
-        document.getElementById('btnReloadBackupRuntime').addEventListener('click', async () => {
-          await loadAll();
-          showToast('Status de backup atualizado.');
-        });
-
-        document.getElementById('btnRunDataBackup').addEventListener('click', async () => {
-          await runBackupAction('/api/backup/create', null, 'Executando backup local de data/...');
-        });
-
-        document.getElementById('btnRunValidatedBackup').addEventListener('click', async () => {
-          const patch = collectBackupFormPatch();
-          const payload = {
-            branches: patch.githubBackupBranches,
-            githubBackupEnabled: patch.githubBackupEnabled,
-            githubBackupRepo: patch.githubBackupRepo,
-            githubBackupBranches: patch.githubBackupBranches,
-            githubBackupUpdateReadme: patch.githubBackupUpdateReadme,
-            githubBackupRunTestSuite: patch.githubBackupRunTestSuite,
-            githubBackupAutoRollback: patch.githubBackupAutoRollback,
-            backupSchedulerMode: patch.backupSchedulerMode,
-            backupSchedulerIntervalHours: patch.backupSchedulerIntervalHours
-          };
-          await runBackupAction('/api/backup/validated-run', payload, 'Executando backup validado (check + testes + push)...');
-        });
-      }
-
       async function init() {
         renderMenuList();
         setupTabs();
@@ -3221,7 +2395,6 @@
         bindGroupButtons();
         bindPermissionButtons();
         bindMediaButtons();
-        bindBackupButtons();
 
         await loadSession();
         await loadAll();

@@ -2,7 +2,6 @@ import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promi
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
-import { settingsStore } from './settingsStore.js';
 
 const DATA_DIR = 'data';
 const BACKUP_DIR = join('data', 'backups');
@@ -16,74 +15,6 @@ const GIT_PUSH_TIMEOUT_MS = 5 * 60_000; // 5 min
 const README_FILE = join(process.cwd(), 'README.md');
 const BACKUP_STATUS_START = '<!-- BACKUP_STATUS:START -->';
 const BACKUP_STATUS_END = '<!-- BACKUP_STATUS:END -->';
-const BACKUP_SCHEDULER_FIRST_RUN_MS = 3_600_000; // 1h
-
-function toBoolean(value, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (value === null || value === undefined || value === '') return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'sim', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
-  return fallback;
-}
-
-function toInt(value, fallback, min, max) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, parsed));
-}
-
-function normalizeSchedulerMode(value, fallback = 'validated_github') {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'validated_github' || normalized === 'data_only') return normalized;
-  return fallback;
-}
-
-async function resolveBackupRuntimeSettings(overrides = {}) {
-  let runtime = {};
-  try {
-    await settingsStore.ensureReady();
-    runtime = settingsStore.get() || {};
-  } catch {
-    runtime = {};
-  }
-
-  const mergeValue = (key, fallback) => {
-    if (Object.prototype.hasOwnProperty.call(overrides, key)) return overrides[key];
-    if (Object.prototype.hasOwnProperty.call(runtime, key)) return runtime[key];
-    return fallback;
-  };
-
-  return {
-    githubBackupEnabled: toBoolean(mergeValue('githubBackupEnabled', config.githubBackupEnabled), true),
-    githubBackupRepo: String(mergeValue('githubBackupRepo', config.githubBackupRepo) || '').trim(),
-    githubBackupBranches: normalizeBranches(
-      mergeValue('githubBackupBranches', config.githubBackupBranches || ['main', 'homologacao'])
-    ),
-    githubBackupUpdateReadme: toBoolean(
-      mergeValue('githubBackupUpdateReadme', config.githubBackupUpdateReadme),
-      true
-    ),
-    githubBackupRunTestSuite: toBoolean(
-      mergeValue('githubBackupRunTestSuite', config.githubBackupRunTestSuite),
-      true
-    ),
-    githubBackupAutoRollback: toBoolean(
-      mergeValue('githubBackupAutoRollback', config.githubBackupAutoRollback),
-      true
-    ),
-    backupSchedulerMode: normalizeSchedulerMode(
-      mergeValue('backupSchedulerMode', config.backupSchedulerMode || 'validated_github'),
-      'validated_github'
-    ),
-    backupSchedulerIntervalHours: toInt(
-      mergeValue('backupSchedulerIntervalHours', config.backupSchedulerIntervalHours || 24),
-      24,
-      1,
-      168
-    )
-  };
-}
 
 /**
  * Cria um backup comprimido da pasta data/ (excluindo subpasta backups).
@@ -157,28 +88,22 @@ export async function listBackups(backupDir = BACKUP_DIR) {
  * @param {number} [intervalHours]
  */
 export function startBackupScheduler(intervalHours = 24, mode = 'data_only') {
-  const run = async () => {
-    const runtime = await resolveBackupRuntimeSettings();
-    const fallbackMode = normalizeSchedulerMode(mode, 'validated_github');
-    const fallbackHours = toInt(intervalHours, 24, 1, 168);
-    const effectiveMode = runtime.backupSchedulerMode;
-    const nextIntervalMs = Math.max(
-      1,
-      Number(runtime.backupSchedulerIntervalHours || fallbackHours || 24)
-    ) * 3_600_000;
+  const intervalMs = intervalHours * 3_600_000;
+  const firstRunMs = 3_600_000; // 1h
 
+  const run = async () => {
     let result;
-    if ((effectiveMode || fallbackMode) === 'validated_github') {
+    if (String(mode || '').toLowerCase() === 'validated_github') {
       result = await runValidatedGithubBackupPlan({ trigger: 'scheduler' });
       console.info(JSON.stringify({ event: 'auto_backup_validated', ...result }));
     } else {
       result = await createBackup();
       console.info(JSON.stringify({ event: 'auto_backup', ...result }));
     }
-    setTimeout(run, nextIntervalMs);
+    setTimeout(run, intervalMs);
   };
 
-  setTimeout(run, BACKUP_SCHEDULER_FIRST_RUN_MS);
+  setTimeout(run, firstRunMs);
 }
 
 /**
@@ -204,8 +129,7 @@ export function startBackupScheduler(intervalHours = 24, mode = 'data_only') {
  */
 export async function runValidatedGithubBackupPlan(options = {}) {
   const steps = [];
-  const runtimeSettings = await resolveBackupRuntimeSettings(options.runtimeOverrides || {});
-  const branches = normalizeBranches(options.branches || runtimeSettings.githubBackupBranches || ['main', 'homologacao']);
+  const branches = normalizeBranches(options.branches || config.githubBackupBranches || ['main', 'homologacao']);
   const trigger = String(options.trigger || 'manual').trim() || 'manual';
   const startedAtIso = new Date().toISOString();
   const startedAtLabel = toSaoPauloLabel(startedAtIso);
@@ -218,7 +142,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     status: 'INICIADO',
     branches,
     validation: 'PENDENTE',
-    testSuite: runtimeSettings.githubBackupRunTestSuite ? 'PENDENTE' : 'DESATIVADA',
+    testSuite: config.githubBackupRunTestSuite ? 'PENDENTE' : 'DESATIVADA',
     backupFile: '-',
     gitBundleFile: '-',
     commitHash: '',
@@ -242,7 +166,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     runSummary.status = 'FALHA';
     runSummary.note = message;
 
-    if (runtimeSettings.githubBackupAutoRollback && primaryCommitCreated && originalHead && pushSucceededCount === 0) {
+    if (config.githubBackupAutoRollback && primaryCommitCreated && originalHead && pushSucceededCount === 0) {
       const rollbackResult = await runCommand('git', ['reset', '--mixed', originalHead], {
         timeoutMs: GIT_TIMEOUT_MS
       });
@@ -262,7 +186,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
       status: 'FALHA',
       finishedAtIso: new Date().toISOString(),
       note: message
-    }, { enabled: runtimeSettings.githubBackupUpdateReadme });
+    });
     steps.push({
       name: 'readme_status',
       ok: readmeStatus.ok,
@@ -281,7 +205,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     return result;
   };
 
-  if (!runtimeSettings.githubBackupEnabled) {
+  if (!config.githubBackupEnabled) {
     return await failWithRollback(
       'backup_plan_disabled',
       'Plano de backup GitHub desativado (GITHUB_BACKUP_ENABLED=false).'
@@ -317,7 +241,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
   runSummary.validation = 'OK';
   steps.push({ name: 'validacao', ok: true, detail: 'npm run check concluido com sucesso.' });
 
-  if (runtimeSettings.githubBackupRunTestSuite) {
+  if (config.githubBackupRunTestSuite) {
     const testSuiteResult = await runCommand('node', ['scripts/test-suite.js'], {
       timeoutMs: TEST_SUITE_TIMEOUT_MS
     });
@@ -362,7 +286,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     status: 'VALIDADO_LOCAL',
     finishedAtIso: new Date().toISOString(),
     note: 'Validacao e backup concluidos localmente. Push em andamento.'
-  }, { enabled: runtimeSettings.githubBackupUpdateReadme });
+  });
   if (!readmeLocalStatus.ok) {
     return await failWithRollback(
       'readme_status_local',
@@ -418,7 +342,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
   }
   steps.push({ name: 'git_branches', ok: true, detail: branchEnsuring.message });
 
-  const pushTarget = await resolvePushTarget(runtimeSettings.githubBackupRepo);
+  const pushTarget = await resolvePushTarget();
   if (!pushTarget.ok) {
     return await failWithRollback(
       'git_push_target',
@@ -454,7 +378,7 @@ export async function runValidatedGithubBackupPlan(options = {}) {
     note: `Backup validado publicado no GitHub (${branches.join(', ')}).`,
     commitHash: postPushHeadHash || primaryCommitHash,
     commitCreated: primaryCommitCreated
-  }, { enabled: runtimeSettings.githubBackupUpdateReadme });
+  });
   if (!readmePublishedStatus.ok) {
     return await failWithRollback(
       'readme_status_final',
@@ -634,22 +558,10 @@ async function pushBranchWithRetry(target, branch, maxAttempts = 2) {
     const failureText = `${pushResult.stderr || ''}\n${pushResult.stdout || ''}`.toLowerCase();
     const canRebase = /non-fast-forward|fetch first|rejected/.test(failureText);
     if (canRebase && attempt < maxAttempts) {
-      const fetch = await runCommand('git', ['fetch', target, branch], {
-        timeoutMs: GIT_PUSH_TIMEOUT_MS
-      });
-      if (!fetch.ok) {
-        lastResult = {
-          ...lastResult,
-          stderr: `${lastResult.stderr || ''}\n${fetch.stderr || fetch.stdout || ''}`.trim()
-        };
-        break;
-      }
-
-      const rebase = await runCommand('git', ['rebase', 'FETCH_HEAD'], {
+      const rebase = await runCommand('git', ['pull', '--rebase', target, branch], {
         timeoutMs: GIT_PUSH_TIMEOUT_MS
       });
       if (rebase.ok) continue;
-      await runCommand('git', ['rebase', '--abort'], { timeoutMs: GIT_TIMEOUT_MS }).catch(() => {});
       lastResult = {
         ...lastResult,
         stderr: `${lastResult.stderr || ''}\n${rebase.stderr || rebase.stdout || ''}`.trim()
@@ -691,7 +603,7 @@ async function ensureLocalBranches(branches) {
   }
 }
 
-async function resolvePushTarget(repoOverride = '') {
+async function resolvePushTarget() {
   const originUrlResult = await runCommand('git', ['remote', 'get-url', 'origin'], { timeoutMs: GIT_TIMEOUT_MS });
   if (!originUrlResult.ok) {
     return { ok: false, message: 'Remote origin nao configurado.' };
@@ -700,7 +612,7 @@ async function resolvePushTarget(repoOverride = '') {
   const originUrl = (originUrlResult.stdout || '').trim();
   if (!originUrl) return { ok: false, message: 'Remote origin vazio.' };
 
-  const repoSlug = normalizeRepoSlug(repoOverride) || normalizeRepoSlug(config.githubBackupRepo) || normalizeRepoSlug(originUrl);
+  const repoSlug = normalizeRepoSlug(config.githubBackupRepo) || normalizeRepoSlug(originUrl);
   const token = String(config.githubBackupToken || '').trim();
 
   if (token && repoSlug) {
@@ -760,9 +672,8 @@ function failPlan(steps, stepName, message) {
   return { ok: false, steps, message };
 }
 
-async function updateReadmeBackupStatus(payload = {}, options = {}) {
-  const enabled = typeof options.enabled === 'boolean' ? options.enabled : config.githubBackupUpdateReadme;
-  if (!enabled) {
+async function updateReadmeBackupStatus(payload = {}) {
+  if (!config.githubBackupUpdateReadme) {
     return { ok: true, skipped: true };
   }
 
@@ -820,6 +731,9 @@ function renderBackupStatusBlock(payload = {}) {
   const commitInfo = payload.commitCreated
     ? `${String(payload.commitHash || '').trim() || '(hash indisponivel)'}`
     : 'sem alteracoes pendentes';
+  const readmeCommitInfo = payload.readmeCommitCreated
+    ? `${String(payload.readmeCommitHash || '').trim() || '(hash indisponivel)'}`
+    : 'nao houve commit exclusivo do README';
   const pushTarget = String(payload.pushTarget || '-');
   const pushStatus = String(payload.pushStatus || 'N/D');
   const rollback = payload.rollbackApplied ? 'sim (rollback local aplicado)' : 'nao';
@@ -837,7 +751,7 @@ function renderBackupStatusBlock(payload = {}) {
     `- Backup \`data/\`: \`${backupFile}\``,
     `- Bundle git: \`${gitBundleFile}\``,
     `- Commit principal: \`${commitInfo}\``,
-    `- Commit README dedicado: veja \`git log\` (quando houver mudanca de status final).`,
+    `- Commit README: \`${readmeCommitInfo}\``,
     `- Destino push: \`${pushTarget}\``,
     `- Branches: \`${branches}\``,
     `- Push: **${pushStatus}**`,

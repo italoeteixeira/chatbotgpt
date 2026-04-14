@@ -1,8 +1,7 @@
 import express from 'express';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { botDatabase } from './botDatabase.js';
 import { config } from './config.js';
 import { getRecentLogs, logEvents, logger } from './logger.js';
@@ -19,7 +18,6 @@ import { fullAutoJobEvents, getFullAutoJobsSnapshot, listFullAutoJobs } from './
 import { panelAuth } from './panelAuth.js';
 import { getCodexCircuitStatus } from './codexBridge.js';
 import { buildLocalPanelUrl, resolvePanelAccessInfo } from './panelUrl.js';
-import { createBackup, listBackups, runValidatedGithubBackupPlan } from './backupService.js';
 
 const AI_REASONING_EFFORT_OPTIONS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const AI_PROVIDER_MODEL_MATRIX = Object.freeze({
@@ -49,48 +47,6 @@ function parseBoolean(value, fallback) {
   if (['true', '1', 'yes', 'sim', 'on'].includes(normalized)) return true;
   if (['false', '0', 'no', 'nao', 'não', 'off'].includes(normalized)) return false;
   return fallback;
-}
-
-function normalizeCsvList(value, fallback = []) {
-  if (Array.isArray(value)) {
-    return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
-  }
-  const text = String(value || '').trim();
-  if (!text) return Array.from(new Set((fallback || []).map((item) => String(item || '').trim()).filter(Boolean)));
-  return Array.from(
-    new Set(
-      text
-        .split(/[,\n;]/)
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-function normalizeBackupSchedulerMode(value, fallback = 'validated_github') {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (['validated_github', 'data_only'].includes(normalized)) return normalized;
-  return fallback;
-}
-
-function resolveBackupRuntimeSettingsForPanel(currentSettings = {}) {
-  const settings = currentSettings && typeof currentSettings === 'object' ? currentSettings : {};
-  return {
-    githubBackupEnabled: parseBoolean(settings.githubBackupEnabled, config.githubBackupEnabled),
-    githubBackupRepo: String(settings.githubBackupRepo || config.githubBackupRepo || '').trim(),
-    githubBackupBranches: normalizeCsvList(settings.githubBackupBranches, config.githubBackupBranches || ['main', 'homologacao']),
-    githubBackupUpdateReadme: parseBoolean(settings.githubBackupUpdateReadme, config.githubBackupUpdateReadme),
-    githubBackupRunTestSuite: parseBoolean(settings.githubBackupRunTestSuite, config.githubBackupRunTestSuite),
-    githubBackupAutoRollback: parseBoolean(settings.githubBackupAutoRollback, config.githubBackupAutoRollback),
-    backupSchedulerMode: normalizeBackupSchedulerMode(settings.backupSchedulerMode, config.backupSchedulerMode || 'validated_github'),
-    backupSchedulerIntervalHours: parseIntSafe(
-      settings.backupSchedulerIntervalHours,
-      config.backupSchedulerIntervalHours || 24,
-      1,
-      168
-    ),
-    githubTokenConfigured: Boolean(String(config.githubBackupToken || '').trim())
-  };
 }
 
 function normalizeModelAlias(providerId, mode, rawValue, runtime = {}) {
@@ -236,149 +192,6 @@ function dedupeTextValues(values = []) {
   );
 }
 
-function sleep(ms) {
-  const delay = Math.max(0, Number(ms) || 0);
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
-}
-
-function normalizeLooseText(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function valuesEqualShallow(left, right) {
-  if (Array.isArray(left) || Array.isArray(right)) {
-    const leftItems = Array.isArray(left) ? left.map((item) => String(item || '').trim()) : [];
-    const rightItems = Array.isArray(right) ? right.map((item) => String(item || '').trim()) : [];
-    if (leftItems.length !== rightItems.length) return false;
-    for (let index = 0; index < leftItems.length; index += 1) {
-      if (leftItems[index] !== rightItems[index]) return false;
-    }
-    return true;
-  }
-
-  if (typeof left === 'boolean' || typeof right === 'boolean') return Boolean(left) === Boolean(right);
-  if (typeof left === 'number' || typeof right === 'number') return Number(left) === Number(right);
-  return String(left ?? '').trim() === String(right ?? '').trim();
-}
-
-function sanitizePanelLogValue(value, depth = 0) {
-  if (depth > 4) return '[max-depth]';
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  if (typeof value === 'string') return trimInlineText(value, 320);
-  if (Array.isArray(value)) {
-    return value.slice(0, 40).map((item) => sanitizePanelLogValue(item, depth + 1));
-  }
-  if (typeof value === 'object') {
-    const output = {};
-    const keys = Object.keys(value).slice(0, 60);
-    for (const key of keys) {
-      const lowered = key.toLowerCase();
-      if (
-        lowered.includes('password') ||
-        lowered.includes('token') ||
-        lowered.includes('secret') ||
-        lowered.includes('cookie') ||
-        lowered.includes('authorization')
-      ) {
-        output[key] = '[redacted]';
-      } else {
-        output[key] = sanitizePanelLogValue(value[key], depth + 1);
-      }
-    }
-    return output;
-  }
-  return trimInlineText(value, 320);
-}
-
-function buildActionVerification({
-  ok,
-  target = '',
-  expected = '',
-  actual = '',
-  reason = '',
-  attempts = 1,
-  autoFixed = false
-} = {}) {
-  return {
-    ok: Boolean(ok),
-    target: String(target || '').trim(),
-    expected,
-    actual,
-    reason: String(reason || '').trim(),
-    attempts: Math.max(1, Number(attempts) || 1),
-    autoFixed: Boolean(autoFixed),
-    checkedAt: new Date().toISOString()
-  };
-}
-
-async function appendPanelInteractiveActionLog(entry) {
-  const filePath = String(config.panelInteractiveActionsLogFile || '').trim();
-  if (!filePath) return;
-  try {
-    await mkdir(dirname(filePath), { recursive: true });
-    await appendFile(filePath, `${JSON.stringify(entry)}\n`, 'utf8');
-  } catch (error) {
-    logger.warn(`Falha ao gravar log de acao interativa do painel: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function renderVerificationValue(value) {
-  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).join(', ');
-  if (typeof value === 'boolean') return value ? 'sim' : 'nao';
-  if (value === null || typeof value === 'undefined') return '(vazio)';
-  return String(value).trim();
-}
-
-function buildSettingsVerification(runtimeSettings, patch, target = 'settings') {
-  const keys = Object.keys(patch || {}).filter((key) => key !== 'reason');
-  if (!keys.length) {
-    return buildActionVerification({
-      ok: true,
-      target,
-      expected: 'sem alteracoes',
-      actual: 'sem alteracoes'
-    });
-  }
-
-  const mismatches = [];
-  for (const key of keys) {
-    const expectedValue = patch[key];
-    const actualValue = runtimeSettings?.[key];
-    if (!valuesEqualShallow(actualValue, expectedValue)) {
-      mismatches.push({
-        key,
-        expected: renderVerificationValue(expectedValue),
-        actual: renderVerificationValue(actualValue)
-      });
-    }
-  }
-
-  if (!mismatches.length) {
-    return buildActionVerification({
-      ok: true,
-      target,
-      expected: keys.join(', '),
-      actual: 'aplicado',
-      reason: `Chaves verificadas: ${keys.length}.`
-    });
-  }
-
-  const first = mismatches[0];
-  return buildActionVerification({
-    ok: false,
-    target,
-    expected: `${first.key}=${first.expected}`,
-    actual: `${first.key}=${first.actual}`,
-    reason: `Inconsistencias detectadas em ${mismatches.length} chave(s).`
-  });
-}
-
 export function startWebPanel({ moderation = null, groupControl = null, inbox = null } = {}) {
   const app = express();
   const clients = new Set();
@@ -478,53 +291,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     next();
   });
 
-  app.use((req, res, next) => {
-    const method = String(req.method || '').toUpperCase();
-    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-    const isApiCall = String(req.path || '').startsWith('/api/');
-    if (!isMutation || !isApiCall) {
-      next();
-      return;
-    }
-
-    const startedAt = Date.now();
-    const actor = panelActorFromRequest(req);
-    const requestBody = sanitizePanelLogValue(req.body);
-    let responsePayload = null;
-
-    const originalJson = res.json.bind(res);
-    res.json = (payload) => {
-      responsePayload = payload;
-      return originalJson(payload);
-    };
-
-    res.on('finish', () => {
-      const body = responsePayload && typeof responsePayload === 'object' ? responsePayload : {};
-      const verification = body?.verification && typeof body.verification === 'object' ? body.verification : null;
-      const durationMs = Date.now() - startedAt;
-      const entry = {
-        ts: new Date().toISOString(),
-        actor,
-        method,
-        path: req.path,
-        statusCode: res.statusCode,
-        ok: body?.ok !== false && res.statusCode < 400,
-        message: trimInlineText(body?.message || body?.detail || '', 220),
-        request: requestBody,
-        verification: verification ? sanitizePanelLogValue(verification) : null,
-        elapsedMs: durationMs
-      };
-
-      appendPanelInteractiveActionLog(entry);
-      logger.info(
-        `PANEL_ACTION ${method} ${req.path} status=${res.statusCode} elapsedMs=${durationMs} actor=${actor}` +
-          (verification ? ` verify=${verification.ok ? 'ok' : 'fail'}` : '')
-      );
-    });
-
-    next();
-  });
-
   app.get('/', (req, res) => {
     res.sendFile(resolve(publicDir, 'index.html'));
   });
@@ -535,6 +301,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
   app.get('/usuarios.html', (req, res) => {
     res.sendFile(resolve(publicDir, 'usuarios.html'));
+  });
+
+  app.get('/multi-grupos.html', (req, res) => {
+    res.sendFile(resolve(publicDir, 'multi-grupos.html'));
   });
 
   app.get('/bot-config-menu.html', (req, res) => {
@@ -548,43 +318,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
       ok: true,
       user: req.panelUser
     });
-  });
-
-  app.get('/api/panel-actions/logs', async (req, res) => {
-    const limit = parseIntSafe(req.query.limit, 40, 1, 300);
-    const filePath = String(config.panelInteractiveActionsLogFile || '').trim();
-    if (!filePath || !existsSync(filePath)) {
-      res.json({ ok: true, total: 0, items: [], filePath });
-      return;
-    }
-
-    try {
-      const raw = await readFile(filePath, 'utf8');
-      const lines = raw
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      const items = [];
-      for (let index = lines.length - 1; index >= 0 && items.length < limit; index -= 1) {
-        try {
-          const parsed = JSON.parse(lines[index]);
-          items.push(parsed);
-        } catch {
-          // ignora linhas invalidas
-        }
-      }
-      res.json({
-        ok: true,
-        total: lines.length,
-        items,
-        filePath
-      });
-    } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
   });
 
   app.get('/api/panel-users', async (req, res) => {
@@ -1365,15 +1098,13 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
       source: 'web_panel',
       reason
     });
-    const verification = buildSettingsVerification(result.settings || settingsStore.get(), patch, 'settings:update');
 
     res.json({
       ok: true,
       changed: result.changed,
       auditId: result.auditId,
       changedKeys: result.changedKeys,
-      settings: result.settings,
-      verification
+      settings: result.settings
     });
   });
 
@@ -1395,110 +1126,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     });
 
     res.status(result.ok ? 200 : 400).json(result);
-  });
-
-  app.get('/api/backup/runtime', async (req, res) => {
-    await settingsStore.ensureReady();
-    const runtimeSettings = resolveBackupRuntimeSettingsForPanel(settingsStore.get());
-    const backups = await listBackups();
-    res.json({
-      ok: true,
-      runtime: runtimeSettings,
-      backups
-    });
-  });
-
-  app.put('/api/backup/runtime', async (req, res) => {
-    await settingsStore.ensureReady();
-
-    const baseRuntime = settingsStore.get();
-    const payload = req.body && typeof req.body === 'object' ? req.body : {};
-    const actor = panelActorFromRequest(req);
-    const reason = String(payload.reason || 'panel_backup_runtime_update').trim();
-    const patch = {
-      githubBackupEnabled: parseBoolean(payload.githubBackupEnabled, baseRuntime.githubBackupEnabled),
-      githubBackupRepo: String(payload.githubBackupRepo || baseRuntime.githubBackupRepo || '').trim(),
-      githubBackupBranches: normalizeCsvList(payload.githubBackupBranches, baseRuntime.githubBackupBranches || ['main']),
-      githubBackupUpdateReadme: parseBoolean(payload.githubBackupUpdateReadme, baseRuntime.githubBackupUpdateReadme),
-      githubBackupRunTestSuite: parseBoolean(payload.githubBackupRunTestSuite, baseRuntime.githubBackupRunTestSuite),
-      githubBackupAutoRollback: parseBoolean(payload.githubBackupAutoRollback, baseRuntime.githubBackupAutoRollback),
-      backupSchedulerMode: normalizeBackupSchedulerMode(payload.backupSchedulerMode, baseRuntime.backupSchedulerMode || 'validated_github'),
-      backupSchedulerIntervalHours: parseIntSafe(
-        payload.backupSchedulerIntervalHours,
-        baseRuntime.backupSchedulerIntervalHours || 24,
-        1,
-        168
-      )
-    };
-
-    const result = await settingsStore.update(patch, {
-      actor,
-      source: 'web_panel_backup_runtime',
-      reason
-    });
-    const runtimeSettings = resolveBackupRuntimeSettingsForPanel(result.settings || settingsStore.get());
-    const verification = buildSettingsVerification(runtimeSettings, patch, 'settings:backup_runtime');
-
-    res.json({
-      ok: true,
-      changed: result.changed,
-      auditId: result.auditId,
-      changedKeys: result.changedKeys,
-      settings: result.settings,
-      runtime: runtimeSettings,
-      verification
-    });
-  });
-
-  app.post('/api/backup/create', async (_req, res) => {
-    const result = await createBackup();
-    const backups = await listBackups();
-    res.status(result.ok ? 200 : 400).json({
-      ok: result.ok,
-      result,
-      backups
-    });
-  });
-
-  app.post('/api/backup/validated-run', async (req, res) => {
-    await settingsStore.ensureReady();
-    const payload = req.body && typeof req.body === 'object' ? req.body : {};
-    const baseRuntime = settingsStore.get();
-    const branches = normalizeCsvList(
-      payload.branches,
-      baseRuntime.githubBackupBranches || config.githubBackupBranches || ['main', 'homologacao']
-    );
-
-    const runtimeOverrides = {
-      githubBackupEnabled: parseBoolean(payload.githubBackupEnabled, baseRuntime.githubBackupEnabled),
-      githubBackupRepo: String(payload.githubBackupRepo || baseRuntime.githubBackupRepo || '').trim(),
-      githubBackupBranches: normalizeCsvList(payload.githubBackupBranches, baseRuntime.githubBackupBranches || []),
-      githubBackupUpdateReadme: parseBoolean(payload.githubBackupUpdateReadme, baseRuntime.githubBackupUpdateReadme),
-      githubBackupRunTestSuite: parseBoolean(payload.githubBackupRunTestSuite, baseRuntime.githubBackupRunTestSuite),
-      githubBackupAutoRollback: parseBoolean(payload.githubBackupAutoRollback, baseRuntime.githubBackupAutoRollback),
-      backupSchedulerMode: normalizeBackupSchedulerMode(
-        payload.backupSchedulerMode,
-        baseRuntime.backupSchedulerMode || 'validated_github'
-      ),
-      backupSchedulerIntervalHours: parseIntSafe(
-        payload.backupSchedulerIntervalHours,
-        baseRuntime.backupSchedulerIntervalHours || 24,
-        1,
-        168
-      )
-    };
-
-    const result = await runValidatedGithubBackupPlan({
-      trigger: 'panel_manual',
-      branches,
-      runtimeOverrides
-    });
-    const backups = await listBackups();
-    res.status(result.ok ? 200 : 400).json({
-      ok: result.ok,
-      result,
-      backups
-    });
   });
 
   app.get('/api/media', async (req, res) => {
@@ -1912,292 +1539,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     };
   }
 
-  async function setGroupDescriptionWithFallback({ chat, client, groupId, description }) {
-    let primaryError = null;
-    if (typeof chat?.setDescription === 'function') {
-      try {
-        const result = await chat.setDescription(description);
-        if (result !== false) {
-          return { ok: true, method: 'chat.setDescription' };
-        }
-        primaryError = 'setDescription retornou false (permissao ou restricao do WhatsApp).';
-      } catch (error) {
-        primaryError = error instanceof Error ? error.message : String(error);
-      }
-    } else {
-      primaryError = 'Metodo setDescription indisponivel nesta versao.';
-    }
-
-    if (!client?.pupPage?.evaluate) {
-      return {
-        ok: false,
-        message: `Falha ao atualizar descricao. Metodo principal indisponivel e fallback nao suportado. ${primaryError || ''}`.trim()
-      };
-    }
-
-    let fallback = null;
-    try {
-      fallback = await client.pupPage.evaluate(async (groupIdArg, descriptionArg) => {
-        const createWid =
-          window.Store?.WidFactory?.createWid ||
-          window.Store?.WidFactory?.createUserWid ||
-          null;
-        if (typeof createWid !== 'function') {
-          return { ok: false, error: 'WidFactory indisponivel no contexto do WhatsApp Web.' };
-        }
-
-        const groupWid = createWid(groupIdArg);
-        let descId = '';
-
-        try {
-          const chatModel = await window.WWebJS.getChat(groupIdArg, { getAsModel: false });
-          descId = String(chatModel?.groupMetadata?.descId || '').trim();
-        } catch {
-          // segue para outras fontes
-        }
-
-        if (!descId) {
-          try {
-            const meta = window.Store?.GroupMetadata?.get ? window.Store.GroupMetadata.get(groupWid) : null;
-            descId = String(meta?.descId || '').trim();
-          } catch {
-            // ignora
-          }
-        }
-
-        let newId = '';
-        try {
-          if (window.Store?.MsgKey?.newId) {
-            newId = String(await window.Store.MsgKey.newId());
-          }
-        } catch {
-          // ignora
-        }
-        if (!newId) newId = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-
-        try {
-          await window.Store.GroupUtils.setGroupDescription(groupWid, descriptionArg, newId, descId || undefined);
-          return { ok: true, method: 'pupPage.fallback.setGroupDescription', hadDescId: Boolean(descId) };
-        } catch (error) {
-          if (error?.name === 'ServerStatusCodeError') {
-            return {
-              ok: false,
-              denied: true,
-              error: String(error?.message || 'ServerStatusCodeError')
-            };
-          }
-          return {
-            ok: false,
-            error: String(error?.message || error || 'erro desconhecido no fallback')
-          };
-        }
-      }, groupId, description);
-    } catch (error) {
-      fallback = {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-
-    if (fallback?.ok) {
-      return {
-        ok: true,
-        method: fallback.method || 'pupPage.fallback',
-        primaryError,
-        hadDescId: Boolean(fallback.hadDescId)
-      };
-    }
-
-    const fallbackErr = String(fallback?.error || '').trim();
-    return {
-      ok: false,
-      message: `Falha ao atualizar descricao. Primario: ${primaryError || 'n/d'}. Fallback: ${fallbackErr || 'n/d'}.`.trim()
-    };
-  }
-
-  async function verifyGroupActionApplied(action, expected = {}, options = {}) {
-    const attempts = Math.max(1, Number(options.attempts || 4));
-    const delayMs = Math.max(0, Number(options.delayMs || 450));
-    let lastSnapshot = null;
-
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      const snapshot = await buildGroupSnapshot({ includeInvite: true, includeRequests: true });
-      lastSnapshot = snapshot;
-      if (!snapshot.ok) {
-        return {
-          snapshot: null,
-          verification: buildActionVerification({
-            ok: false,
-            target: `grupo:${action}`,
-            expected: action,
-            actual: snapshot.message || 'snapshot indisponivel',
-            reason: 'Nao foi possivel validar estado do grupo.',
-            attempts: attempt
-          })
-        };
-      }
-
-      const group = snapshot.group || {};
-      if (action === 'set_subject') {
-        const expectedValue = normalizeLooseText(expected.subject || '');
-        const actualValue = normalizeLooseText(group.subject || '');
-        if (expectedValue === actualValue) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: 'grupo:subject',
-              expected: expected.subject || '',
-              actual: group.subject || '',
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'set_description') {
-        const expectedValue = normalizeLooseText(expected.description || '');
-        const actualValue = normalizeLooseText(group.description || '');
-        if (expectedValue === actualValue) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: 'grupo:description',
-              expected: expected.description || '',
-              actual: group.description || '',
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'set_messages_admins_only') {
-        const expectedValue = Boolean(expected.value);
-        const actualValue = Boolean(group.messagesAdminsOnly);
-        if (expectedValue === actualValue) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: 'grupo:messages_admins_only',
-              expected: expectedValue,
-              actual: actualValue,
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'set_info_admins_only') {
-        const expectedValue = Boolean(expected.value);
-        const actualValue = Boolean(group.infoAdminsOnly);
-        if (expectedValue === actualValue) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: 'grupo:info_admins_only',
-              expected: expectedValue,
-              actual: actualValue,
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'set_add_members_admins_only') {
-        const expectedValue = Boolean(expected.value);
-        const actualValue = Boolean(group.addMembersAdminsOnly);
-        if (expectedValue === actualValue) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: 'grupo:add_members_admins_only',
-              expected: expectedValue,
-              actual: actualValue,
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'get_invite_link' || action === 'refresh_invite_link') {
-        const hasInvite = Boolean(String(group.inviteLink || '').trim());
-        if (hasInvite) {
-          return {
-            snapshot,
-            verification: buildActionVerification({
-              ok: true,
-              target: `grupo:${action}`,
-              expected: 'link de convite disponivel',
-              actual: group.inviteLink || '',
-              attempts: attempt
-            })
-          };
-        }
-      } else if (action === 'approve_membership_requests' || action === 'reject_membership_requests') {
-        const expectedDelta = Array.isArray(expected.requesterIds) ? expected.requesterIds.length : 0;
-        return {
-          snapshot,
-          verification: buildActionVerification({
-            ok: true,
-            target: `grupo:${action}`,
-            expected: expectedDelta ? `processar ${expectedDelta} solicitacao(oes)` : 'processar pendentes',
-            actual: `pendentes atuais: ${group.membershipRequestsCount || 0}`,
-            attempts: attempt
-          })
-        };
-      } else if (action === 'list_membership_requests') {
-        return {
-          snapshot,
-          verification: buildActionVerification({
-            ok: true,
-            target: 'grupo:list_membership_requests',
-            expected: 'listar solicitacoes',
-            actual: `pendentes: ${group.membershipRequestsCount || 0}`,
-            attempts: attempt
-          })
-        };
-      } else {
-        return {
-          snapshot,
-          verification: buildActionVerification({
-            ok: true,
-            target: `grupo:${action}`,
-            expected: action,
-            actual: 'acao executada',
-            attempts: attempt
-          })
-        };
-      }
-
-      if (attempt < attempts) await sleep(delayMs);
-    }
-
-    const group = lastSnapshot?.group || {};
-    return {
-      snapshot: lastSnapshot?.ok ? lastSnapshot : null,
-      verification: buildActionVerification({
-        ok: false,
-        target: `grupo:${action}`,
-        expected:
-          action === 'set_subject'
-            ? expected.subject || ''
-            : action === 'set_description'
-              ? expected.description || ''
-              : typeof expected.value !== 'undefined'
-                ? expected.value
-                : action,
-        actual:
-          action === 'set_subject'
-            ? group.subject || ''
-            : action === 'set_description'
-              ? group.description || ''
-              : action === 'set_messages_admins_only'
-                ? Boolean(group.messagesAdminsOnly)
-                : action === 'set_info_admins_only'
-                  ? Boolean(group.infoAdminsOnly)
-                  : action === 'set_add_members_admins_only'
-                    ? Boolean(group.addMembersAdminsOnly)
-                    : group.inviteLink || '(sem valor)',
-        reason: 'A configuracao nao refletiu no snapshot do grupo dentro da janela de validacao.',
-        attempts
-      })
-    };
-  }
-
   app.get('/api/group/control', async (req, res) => {
     const includeInvite = parseBoolean(req.query.includeInvite, false);
     const includeRequests = parseBoolean(req.query.includeRequests, false);
@@ -2234,11 +1575,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
     const { client, groupId, chat } = context;
     let detail = '';
-    let expectedVerificationPayload = {};
-    let verificationAttempts = 4;
-    let canAutoRetry = false;
-    let retryAction = null;
-    let skipVerification = false;
 
     try {
       if (action === 'set_subject') {
@@ -2246,84 +1582,34 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
         if (typeof chat.setSubject !== 'function') throw new Error('Metodo setSubject indisponivel nesta versao.');
         await chat.setSubject(subject);
         detail = 'Nome do grupo atualizado.';
-        expectedVerificationPayload = { subject };
-        verificationAttempts = 8;
-        canAutoRetry = true;
-        retryAction = async () => {
-          await chat.setSubject(subject);
-        };
       } else if (action === 'set_description') {
         if (!hasDescriptionField) throw new Error('Informe a nova descricao do grupo.');
+        if (typeof chat.setDescription !== 'function') throw new Error('Metodo setDescription indisponivel nesta versao.');
         if (!description) {
           detail = 'Descricao vazia recebida. Nenhuma alteracao aplicada (WhatsApp exige texto para atualizar).';
-          expectedVerificationPayload = { description: '' };
-          skipVerification = true;
         } else {
-          const setDescriptionResult = await setGroupDescriptionWithFallback({
-            chat,
-            client,
-            groupId,
-            description
-          });
-          if (!setDescriptionResult.ok) {
-            throw new Error(setDescriptionResult.message || 'Falha ao atualizar descricao do grupo.');
-          }
-
-          const suffix = setDescriptionResult.method === 'chat.setDescription'
-            ? ''
-            : ` (fallback aplicado: ${setDescriptionResult.method})`;
-          detail = `Descricao do grupo atualizada${suffix}.`;
-          expectedVerificationPayload = { description };
-          verificationAttempts = 10;
-          canAutoRetry = true;
-          retryAction = async () => {
-            const retryResult = await setGroupDescriptionWithFallback({
-              chat,
-              client,
-              groupId,
-              description
-            });
-            if (!retryResult.ok) {
-              throw new Error(retryResult.message || 'Falha ao atualizar descricao na retentativa.');
-            }
-          };
+          await chat.setDescription(description);
+          detail = 'Descricao do grupo atualizada.';
         }
       } else if (action === 'set_messages_admins_only') {
         if (typeof chat.setMessagesAdminsOnly !== 'function') throw new Error('Metodo setMessagesAdminsOnly indisponivel.');
         const enabled = parseBoolean(value, true);
         await chat.setMessagesAdminsOnly(enabled);
         detail = enabled ? 'Grupo fechado: somente admins enviam mensagens.' : 'Grupo aberto: todos podem enviar mensagens.';
-        expectedVerificationPayload = { value: enabled };
-        canAutoRetry = true;
-        retryAction = async () => {
-          await chat.setMessagesAdminsOnly(enabled);
-        };
       } else if (action === 'set_info_admins_only') {
         if (typeof chat.setInfoAdminsOnly !== 'function') throw new Error('Metodo setInfoAdminsOnly indisponivel.');
         const enabled = parseBoolean(value, true);
         await chat.setInfoAdminsOnly(enabled);
         detail = enabled ? 'Edicao de informacoes restrita a admins.' : 'Edicao de informacoes liberada para participantes.';
-        expectedVerificationPayload = { value: enabled };
-        canAutoRetry = true;
-        retryAction = async () => {
-          await chat.setInfoAdminsOnly(enabled);
-        };
       } else if (action === 'set_add_members_admins_only') {
         if (typeof chat.setAddMembersAdminsOnly !== 'function') throw new Error('Metodo setAddMembersAdminsOnly indisponivel.');
         const enabled = parseBoolean(value, true);
         await chat.setAddMembersAdminsOnly(enabled);
         detail = enabled ? 'Somente admins podem adicionar participantes.' : 'Participantes tambem podem adicionar membros.';
-        expectedVerificationPayload = { value: enabled };
-        canAutoRetry = true;
-        retryAction = async () => {
-          await chat.setAddMembersAdminsOnly(enabled);
-        };
       } else if (action === 'get_invite_link') {
         if (typeof chat.getInviteCode !== 'function') throw new Error('Metodo getInviteCode indisponivel.');
         const code = String((await chat.getInviteCode()) || '').trim();
         detail = code ? `Link de convite atualizado: https://chat.whatsapp.com/${code}` : 'Nao consegui obter o link de convite agora.';
-        expectedVerificationPayload = {};
-        verificationAttempts = 3;
       } else if (action === 'refresh_invite_link') {
         if (typeof chat.revokeInvite !== 'function') throw new Error('Metodo revokeInvite indisponivel.');
         await chat.revokeInvite();
@@ -2334,19 +1620,12 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
         detail = code
           ? `Link de convite renovado: https://chat.whatsapp.com/${code}`
           : 'Link de convite renovado com sucesso.';
-        expectedVerificationPayload = {};
-        verificationAttempts = 5;
-        canAutoRetry = true;
-        retryAction = async () => {
-          await chat.revokeInvite();
-        };
       } else if (action === 'list_membership_requests') {
         if (typeof client.getGroupMembershipRequests !== 'function') {
           throw new Error('Metodo getGroupMembershipRequests indisponivel.');
         }
         const requests = await client.getGroupMembershipRequests(groupId);
         detail = `Solicitacoes pendentes: ${Array.isArray(requests) ? requests.length : 0}.`;
-        expectedVerificationPayload = {};
       } else if (action === 'approve_membership_requests') {
         if (typeof client.approveGroupMembershipRequests !== 'function') {
           throw new Error('Metodo approveGroupMembershipRequests indisponivel.');
@@ -2356,7 +1635,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
         detail = requesterIds.length
           ? `Solicitacoes aprovadas para ${requesterIds.length} numero(s).`
           : 'Solicitacoes pendentes aprovadas.';
-        expectedVerificationPayload = { requesterIds };
       } else if (action === 'reject_membership_requests') {
         if (typeof client.rejectGroupMembershipRequests !== 'function') {
           throw new Error('Metodo rejectGroupMembershipRequests indisponivel.');
@@ -2366,7 +1644,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
         detail = requesterIds.length
           ? `Solicitacoes rejeitadas para ${requesterIds.length} numero(s).`
           : 'Solicitacoes pendentes rejeitadas.';
-        expectedVerificationPayload = { requesterIds };
       } else {
         throw new Error(`Acao de grupo nao suportada: ${action}`);
       }
@@ -2378,62 +1655,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
       return;
     }
 
-    let verification = buildActionVerification({
-      ok: true,
-      target: `grupo:${action}`,
-      expected: action,
-      actual: 'acao executada'
-    });
-
-    if (skipVerification) {
-      verification = buildActionVerification({
-        ok: true,
-        target: 'grupo:set_description',
-        expected: 'descricao nao vazia para alterar',
-        actual: 'descricao vazia',
-        reason: 'Nenhuma alteracao aplicada por seguranca.',
-        attempts: 1
-      });
-    } else {
-      const initialVerification = await verifyGroupActionApplied(action, expectedVerificationPayload, {
-        attempts: verificationAttempts,
-        delayMs: 500
-      });
-      verification = initialVerification.verification;
-    }
-
-    if (!skipVerification && !verification.ok && canAutoRetry && typeof retryAction === 'function') {
-      try {
-        await retryAction();
-        await sleep(400);
-        const retried = await verifyGroupActionApplied(action, expectedVerificationPayload, {
-          attempts: Math.max(2, verificationAttempts - 1),
-          delayMs: 450
-        });
-        if (retried.verification.ok) {
-          verification = {
-            ...retried.verification,
-            autoFixed: true,
-            reason: 'Aplicado apos nova tentativa automatica.'
-          };
-          detail = `${detail} Validacao automatica detectou atraso e corrigiu com nova tentativa.`;
-        } else {
-          verification = {
-            ...retried.verification,
-            reason: `Nao confirmou apos retentativa automatica. ${retried.verification.reason || ''}`.trim()
-          };
-        }
-      } catch (error) {
-        verification = buildActionVerification({
-          ok: false,
-          target: `grupo:${action}`,
-          expected: action,
-          actual: 'erro na retentativa',
-          reason: `Falha na retentativa automatica: ${error instanceof Error ? error.message : String(error)}`
-        });
-      }
-    }
-
     const snapshot = await buildGroupSnapshot({ includeInvite: true, includeRequests: true });
     if (!snapshot.ok) {
       res.status(snapshot.status || 400).json(snapshot);
@@ -2443,7 +1664,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     res.json({
       ok: true,
       detail,
-      verification,
       ...snapshot
     });
   });
@@ -2535,25 +1755,6 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     });
   });
 
-  function verifyMembershipApplied({ target, list, shouldContain, reasonPrefix = '' }) {
-    const normalizedTarget = String(target || '').trim();
-    const values = Array.isArray(list) ? list.map((item) => String(item || '').trim()) : [];
-    const hasTarget = values.includes(normalizedTarget);
-    const ok = shouldContain ? hasTarget : !hasTarget;
-    const expected = shouldContain ? 'presente' : 'ausente';
-    const actual = hasTarget ? 'presente' : 'ausente';
-    const reason = ok
-      ? `${reasonPrefix}Aplicacao confirmada.`
-      : `${reasonPrefix}Configuracao nao refletiu no estado persistido.`;
-    return buildActionVerification({
-      ok,
-      target: normalizedTarget,
-      expected,
-      actual,
-      reason
-    });
-  }
-
   app.get('/api/response-routing', async (req, res) => {
     await accessControl.ensureReady();
     res.json({
@@ -2587,36 +1788,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
     const result = await accessControl.addResponseGroup(groupId);
     if (result.added) syncRuntimeRoutingState();
-    let routingSnapshot = buildResponseRoutingSnapshot();
-    let verification = verifyMembershipApplied({
-      target: groupId,
-      list: routingSnapshot.effectiveResponseGroups,
-      shouldContain: true,
-      reasonPrefix: 'Rota de grupo: '
-    });
-
-    if (!verification.ok) {
-      const retry = await accessControl.addResponseGroup(groupId);
-      if (retry.added) syncRuntimeRoutingState();
-      routingSnapshot = buildResponseRoutingSnapshot();
-      const retriedVerification = verifyMembershipApplied({
-        target: groupId,
-        list: routingSnapshot.effectiveResponseGroups,
-        shouldContain: true,
-        reasonPrefix: 'Rota de grupo: '
-      });
-      if (retriedVerification.ok) {
-        verification = { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' };
-      } else {
-        verification = retriedVerification;
-      }
-    }
-
     res.status(result.added ? 200 : 400).json({
       ok: result.added,
       ...result,
-      routing: routingSnapshot,
-      verification
+      routing: buildResponseRoutingSnapshot()
     });
   });
 
@@ -2630,36 +1805,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
     const result = await accessControl.removeResponseGroup(groupId);
     if (result.removed) syncRuntimeRoutingState();
-    let routingSnapshot = buildResponseRoutingSnapshot();
-    let verification = verifyMembershipApplied({
-      target: groupId,
-      list: routingSnapshot.effectiveResponseGroups,
-      shouldContain: false,
-      reasonPrefix: 'Rota de grupo: '
-    });
-
-    if (!verification.ok) {
-      const retry = await accessControl.removeResponseGroup(groupId);
-      if (retry.removed) syncRuntimeRoutingState();
-      routingSnapshot = buildResponseRoutingSnapshot();
-      const retriedVerification = verifyMembershipApplied({
-        target: groupId,
-        list: routingSnapshot.effectiveResponseGroups,
-        shouldContain: false,
-        reasonPrefix: 'Rota de grupo: '
-      });
-      if (retriedVerification.ok) {
-        verification = { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' };
-      } else {
-        verification = retriedVerification;
-      }
-    }
-
     res.status(result.removed ? 200 : 400).json({
       ok: result.removed,
       ...result,
-      routing: routingSnapshot,
-      verification
+      routing: buildResponseRoutingSnapshot()
     });
   });
 
@@ -2673,36 +1822,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
     const result = await accessControl.addPrivate(number);
     if (result.added) syncRuntimeRoutingState();
-    let routingSnapshot = buildResponseRoutingSnapshot();
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: routingSnapshot.effectivePrivate,
-      shouldContain: true,
-      reasonPrefix: 'Rota privada: '
-    });
-
-    if (!verification.ok) {
-      const retry = await accessControl.addPrivate(number);
-      if (retry.added) syncRuntimeRoutingState();
-      routingSnapshot = buildResponseRoutingSnapshot();
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: routingSnapshot.effectivePrivate,
-        shouldContain: true,
-        reasonPrefix: 'Rota privada: '
-      });
-      if (retriedVerification.ok) {
-        verification = { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' };
-      } else {
-        verification = retriedVerification;
-      }
-    }
-
     res.status(result.added ? 200 : 400).json({
       ok: result.added,
       ...result,
-      routing: routingSnapshot,
-      verification
+      routing: buildResponseRoutingSnapshot()
     });
   });
 
@@ -2716,36 +1839,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
 
     const result = await accessControl.removePrivate(number);
     if (result.removed) syncRuntimeRoutingState();
-    let routingSnapshot = buildResponseRoutingSnapshot();
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: routingSnapshot.effectivePrivate,
-      shouldContain: false,
-      reasonPrefix: 'Rota privada: '
-    });
-
-    if (!verification.ok) {
-      const retry = await accessControl.removePrivate(number);
-      if (retry.removed) syncRuntimeRoutingState();
-      routingSnapshot = buildResponseRoutingSnapshot();
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: routingSnapshot.effectivePrivate,
-        shouldContain: false,
-        reasonPrefix: 'Rota privada: '
-      });
-      if (retriedVerification.ok) {
-        verification = { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' };
-      } else {
-        verification = retriedVerification;
-      }
-    }
-
     res.status(result.removed ? 200 : 400).json({
       ok: result.removed,
       ...result,
-      routing: routingSnapshot,
-      verification
+      routing: buildResponseRoutingSnapshot()
     });
   });
 
@@ -2758,33 +1855,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.addAuthorized(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveAuthorized,
-      shouldContain: true,
-      reasonPrefix: 'Permissao interacao: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.addAuthorized(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveAuthorized,
-        shouldContain: true,
-        reasonPrefix: 'Permissao interacao: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.added ? 200 : 400).json({
       ok: result.added,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
@@ -2797,33 +1871,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.removeAuthorized(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveAuthorized,
-      shouldContain: false,
-      reasonPrefix: 'Permissao interacao: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.removeAuthorized(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveAuthorized,
-        shouldContain: false,
-        reasonPrefix: 'Permissao interacao: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.removed ? 200 : 400).json({
       ok: result.removed,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
@@ -2836,33 +1887,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.addAdmin(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveAdmins,
-      shouldContain: true,
-      reasonPrefix: 'Permissao admin: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.addAdmin(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveAdmins,
-        shouldContain: true,
-        reasonPrefix: 'Permissao admin: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.added ? 200 : 400).json({
       ok: result.added,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
@@ -2875,33 +1903,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.removeAdmin(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveAdmins,
-      shouldContain: false,
-      reasonPrefix: 'Permissao admin: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.removeAdmin(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveAdmins,
-        shouldContain: false,
-        reasonPrefix: 'Permissao admin: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.removed ? 200 : 400).json({
       ok: result.removed,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
@@ -2914,33 +1919,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.addFull(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveFulls,
-      shouldContain: true,
-      reasonPrefix: 'Permissao FULL: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.addFull(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveFulls,
-        shouldContain: true,
-        reasonPrefix: 'Permissao FULL: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.added ? 200 : 400).json({
       ok: result.added,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
@@ -2953,33 +1935,10 @@ export function startWebPanel({ moderation = null, groupControl = null, inbox = 
     }
 
     const result = await accessControl.removeFull(number);
-    let snapshot = accessControl.snapshot(getPrimaryGroupId());
-    let verification = verifyMembershipApplied({
-      target: number,
-      list: snapshot.effectiveFulls,
-      shouldContain: false,
-      reasonPrefix: 'Permissao FULL: '
-    });
-
-    if (!verification.ok) {
-      await accessControl.removeFull(number);
-      snapshot = accessControl.snapshot(getPrimaryGroupId());
-      const retriedVerification = verifyMembershipApplied({
-        target: number,
-        list: snapshot.effectiveFulls,
-        shouldContain: false,
-        reasonPrefix: 'Permissao FULL: '
-      });
-      verification = retriedVerification.ok
-        ? { ...retriedVerification, autoFixed: true, reason: 'Aplicado apos retentativa automatica.' }
-        : retriedVerification;
-    }
-
     res.status(result.removed ? 200 : 400).json({
       ok: result.removed,
       ...result,
-      accessControl: snapshot,
-      verification
+      accessControl: accessControl.snapshot()
     });
   });
 
